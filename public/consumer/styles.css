@@ -45,6 +45,11 @@ h1, h2 { margin-top: 0; }
 .consumer-form label { font-weight: 700; }
 .consumer-form input { padding: .65rem; border: 1px solid #9ca9bd; border-radius: 8px; }
 .consumer-form button { width: fit-content; padding: .65rem .9rem; border: 0; border-radius: 8px; background: #214f9f; color: #fff; cursor: pointer; }
+.consumer-form button:hover:not(:disabled) { background: #1b4287; }
+.consumer-form button:focus-visible,
+.consumer-form input:focus-visible,
+.consumer-credential-selection input:focus-visible,
+.consumer-secret-selection-item input:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
 .consumer-status { color: #52627a; }
 .consumer-form button:disabled { cursor: wait; opacity: .65; }
 .consumer-empty { color: #52627a; }
@@ -58,3 +63,12 @@ h1, h2 { margin-top: 0; }
 .consumer-resolve-result-list { display: grid; gap: .75rem; }
 .consumer-resolve-result { display: grid; gap: .4rem; padding: .85rem; border: 1px solid #dde3ee; border-radius: 10px; }
 .consumer-resolve-result-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .consumer-header { padding: 1.25rem 1rem 1rem; }
+  .consumer-main { padding: 1rem 1rem 2rem; }
+  .consumer-panel { padding: 1rem; border-radius: 12px; }
+  .consumer-credential-selection { align-items: stretch; flex-direction: column; }
+  .consumer-secret-selection-item { align-items: flex-start; }
+  .consumer-resolve-result-value { font-size: .9rem; }
+}

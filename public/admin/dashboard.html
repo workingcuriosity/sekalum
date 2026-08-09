@@ -16,36 +16,34 @@
 
   <nav class="app-nav" id="app-navigation"></nav>
 
-  <span class="badge" id="dashboard-status">
-    Dashboard wird geladen…
-  </span>
+  <span class="badge" id="dashboard-status" data-i18n="dashboard.loading">Loading dashboard...</span>
 </header>
 
 <main class="layout dashboard-layout">
 
 <section class="panel">
 
-<h2>Systemübersicht</h2>
+<h2 data-i18n="dashboard.overview">System overview</h2>
 
 <div class="dashboard-cards">
 
 <div class="dashboard-card">
-<h3>Credentials</h3>
+<h3 data-i18n="dashboard.credentials">Credentials</h3>
 <strong id="dashboard-credentials">–</strong>
 </div>
 
 <div class="dashboard-card">
-<h3>Provider</h3>
+<h3 data-i18n="dashboard.providers">Providers</h3>
 <strong id="dashboard-providers">–</strong>
 </div>
 
 <div class="dashboard-card">
-<h3>Abgelaufen</h3>
+<h3 data-i18n="dashboard.expired">Expired</h3>
 <strong id="dashboard-expired">–</strong>
 </div>
 
 <div class="dashboard-card">
-<h3>Laufen bald ab</h3>
+<h3 data-i18n="dashboard.expiring">Expiring soon</h3>
 <strong id="dashboard-expiring">–</strong>
 </div>
 
@@ -53,42 +51,42 @@
 
 <section class="dashboard-section management-summary" aria-labelledby="management-heading">
 
-<h2 id="management-heading">Management</h2>
+<h2 id="management-heading" data-i18n="dashboard.management">Management</h2>
 
 <div class="management-grid">
 
 <div class="management-card">
-<h3>Systemstatus</h3>
+<h3 data-i18n="dashboard.systemStatus">System status</h3>
 <strong id="management-system-status">–</strong>
-<span id="management-generated-at">Noch keine Daten geladen.</span>
+<span id="management-generated-at" data-i18n="dashboard.noData">No data loaded yet.</span>
 </div>
 
 <div class="management-card">
-<h3>Credentials</h3>
+<h3 data-i18n="dashboard.credentials">Credentials</h3>
 <strong id="management-credentials-total">–</strong>
 <div class="management-breakdown">
-<strong class="management-breakdown-title">Status</strong>
-<div id="management-credentials-state" class="management-count-list">Lebenszyklus noch nicht geladen.</div>
-<strong class="management-breakdown-title">Typen</strong>
-<div id="management-credentials-methods" class="management-count-list">Credential-Methoden noch nicht geladen.</div>
+<strong class="management-breakdown-title" data-i18n="common.status">Status</strong>
+<div id="management-credentials-state" class="management-count-list" data-i18n="dashboard.lifecyclePending">Lifecycle data not loaded yet.</div>
+<strong class="management-breakdown-title" data-i18n="dashboard.credentialMethods">Credential methods</strong>
+<div id="management-credentials-methods" class="management-count-list" data-i18n="dashboard.capabilitiesPending">Credential method data not loaded yet.</div>
 </div>
 </div>
 
 <div class="management-card">
-<h3>Provider</h3>
+<h3 data-i18n="dashboard.providers">Providers</h3>
 <strong id="management-providers-total">–</strong>
 <div class="management-breakdown">
-<strong class="management-breakdown-title">Credentials</strong>
-<div id="management-provider-credentials" class="management-count-list">Credential-Zuordnung noch nicht geladen.</div>
-<strong class="management-breakdown-title">Capabilities</strong>
-<div id="management-provider-capabilities" class="management-count-list">Capabilities noch nicht geladen.</div>
+<strong class="management-breakdown-title" data-i18n="dashboard.credentials">Credentials</strong>
+<div id="management-provider-credentials" class="management-count-list" data-i18n="dashboard.providerCredentialsPending">Provider assignment data not loaded yet.</div>
+<strong class="management-breakdown-title" data-i18n="dashboard.capabilities">Capabilities</strong>
+<div id="management-provider-capabilities" class="management-count-list" data-i18n="dashboard.capabilitiesPending">Capabilities not loaded yet.</div>
 </div>
 </div>
 
 <div class="management-card">
-<h3>Scheduler</h3>
+<h3 data-i18n="dashboard.scheduler">Scheduler</h3>
 <strong id="management-scheduler-state">–</strong>
-<span id="management-scheduler-details">Scheduler noch nicht geladen.</span>
+<span id="management-scheduler-details" data-i18n="dashboard.schedulerPending">Scheduler data not loaded yet.</span>
 </div>
 
 </div>
@@ -97,16 +95,32 @@
 
 </section>
 
+<section class="dashboard-section" aria-labelledby="integration-health-heading">
+
+<h2 id="integration-health-heading" data-i18n="dashboard.integrationHealth">Integration health</h2>
+<p data-i18n="dashboard.integrationHealthHelp">This view summarizes existing credential, grant, OAuth, token, refresh and Resolve states without displaying secrets.</p>
+
+<div class="dashboard-cards integration-health-summary">
+<div class="dashboard-card"><h3 data-i18n="dashboard.healthy">Healthy</h3><strong id="integration-health-healthy">–</strong></div>
+<div class="dashboard-card"><h3 data-i18n="dashboard.warning">Warning</h3><strong id="integration-health-warning">–</strong></div>
+<div class="dashboard-card"><h3 data-i18n="dashboard.error">Error</h3><strong id="integration-health-error">–</strong></div>
+<div class="dashboard-card"><h3 data-i18n="dashboard.unknown">Unknown</h3><strong id="integration-health-unknown">–</strong></div>
+</div>
+
+<div id="integration-health-list" class="integration-health-list" aria-live="polite"></div>
+
+</section>
+
 <section class="dashboard-section">
 
-<h2>Security & Access</h2>
+<h2 data-i18n="dashboard.securityAccess">Security &amp; Access</h2>
 
 <div class="management-grid">
 
 <a class="management-card management-link" href="#" data-app-path="/admin/">
-<h3>Credential Wizard</h3>
-<strong>Neu anlegen</strong>
-<span>Ein neues Credential mit einem registrierten Provider anlegen.</span>
+<h3 data-i18n="nav.wizard">Credential Wizard</h3>
+<strong data-i18n="dashboard.newCredential">Create new</strong>
+<span data-i18n="dashboard.newCredentialHelp">Create a credential with a registered provider.</span>
 </a>
 
 <a class="management-card management-link" href="#" data-app-path="/admin/providers.html">
@@ -122,15 +136,15 @@
 </a>
 
 <a class="management-card management-link" href="#" data-app-path="/admin/api-tokens.html">
-<h3>API Tokens</h3>
-<strong>Verwalten</strong>
-<span>Technische Zugriffe anzeigen und absichern.</span>
+<h3 data-i18n="nav.apiTokens">API Tokens</h3>
+<strong data-i18n="dashboard.manage">Manage</strong>
+<span data-i18n="dashboard.apiTokensHelp">View and secure technical access.</span>
 </a>
 
 <a class="management-card management-link" href="#" data-app-path="/admin/credential-transfer.html">
-<h3>Credential Export / Import</h3>
-<strong>Transfer</strong>
-<span>Verschlüsselte Exportdateien erzeugen und importieren.</span>
+<h3 data-i18n="nav.transfer">Credential Transfer</h3>
+<strong data-i18n="dashboard.transfer">Transfer</strong>
+<span data-i18n="dashboard.transferHelp">Create and import encrypted export files.</span>
 </a>
 
 </div>
@@ -149,11 +163,11 @@
 
 <section class="dashboard-section">
 
-<h2>Warnungen</h2>
+<h2 data-i18n="dashboard.warnings">Warnings</h2>
 
 <div id="dashboard-warnings">
 
-Noch keine Daten geladen.
+<span data-i18n="dashboard.noData">No data loaded yet.</span>
 
 </div>
 
@@ -161,11 +175,11 @@ Noch keine Daten geladen.
 
 <section class="dashboard-section">
 
-<h2>Scheduler</h2>
+<h2 data-i18n="dashboard.scheduler">Scheduler</h2>
 
 <div id="dashboard-scheduler">
 
-Noch keine Daten geladen.
+<span data-i18n="dashboard.noData">No data loaded yet.</span>
 
 </div>
 

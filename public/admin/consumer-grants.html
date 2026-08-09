@@ -17,18 +17,25 @@
     <div class="toolbar split-toolbar">
       <a class="secondary" href="#" data-app-path="/admin/dashboard.html" data-i18n="nav.backToDashboard">Back to Dashboard</a>
       <button class="secondary" type="button" id="refresh-consumer-grants" data-i18n="common.refresh">Refresh</button>
-      <button class="primary" type="button" id="consumer-grant-create-open" data-testid="consumer-grant-create-open" data-i18n="consumerGrants.create">Create grant</button>
+      <button class="primary" type="button" id="consumer-grant-create-open" data-testid="consumer-grant-create-open" data-i18n="consumerGrants.create">Set consumer access</button>
     </div>
     <div id="consumer-grants-error" class="alert hidden" role="alert"></div>
     <div id="consumer-grants-success" class="alert success-alert hidden" role="status"></div>
     <section class="dashboard-section" aria-labelledby="consumer-grants-overview-heading">
       <h2 id="consumer-grants-overview-heading" data-i18n="consumerGrants.overviewTitle">Granted consumer access</h2>
       <p data-i18n="consumerGrants.overviewHelp">Each entry explicitly lists the consumer, credential, provider, and secret field names. Secret values are never shown.</p>
-      <p class="grant-warning" role="status" data-i18n="consumerGrants.beta1Notice">Not available in Beta 1. A simplified permission workflow will be introduced in Beta 1.1.</p>
       <div class="grant-access-card" aria-labelledby="consumer-grants-purpose-heading">
         <h3 id="consumer-grants-purpose-heading" data-i18n="consumerGrants.purposeTitle">What is a consumer grant?</h3>
         <p data-i18n="consumerGrants.purposeHelp">A consumer grant is the administrator-approved connection between one consumer and one credential. It defines which named secret fields that consumer may use; it does not display or grant access to secret values beyond that selection.</p>
         <p class="grant-access-note" data-i18n="consumerGrants.changeHelp">Review the consumer, credential, provider, and granted fields together before changing a grant. Technical IDs are shown as additional context.</p>
+      </div>
+      <div class="grant-access-card" aria-labelledby="consumer-grants-explain-heading">
+        <h3 id="consumer-grants-explain-heading" data-i18n="consumerGrants.explainTitle">How consumer access works</h3>
+        <p data-i18n="consumerGrants.explainIntro">This page explains the existing permission boundary. It does not change what the API or the Consumer may access.</p>
+        <p><strong data-i18n="consumerGrants.consumerSeesTitle">The Consumer can see</strong><br><span data-i18n="consumerGrants.consumerSeesHelp">Only active Credentials with a matching access entry, their public metadata, and the explicitly permitted Secret fields.</span></p>
+        <p><strong data-i18n="consumerGrants.consumerNeverSeesTitle">The Consumer never sees</strong><br><span data-i18n="consumerGrants.consumerNeverSeesHelp">Secret values that are not permitted, other Credentials, provider internals, or Management Token values.</span></p>
+        <p><strong data-i18n="consumerGrants.discoveryResolveTitle">Discovery and Resolve</strong><br><span data-i18n="consumerGrants.discoveryResolveHelp">Discovery returns the available Credential and field contract. Resolve returns only explicitly requested Secret fields allowed by this access entry; there is no wildcard access.</span></p>
+        <p class="grant-access-note" data-i18n="consumerGrants.tokenBoundaryHelp">A Consumer API Token authenticates the Consumer. A Management Token is for administration only and is never a Consumer permission.</p>
       </div>
       <form class="grant-filter-form" id="consumer-grants-filter-form">
         <label><span data-i18n="consumerGrants.filterConsumer">Consumer</span><input name="consumerId" type="search" autocomplete="off"><small data-i18n="consumerGrants.filterTechnicalHelp">Filter by technical ID when needed.</small></label>
@@ -46,7 +53,7 @@
     </section>
     <section class="panel-dialog hidden" id="consumer-grant-create-panel" role="dialog" aria-modal="true" aria-labelledby="consumer-grant-create-heading">
       <div class="dialog-card">
-        <div class="split-toolbar"><div><p class="eyebrow" data-i18n="consumerGrants.areaLabel">Consumer permissions</p><h2 id="consumer-grant-create-heading" data-i18n="consumerGrants.createTitle">Create consumer grant</h2></div><button class="secondary" type="button" id="consumer-grant-create-close" data-i18n="common.close">Close</button></div>
+        <div class="split-toolbar"><div><p class="eyebrow" data-i18n="consumerGrants.areaLabel">Consumer permissions</p><h2 id="consumer-grant-create-heading" data-i18n="consumerGrants.createTitle">Set consumer access</h2></div><button class="secondary" type="button" id="consumer-grant-create-close" data-i18n="common.close">Close</button></div>
         <p data-i18n="consumerGrants.createHelp">Choose a credential and explicitly select the named secret fields that the consumer may use. Secret values are never included.</p>
         <div id="consumer-grant-create-error" class="alert hidden" role="alert"></div>
         <form class="form wide-form" id="consumer-grant-create-form" data-testid="consumer-grant-create-form">
@@ -54,13 +61,18 @@
           <label class="field"><span data-i18n="consumerGrants.credential">Credential</span><select name="credentialId" id="consumer-grant-create-credential" required></select></label>
           <output id="consumer-grant-create-provider" class="readonly-value"></output>
           <fieldset class="field"><legend data-i18n="consumerGrants.secrets">Granted secret fields</legend><div id="consumer-grant-create-secrets" data-testid="consumer-grant-create-secrets"></div><small data-i18n="consumerGrants.createSecretsHelp">Select the fields this consumer may use. No secret values are shown.</small></fieldset>
-          <div class="toolbar-actions"><button class="secondary" type="button" id="consumer-grant-create-cancel" data-i18n="common.cancel">Cancel</button><button class="primary" type="submit" id="consumer-grant-create-submit" data-testid="consumer-grant-create-submit" data-i18n="consumerGrants.save">Save grant</button></div>
+          <section class="grant-preview" id="consumer-grant-create-preview" aria-labelledby="consumer-grant-create-preview-heading">
+            <h3 id="consumer-grant-create-preview-heading" data-i18n="consumerGrants.previewTitle">Permission preview before saving</h3>
+            <p data-i18n="consumerGrants.previewHelp">This is a read-only summary of the existing grant and Consumer API rules. It does not execute Discovery or Resolve.</p>
+            <div class="grant-preview-content"></div>
+          </section>
+          <div class="toolbar-actions"><button class="secondary" type="button" id="consumer-grant-create-cancel" data-i18n="common.cancel">Cancel</button><button class="primary" type="submit" id="consumer-grant-create-submit" data-testid="consumer-grant-create-submit" data-i18n="consumerGrants.save">Save consumer access</button></div>
         </form>
       </div>
     </section>
     <section class="panel-dialog hidden" id="consumer-grant-edit-panel" role="dialog" aria-modal="true" aria-labelledby="consumer-grant-edit-heading">
       <div class="dialog-card">
-        <div class="split-toolbar"><div><p class="eyebrow" data-i18n="consumerGrants.areaLabel">Consumer permissions</p><h2 id="consumer-grant-edit-heading" data-i18n="consumerGrants.editTitle">Edit consumer permission</h2></div><button class="secondary" type="button" id="consumer-grant-edit-close" data-i18n="common.close">Close</button></div>
+        <div class="split-toolbar"><div><p class="eyebrow" data-i18n="consumerGrants.areaLabel">Consumer permissions</p><h2 id="consumer-grant-edit-heading" data-i18n="consumerGrants.editTitle">Edit consumer access</h2></div><button class="secondary" type="button" id="consumer-grant-edit-close" data-i18n="common.close">Close</button></div>
         <p data-i18n="consumerGrants.editHelp">Consumer, credential, and provider are fixed for an existing grant. Edit only the granted secret fields; leaving the list empty is rejected.</p>
         <div id="consumer-grant-edit-summary" class="grant-summary"></div>
         <div id="consumer-grant-edit-error" class="alert hidden" role="alert"></div>
@@ -69,10 +81,15 @@
           <div class="field"><span class="field-label" data-i18n="consumerGrants.credential">Credential</span><output id="consumer-grant-edit-credential" class="readonly-value"></output><small data-i18n="consumerGrants.readOnlyBindingHelp">Fixed for this existing grant in Beta 1.</small></div>
           <div class="field"><span class="field-label" data-i18n="common.provider">Provider</span><output id="consumer-grant-edit-provider" class="readonly-value"></output></div>
           <label class="field"><span data-i18n="consumerGrants.secrets">Granted secret fields</span><textarea name="secretNames" rows="3" required aria-describedby="consumer-grant-secrets-help"></textarea><small id="consumer-grant-secrets-help" data-i18n="consumerGrants.secretsHelp">One field name per line or separated with commas. Empty values are not accepted.</small></label>
+          <section class="grant-preview" id="consumer-grant-edit-preview" aria-labelledby="consumer-grant-edit-preview-heading">
+            <h3 id="consumer-grant-edit-preview-heading" data-i18n="consumerGrants.previewTitle">Permission preview before saving</h3>
+            <p data-i18n="consumerGrants.previewHelp">This is a read-only summary of the existing grant and Consumer API rules. It does not execute Discovery or Resolve.</p>
+            <div class="grant-preview-content"></div>
+          </section>
           <p class="grant-warning" data-i18n="consumerGrants.noDefaults">No default fields are added. The submitted list is the complete set of secret fields granted to this consumer.</p>
           <p class="grant-warning" data-i18n="consumerGrants.editImpact">Saving changes can alter what an existing consumer integration is allowed to use. Confirm the credential and field list before saving.</p>
           <p class="grant-warning hidden" id="consumer-grant-invalid-combination" role="alert"></p>
-          <div class="toolbar-actions"><button class="secondary" type="button" id="consumer-grant-edit-cancel" data-i18n="common.cancel">Cancel</button><button class="primary" type="submit" id="consumer-grant-edit-submit" data-i18n="consumerGrants.save">Save grant</button></div>
+          <div class="toolbar-actions"><button class="secondary" type="button" id="consumer-grant-edit-cancel" data-i18n="common.cancel">Cancel</button><button class="primary" type="submit" id="consumer-grant-edit-submit" data-i18n="consumerGrants.save">Save consumer access</button></div>
         </form>
       </div>
     </section>

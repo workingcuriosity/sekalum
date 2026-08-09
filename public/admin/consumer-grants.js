@@ -27,6 +27,8 @@ const createError = document.getElementById('consumer-grant-create-error');
 const createCredential = document.getElementById('consumer-grant-create-credential');
 const createProvider = document.getElementById('consumer-grant-create-provider');
 const createSecrets = document.getElementById('consumer-grant-create-secrets');
+const createPreview = document.querySelector('#consumer-grant-create-preview .grant-preview-content');
+const editPreview = document.querySelector('#consumer-grant-edit-preview .grant-preview-content');
 
 let grants = [];
 let consumers = new Map();
@@ -50,9 +52,10 @@ document.getElementById('consumer-grant-create-open').addEventListener('click', 
 document.getElementById('consumer-grant-create-close').addEventListener('click', closeCreate);
 document.getElementById('consumer-grant-create-cancel').addEventListener('click', closeCreate);
 createCredential.addEventListener('change', renderCreateSecrets);
+createSecrets.addEventListener('change', renderCreatePreview);
 createForm.addEventListener('submit', submitCreate);
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !editSubmit.disabled) closeEdit(); });
-onLanguageChange(() => renderGrants(grants));
+onLanguageChange(() => { renderGrants(grants); renderCreatePreview(); if (editGrant) updateEditSummary(); });
 void loadGrants();
 
 async function loadGrants({ preserveMessages = false } = {}) {
@@ -202,10 +205,11 @@ function renderCreateSecrets() {
     const input = document.createElement('input'); input.type = 'checkbox'; input.name = 'secretNames'; input.value = name; input.dataset.grantSecret = name;
     label.append(input, document.createTextNode(` ${name}`)); createSecrets.append(label);
   }
+  renderCreatePreview();
 }
 
 function openCreate() {
-  hideMessages(); hideError(createError); renderCreateOptions(); createPanel.classList.remove('hidden');
+  hideMessages(); hideError(createError); renderCreateOptions(); renderCreatePreview(); createPanel.classList.remove('hidden');
   createForm.elements.consumerId.focus();
 }
 
@@ -242,6 +246,7 @@ function openEdit(grant) {
     summaryLine(t('consumerGrants.permissionSummary'), permissionSummary(grant.consumerId, grant.credentialId)),
     summaryLine(t('consumerGrants.secrets'), (grant.secretNames ?? []).join(', '))
   );
+  renderPreview(editPreview, previewState(grant.credentialId, grant.secretNames ?? []));
   editPanel.classList.remove('hidden');
   editForm.elements.secretNames.focus();
 }
@@ -261,6 +266,49 @@ function updateEditSummary() {
     summaryLine(t('common.provider'), editProvider.textContent),
     summaryLine(t('consumerGrants.secrets'), String(editForm.elements.secretNames.value ?? '').split(/[\n,]/).map((name) => name.trim()).filter(Boolean).join(', '))
   );
+  renderPreview(editPreview, previewState(editGrant.credentialId, parseSecretNames(editForm.elements.secretNames.value)));
+}
+
+function renderCreatePreview() {
+  const selected = [...createForm.querySelectorAll('input[name="secretNames"]:checked')].map((input) => input.value);
+  renderPreview(createPreview, previewState(createForm.elements.credentialId.value, selected));
+}
+
+function previewState(credentialId, selectedNames) {
+  const credential = credentials.get(credentialId);
+  const allNames = credential?.secretNames ?? credential?.secretInventory?.map((field) => field.name) ?? [];
+  const selected = [...new Set(selectedNames)];
+  return { allNames, selected, credential, hasInventory: allNames.length > 0 };
+}
+
+function renderPreview(container, { allNames, selected, credential, hasInventory }) {
+  if (!container) return;
+  container.replaceChildren();
+  const summary = document.createElement('div'); summary.className = 'grant-preview-summary';
+  const excluded = hasInventory
+    ? allNames.filter((name) => !selected.includes(name)).join(', ') || t('consumerGrants.previewNone')
+    : t('consumerGrants.previewExcludedUnavailable');
+  const items = [
+    [true, t('consumerGrants.previewCredential'), credential ? `${credentialLabel(credential.credentialId)} / ${providerLabel(credential.providerKey)}` : t('common.none')],
+    [true, t('consumerGrants.previewDiscovery'), t('consumerGrants.previewDiscoveryValue')],
+    [selected.length > 0, t('consumerGrants.previewResolve'), selected.length ? selected.join(', ') : t('consumerGrants.previewNone')],
+    [true, t('consumerGrants.previewRuntimePublic'), t('consumerGrants.previewRuntimePublicValue')],
+    [false, t('consumerGrants.previewExcluded'), excluded],
+    [false, t('consumerGrants.previewProtected'), t('consumerGrants.previewProtectedValue')]
+  ];
+  for (const [allowed, label, value] of items) {
+    const line = document.createElement('p'); line.className = allowed ? 'grant-preview-allowed' : 'grant-preview-excluded';
+    const marker = document.createElement('strong'); marker.textContent = allowed ? '✓' : '✗';
+    line.append(marker, document.createTextNode(` ${label}: ${value}`)); summary.append(line);
+  }
+  container.append(summary);
+  const notice = document.createElement('p'); notice.className = selected.length ? 'grant-preview-note' : 'grant-warning';
+  notice.textContent = t(selected.length ? 'consumerGrants.previewSelectionWarning' : 'consumerGrants.previewEmptyWarning');
+  container.append(notice);
+}
+
+function parseSecretNames(value) {
+  return String(value ?? '').split(/[\n,]/).map((name) => name.trim()).filter(Boolean);
 }
 
 function summaryLine(label, value) { const line = document.createElement('span'); line.textContent = `${label}: ${value || t('common.none')}`; return line; }
@@ -269,7 +317,7 @@ async function submitEdit(event) {
   event.preventDefault();
   if (!editGrant) return;
   hideError(editError);
-  const secretNames = String(editForm.elements.secretNames.value ?? '').split(/[\n,]/).map((name) => name.trim()).filter(Boolean);
+  const secretNames = parseSecretNames(editForm.elements.secretNames.value);
   if (!secretNames.length) { showError(editError, t('consumerGrants.secretsRequired')); return; }
   setSubmitting(true);
   try {

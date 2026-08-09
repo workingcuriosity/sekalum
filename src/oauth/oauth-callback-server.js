@@ -193,9 +193,13 @@ export class OAuthCallbackServer {
     });
   }
 
-  #authorized(permission, handler) {
+  #authorized(permission, handler, { allowBootstrap = false } = {}) {
     return async (req, res) => {
       try {
+        if (allowBootstrap && await this.accessManagementService.isAuthorizationRequired?.() === false) {
+          await handler(req, res);
+          return;
+        }
         if (this.#isTestCompatibilityMode() && await this.accessManagementService.isAuthorizationRequired?.() === false) {
           await handler(req, res);
           return;
@@ -437,7 +441,7 @@ export class OAuthCallbackServer {
 
     this.routes.post('/api/v1/management/users', this.#authorized('users:manage', async (req, res) => {
       await this.accessManagementController.createUser(req, res);
-    }));
+    }, { allowBootstrap: true }));
 
     this.routes.put('/api/v1/management/users/:userId', this.#authorized('users:manage', async (req, res) => {
       await this.accessManagementController.updateUser(req, res);

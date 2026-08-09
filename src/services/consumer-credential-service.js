@@ -2,7 +2,7 @@ import { LifecycleState } from '../models/lifecycle-state.js';
 import { ResolveDiagnosticCode, resolveDiagnostic } from './resolve-diagnostics.js';
 
 export class ConsumerCredentialService {
-  constructor({ credentialStore, consumerGrantService, providerRegistry, runtimePublicProjectionService = null, auditLogService = null } = {}) {
+  constructor({ credentialStore, consumerGrantService, providerRegistry, credentialManager = null, runtimePublicProjectionService = null, auditLogService = null } = {}) {
     if (!credentialStore?.load) throw new Error('ConsumerCredentialService requires CredentialStore');
     if (!consumerGrantService?.findGrant) throw new Error('ConsumerCredentialService requires ConsumerGrantService');
     if (!providerRegistry?.get) throw new Error('ConsumerCredentialService requires ProviderRegistry');
@@ -10,6 +10,7 @@ export class ConsumerCredentialService {
     this.credentialStore = credentialStore;
     this.consumerGrantService = consumerGrantService;
     this.providerRegistry = providerRegistry;
+    this.credentialManager = credentialManager;
     this.runtimePublicProjectionService = runtimePublicProjectionService;
     this.auditLogService = auditLogService;
   }
@@ -63,6 +64,8 @@ export class ConsumerCredentialService {
       if (requestedNames.some((name) => !grant.secretNames.includes(name))) {
         throw this.#diagnosticError(ResolveDiagnosticCode.SECRET_NOT_GRANTED);
       }
+
+      credential = await this.#refreshIfDue(credential);
 
       const contract = this.#secretContract(providerKey, credential.credentialMethodKey, requestedNames);
       const values = new Map(credential.secrets.map((secret) => [secret.name, secret.value]));
@@ -249,6 +252,10 @@ export class ConsumerCredentialService {
   }
 
   #safeId(value) { return typeof value === 'string' && value.trim() !== '' ? value.trim() : null; }
+  async #refreshIfDue(credential) {
+    if (!this.credentialManager?.refreshIfDue) return credential;
+    return this.credentialManager.refreshIfDue(credential);
+  }
   #diagnosticError(code) { const diagnostic = resolveDiagnostic(code); return this.#error(diagnostic.code, diagnostic.message, diagnostic.statusCode); }
   #error(code, message, statusCode) { const error = new Error(message); error.code = code; error.statusCode = statusCode; return error; }
 }

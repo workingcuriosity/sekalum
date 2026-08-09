@@ -4,6 +4,7 @@ export class DashboardService {
   constructor({
     credentialManager,
     providerManager,
+    consumerGrantService = null,
     schedulerService = null,
     credentialPolicyService = null,
     credentialRotationService = null,
@@ -12,6 +13,7 @@ export class DashboardService {
   } = {}) {
     this.credentialManager = credentialManager;
     this.providerManager = providerManager;
+    this.consumerGrantService = consumerGrantService;
     this.schedulerService = schedulerService;
     this.credentialPolicyService = credentialPolicyService;
     this.credentialRotationService = credentialRotationService;
@@ -37,6 +39,10 @@ export class DashboardService {
   });
 
   const schedulerResult = await this.#safeSection('scheduler', async () => this.#schedulerSummary());
+  const grantResult = await this.#safeSection('consumerGrants', async () => {
+    if (!this.consumerGrantService?.listGrants) return [];
+    return (await this.consumerGrantService.listGrants()).map((grant) => this.#toJSON(grant));
+  });
   const lifecycleResult = await this.#safeSection('lifecycle', async () => this.#lifecycleSummary({
     credentials: credentialResult.data ?? [],
     referenceDate: now
@@ -44,7 +50,8 @@ export class DashboardService {
 
   const normalizedCredentials = credentialResult.data ?? [];
   const normalizedProviders = providerResult.data ?? [];
-  const serviceErrors = [credentialResult.error, providerResult.error, schedulerResult.error, lifecycleResult.error].filter(Boolean);
+  const normalizedGrants = grantResult.data ?? [];
+  const serviceErrors = [credentialResult.error, providerResult.error, schedulerResult.error, grantResult.error, lifecycleResult.error].filter(Boolean);
 
   return {
     generatedAt: now.toISOString(),
@@ -60,6 +67,15 @@ export class DashboardService {
     lifecycle: lifecycleResult.error
       ? this.#unavailableLifecycleSummary()
       : lifecycleResult.data,
+    integrationHealth: credentialResult.error || providerResult.error || grantResult.error
+      ? this.#unavailableIntegrationHealthSummary()
+      : this.#integrationHealth({
+        credentials: normalizedCredentials,
+        providers: normalizedProviders,
+        grants: normalizedGrants,
+        history: lifecycleResult.data?.history ?? null,
+        rotation: lifecycleResult.data?.rotation ?? null
+      }),
     warnings: this.#warnings({
       credentials: normalizedCredentials,
       providers: normalizedProviders,
@@ -68,6 +84,81 @@ export class DashboardService {
     })
   };
 }
+
+ #integrationHealth({ credentials, providers, grants, history, rotation }) {
+  const providerByKey = new Map(providers.map((provider) => [provider.providerKey, provider]));
+  const grantsByCredential = this.#countBy(grants, (grant) => grant.credentialId);
+  const historyByCredential = new Map((history?.items ?? []).map((item) => [item.credentialId, item]));
+  const rotationCandidates = new Set((rotation?.candidates ?? []).map((item) => item.credentialId));
+  const items = credentials.map((credential) => {
+    const provider = providerByKey.get(credential.providerKey);
+    const capabilities = new Set(provider?.capabilities ?? []);
+    const grantCount = grantsByCredential[credential.credentialId] ?? 0;
+    const historyItem = historyByCredential.get(credential.credentialId);
+    const expiresAt = this.#expiresAt(credential);
+    const expired = this.#isExpired(credential);
+    const expiring = Boolean(expiresAt && !expired && expiresAt.getTime() <= Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const credentialStatus = this.#credentialHealth(credential);
+    const providerStatus = provider ? 'healthy' : 'error';
+    const grantStatus = grantCount > 0 ? 'healthy' : 'warning';
+    const oauthStatus = capabilities.has('oauth')
+      ? (credential.credentialMethodKey ? 'healthy' : 'warning')
+      : 'not_applicable';
+    const tokenStatus = capabilities.has('oauth')
+      ? (expired ? 'error' : expiring ? 'warning' : expiresAt ? 'healthy' : 'unknown')
+      : 'not_applicable';
+    const refreshFailed = Number(historyItem?.countsByResult?.failure ?? 0) > 0;
+    const refreshStatus = capabilities.has('refresh')
+      ? (refreshFailed ? 'error' : rotationCandidates.has(credential.credentialId) ? 'warning' : 'healthy')
+      : 'not_applicable';
+    const resolveStatus = !provider || credentialStatus === 'error'
+      ? 'error'
+      : credentialStatus !== 'healthy' || grantCount === 0
+        ? 'warning'
+        : 'healthy';
+    const statuses = [credentialStatus, providerStatus, grantStatus, oauthStatus, tokenStatus, refreshStatus, resolveStatus]
+      .filter((status) => status !== 'not_applicable');
+
+    return {
+      credentialId: credential.credentialId,
+      displayName: credential.metadata?.displayName ?? credential.credentialId,
+      providerKey: credential.providerKey,
+      status: this.#overallHealth(statuses),
+      credential: { status: credentialStatus, lifecycleState: credential.lifecycleState },
+      grant: { status: grantStatus, count: grantCount },
+      oauth: { status: oauthStatus },
+      token: { status: tokenStatus, expiresAt: expiresAt?.toISOString?.() ?? null },
+      refresh: { status: refreshStatus },
+      resolve: { status: resolveStatus }
+    };
+  });
+
+  const counts = this.#countBy(items, (item) => item.status);
+  return {
+    status: this.#overallHealth(items.map((item) => item.status)),
+    total: items.length,
+    counts: { healthy: counts.healthy ?? 0, warning: counts.warning ?? 0, error: counts.error ?? 0, unknown: counts.unknown ?? 0 },
+    items
+  };
+ }
+
+ #unavailableIntegrationHealthSummary() {
+  return { status: 'unknown', total: 0, counts: { healthy: 0, warning: 0, error: 0, unknown: 0 }, items: [] };
+ }
+
+ #credentialHealth(credential) {
+  if (credential.lifecycleState === 'active') return 'healthy';
+  if (['expired', 'revoked'].includes(credential.lifecycleState)) return 'error';
+  if (credential.lifecycleState === 'registered') return 'warning';
+  return 'unknown';
+ }
+
+ #overallHealth(statuses) {
+  if (statuses.includes('error')) return 'error';
+  if (statuses.includes('warning')) return 'warning';
+  if (statuses.includes('unknown')) return 'unknown';
+  return 'healthy';
+ }
 
 
 

@@ -786,6 +786,28 @@ export class CredentialManager {
     });
   }
 
+  async refreshIfDue(credentialOrId, options = {}) {
+    const credential = await this.#resolveCredential(credentialOrId);
+    const refreshBeforeDays = Number(
+      options.refreshBeforeDays ?? this.config?.get?.('REFRESH_BEFORE_DAYS', 14) ?? 14
+    );
+
+    if (!this.#shouldRefreshCredential(credential, refreshBeforeDays)) {
+      return credential;
+    }
+
+    const result = await this.refresh(credential);
+    if (!result.success) {
+      const error = new Error(
+        result.error?.message ?? `Provider refresh failed for ${credential.credentialId}`
+      );
+      error.code = result.error?.code ?? 'PROVIDER_REFRESH_FAILED';
+      throw error;
+    }
+
+    return result.data?.credential ?? result.data;
+  }
+
   async revoke(credentialOrId) {
     const credential = await this.#resolveCredential(credentialOrId);
     const result = await this.#executeProviderAction('revokeCredential', credential);

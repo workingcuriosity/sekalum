@@ -88,9 +88,68 @@ function renderDashboard(data) {
         errors: number(scheduler.failureCount)
       }));
 
+  renderIntegrationHealth(data.integrationHealth ?? {});
+
   renderWarnings(data.warnings ?? {});
   renderScheduler(scheduler);
   renderOAuthDetails(data.providerDetails ?? []);
+}
+
+function renderIntegrationHealth(health) {
+  const counts = health.counts ?? {};
+  for (const key of ['healthy', 'warning', 'error', 'unknown']) {
+    setText(`integration-health-${key}`, number(counts[key]));
+  }
+
+  const target = document.getElementById('integration-health-list');
+  target.replaceChildren();
+  const items = Array.isArray(health.items) ? health.items : [];
+  if (items.length === 0) {
+    target.textContent = t('dashboard.integrationHealthUnavailable');
+    return;
+  }
+
+  for (const integration of items) {
+    const card = document.createElement('article');
+    card.className = `integration-health-card status-${integration.status ?? 'unknown'}`;
+    const heading = document.createElement('div');
+    heading.className = 'integration-health-heading';
+    const title = document.createElement('h3');
+    title.textContent = integration.displayName ?? integration.credentialId ?? t('dashboard.unknown');
+    const overall = document.createElement('span');
+    overall.className = 'status-pill';
+    overall.textContent = healthLabel(integration.status);
+    heading.append(title, overall);
+    card.append(heading);
+
+    const provider = document.createElement('p');
+    provider.className = 'integration-health-provider';
+    provider.textContent = `${t('dashboard.provider')}: ${integration.providerKey ?? t('dashboard.unknown')}`;
+    card.append(provider);
+
+    const list = document.createElement('dl');
+    for (const key of ['credential', 'grant', 'oauth', 'token', 'refresh', 'resolve']) {
+      const entry = integration[key];
+      if (!entry) continue;
+      const row = document.createElement('div');
+      const term = document.createElement('dt');
+      term.textContent = t(`dashboard.integration.${key}`);
+      const value = document.createElement('dd');
+      value.className = `status-text status-${entry.status ?? 'unknown'}`;
+      value.textContent = healthLabel(entry.status);
+      if (key === 'grant' && Number.isFinite(Number(entry.count))) {
+        value.textContent += ` (${entry.count})`;
+      }
+      row.append(term, value);
+      list.append(row);
+    }
+    card.append(list);
+    target.append(card);
+  }
+}
+
+function healthLabel(value) {
+  return t(`dashboard.health.${value ?? 'unknown'}`);
 }
 
 function renderOAuthDetails(providers) {

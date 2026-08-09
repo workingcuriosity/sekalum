@@ -59,6 +59,25 @@ h1, h2, p { margin-top: 0; }
 .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; color: #5f6f89; font-weight: 700; margin-bottom: .35rem; }
 .badge { border-radius: 999px; padding: .45rem .7rem; background: #edf2ff; color: #214f9f; font-weight: 700; }
 .badge.down { background: #ffecec; color: #a32121; }
+
+.integration-health-list { display: grid; gap: 1rem; }
+.integration-health-card { border: 1px solid #d9e0ee; border-left: .35rem solid #5f6b7a; border-radius: .8rem; padding: 1rem; background: #fff; }
+.integration-health-card.status-healthy { border-left-color: #2f855a; }
+.integration-health-card.status-warning { border-left-color: #b7791f; }
+.integration-health-card.status-error { border-left-color: #c53030; }
+.integration-health-card.status-unknown { border-left-color: #718096; }
+.integration-health-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.integration-health-heading h3 { margin: 0; }
+.status-pill { border-radius: 999px; padding: .25rem .6rem; font-size: .85rem; font-weight: 700; background: #edf2f7; }
+.status-healthy .status-pill, .status-text.status-healthy { color: #276749; }
+.status-warning .status-pill, .status-text.status-warning { color: #975a16; }
+.status-error .status-pill, .status-text.status-error { color: #9b2c2c; }
+.status-unknown .status-pill, .status-text.status-unknown { color: #4a5568; }
+.integration-health-provider { color: #4a5568; margin: .35rem 0 .75rem; }
+.integration-health-card dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem 1rem; margin: 0; }
+.integration-health-card dl div { display: flex; justify-content: space-between; gap: .5rem; border-top: 1px solid #edf2f7; padding-top: .45rem; }
+.integration-health-card dt, .integration-health-card dd { margin: 0; }
+.integration-health-card dd { font-weight: 700; }
 .management-token-form { display: flex; align-items: center; gap: .45rem; max-width: 460px; }
 .management-token-form label { font-size: .8rem; font-weight: 700; white-space: nowrap; }
 .management-token-form input { min-width: 180px; padding: .5rem .65rem; }
@@ -579,10 +598,36 @@ button.small {
 .grant-filter-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .75rem; align-items: end; margin: 1rem 0; }
 .grant-filter-form label { display: grid; gap: .35rem; font-weight: 800; }
 .grant-summary { display: grid; gap: .35rem; margin: .75rem 0 1rem; color: #52627a; }
+.grant-preview { display: grid; gap: .45rem; margin: .9rem 0 1rem; padding: .9rem 1rem; border: 1px solid #bfdbfe; border-radius: 12px; background: #f8fbff; }
+.grant-preview h3, .grant-preview p { margin: 0; }
+.grant-preview > p { color: #52627a; }
+.grant-preview-summary { display: grid; gap: .25rem; }
+.grant-preview-summary p { font-size: .9rem; }
+.grant-preview-allowed strong { color: #17633a; }
+.grant-preview-excluded strong { color: #9a3412; }
+.grant-preview-note { border-top: 1px solid #dbe4f0; padding-top: .55rem; font-size: .88rem; }
 .grant-refresh-status { color: #64748b; font-size: .85rem; margin: .65rem 0 0; }
 .loading-state { min-height: 5rem; }
 button:disabled { cursor: wait; opacity: .65; }
-@media (max-width: 560px) { .token-entry { align-items: stretch; flex-direction: column; } }
+@media (max-width: 560px) {
+  .layout { padding: .75rem; gap: .75rem; }
+  .admin-login-page { padding: 1rem; }
+  .panel { min-height: 0; padding: 1rem; border-radius: 14px; }
+  .provider-onboarding-layout .panel { min-height: 0; }
+  .split-toolbar { align-items: stretch; flex-direction: column; }
+  .split-toolbar > * { width: 100%; }
+  .toolbar-actions, .actions { justify-content: stretch; }
+  .toolbar-actions > *, .actions > * { flex: 1 1 100%; justify-content: center; }
+  .table-card { -webkit-overflow-scrolling: touch; scrollbar-gutter: stable; }
+  .data-table { min-width: 620px; }
+  .data-table th, .data-table td { padding: .65rem; }
+  .dialog-card { max-width: 100%; padding: 1rem; overflow-wrap: anywhere; }
+  .token-entry { align-items: stretch; flex-direction: column; }
+  .management-token-entry { align-items: stretch; }
+  .management-token-entry > * { width: 100%; }
+  .summary-row { grid-template-columns: 1fr; gap: .35rem; }
+  .dashboard-cards, .management-grid { grid-template-columns: 1fr; }
+}
 
 .preview-panel {
   margin-top: 1.25rem;

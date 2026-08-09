@@ -285,6 +285,7 @@ export class ApplicationServiceProvider extends ServiceProvider {
       return new DashboardService({
         credentialManager: c.resolve(TOKENS.CREDENTIAL_MANAGER),
         providerManager: c.resolve(TOKENS.PROVIDER_MANAGER),
+        consumerGrantService: c.resolve(TOKENS.CONSUMER_GRANT_SERVICE),
         schedulerService: c.resolve(TOKENS.SCHEDULER),
         credentialPolicyService: c.resolve(TOKENS.CREDENTIAL_POLICY_SERVICE),
         credentialRotationService: c.resolve(TOKENS.CREDENTIAL_ROTATION_SERVICE),
@@ -328,6 +329,7 @@ export class ApplicationServiceProvider extends ServiceProvider {
         credentialStore: c.resolve(TOKENS.CREDENTIAL_STORE),
         consumerGrantService: c.resolve(TOKENS.CONSUMER_GRANT_SERVICE),
         providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY),
+        credentialManager: c.resolve(TOKENS.CREDENTIAL_MANAGER),
         runtimePublicProjectionService: c.resolve(TOKENS.RUNTIME_PUBLIC_PROJECTION_SERVICE),
         auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
       });

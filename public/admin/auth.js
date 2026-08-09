@@ -121,6 +121,7 @@ export const consumerApi = new ConsumerApiClient();
 
 export async function authenticateAdmin() {
   const existingToken = managementTokenStore.getToken();
+  let loginError = null;
   if (existingToken) {
     try {
       await adminApi.get('/api/v1/dashboard');
@@ -128,37 +129,49 @@ export async function authenticateAdmin() {
       return true;
     } catch (error) {
       managementTokenStore.clearToken();
-      renderAdminLogin(error);
+      loginError = error;
+      renderAdminLogin(loginError);
     }
   } else {
     renderAdminLogin();
   }
   return new Promise((resolve) => {
-    const page = document.getElementById('admin-login-page');
-    const form = page.querySelector('form');
-    const input = form.elements['management-token'];
-    const errorBox = page.querySelector('[data-login-error]');
-    const submit = form.querySelector('button[type="submit"]');
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      errorBox.textContent = '';
-      errorBox.classList.add('hidden');
-      try {
-        managementTokenStore.setToken(input.value);
-        submit.disabled = true;
-        await adminApi.get('/api/v1/dashboard');
-        page.remove();
-        setAdminAuthenticated(true);
-        resolve(true);
-      } catch (error) {
-        managementTokenStore.clearToken();
-        errorBox.textContent = error?.status === 403 ? t('admin.authentication.forbidden') : t('admin.authentication.invalid');
-        errorBox.classList.remove('hidden');
-        submit.disabled = false;
-        input.focus();
-      }
+    const bindLoginForm = () => {
+      const page = document.getElementById('admin-login-page');
+      if (!page) return;
+      const form = page.querySelector('form');
+      const input = form.elements['management-token'];
+      const errorBox = page.querySelector('[data-login-error]');
+      const submit = form.querySelector('button[type="submit"]');
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        errorBox.textContent = '';
+        errorBox.classList.add('hidden');
+        try {
+          managementTokenStore.setToken(input.value);
+          submit.disabled = true;
+          await adminApi.get('/api/v1/dashboard');
+          page.remove();
+          setAdminAuthenticated(true);
+          resolve(true);
+        } catch (error) {
+          managementTokenStore.clearToken();
+          loginError = error;
+          errorBox.textContent = error?.status === 403 ? t('admin.authentication.forbidden') : t('admin.authentication.invalid');
+          errorBox.classList.remove('hidden');
+          submit.disabled = false;
+          input.focus();
+        }
+      });
+      input.focus();
+    };
+
+    onLanguageChange(() => {
+      if (!document.getElementById('admin-login-page')) return;
+      renderAdminLogin(loginError);
+      bindLoginForm();
     });
-    input.focus();
+    bindLoginForm();
   });
 }
 
