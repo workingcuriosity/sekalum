@@ -1,4 +1,5 @@
-<img width="864" height="1821" alt="Codex-Bild 2  Aug  2026, 19_57_40" src="https://github.com/user-attachments/assets/66985fe9-6bae-4261-981e-c3280d666855" />
+<img width="1231" height="1541" alt="Bildschirmfoto 2026-08-10 um 09 08 05" src="https://github.com/user-attachments/assets/a23efb7d-9cf3-49eb-b27a-9344b1857e26" />
+
 
 
 # Credential HUB
