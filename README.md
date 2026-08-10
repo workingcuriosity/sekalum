@@ -6,6 +6,21 @@
 
 Credential HUB is an open-source platform for managing the lifecycle of digital credentials. It provides an Admin UI for creating and managing provider credentials, OAuth connections, API tokens, encrypted imports and exports, and lifecycle status.
 
+The current public release is [Credential HUB v1.0.0-rc.1](https://github.com/luiscyphre404-cmd/credential-hub/releases/tag/v1.0.0-rc.1), a release candidate for non-production evaluation ahead of the final 1.0.0 release.
+
+## Release Candidate 1
+
+RC1 extends the Public Beta foundation with:
+
+- OAuth refresh lifecycle support, including Resolve-triggered refresh.
+- Secret-free Integration Health visibility in the Admin dashboard.
+- Clearer bootstrap and Management Token onboarding boundaries.
+- Consumer Grant setup and diagnosis for least-privilege Consumer access.
+- UI polish and responsive improvements across the Admin and Consumer surfaces.
+- Updated public API, installation, security, provider and English reference documentation.
+
+The public documentation has been migrated to the current guide structure and is the canonical reference for RC1 setup and operation.
+
 ## Architecture at a glance
 
 - A Node.js and Express service serves the Admin UI, REST API, OAuth callbacks, and health endpoint.
@@ -14,19 +29,20 @@ Credential HUB is an open-source platform for managing the lifecycle of digital 
 
 The public [Developer Guide](docs/developer-guide/index.md) and [Configuration Reference](docs/configuration-reference/index.md) describe these boundaries in detail.
 
-## Current Beta-1 Limitations
+## Current RC1 Limitations
 
-Credential HUB Public Beta 1 focuses on the core credential platform and its documented HTTP interfaces. The following boundaries are intentional and part of the current Beta-1 scope:
+Credential HUB Release Candidate 1 focuses on the core credential platform and its documented HTTP interfaces. The following boundaries are intentional and remain part of the current 1.0.0 scope:
 
-- There are no native integrations for n8n or other workflow and automation platforms. Runtimes use the generic Consumer API; n8n is an HTTP client and does not receive a privileged integration path.
+- There are no native integrations for n8n or other workflow and automation platforms. Runtimes use the generic Consumer API; the repository provides public n8n examples as HTTP-client workflows.
 - The Consumer interface is a supported Advanced Integration Flow, but it is not a Consumer-first onboarding flow. An administrator must first prepare the Credential, a dedicated Consumer API token, and an explicit grant for the permitted Secret fields.
-- Public Beta 1 does not provide an interactive username/password login screen. Initial administrator bootstrap is performed through the local Management API.
+- Admin access uses a Management Token; Credential HUB does not provide username/password authentication. Initial administrator bootstrap is performed through the local Management API.
 - Custom providers are declarative only. They can define provider metadata, methods, bindings, and field schemas, but they do not add OAuth configuration, executable adapters, runtime operations, hooks, scripts, or provider secrets.
 - The standard Release-1.0 image does not provide a production FTP or SFTP transport adapter. It must not be represented as providing live FTP/SFTP validation, file transfer, TLS verification, or SSH host-key verification.
+- Configure an operator-controlled protection layer before exposing the Admin UI publicly.
 
-Known improvements are tracked separately from this README. No future capability is implied by the limitations listed here.
+No future capability is implied by the limitations listed here.
 
-## Public Beta quick start
+## RC1 quick start
 
 ### Prerequisites
 
@@ -64,7 +80,7 @@ After the container reports that it is listening, open:
 
 ### Initial access and first administrator
 
-This Public Beta does not provide an interactive username/password login screen. A new `storage/` directory starts in bootstrap mode so the first administrator can be created through the local Management API:
+Credential HUB does not provide username/password authentication. A new `storage/` directory starts in bootstrap mode so the first administrator can be created through the local Management API:
 
 ```bash
 curl --request POST http://localhost:3000/api/v1/management/users \
@@ -83,9 +99,9 @@ Create this administrator before exposing the service beyond the local machine. 
 
 For detailed provider, API-token, and credential-management guidance, see the [User Guide](docs/user-guide/index.md).
 
-### Open the Consumer interface (Beta-1 Advanced Integration Flow)
+### Open the Consumer interface (Advanced Integration Flow)
 
-After an administrator has activated a Credential, created a dedicated Consumer API token, and granted the required secret fields, open the Consumer interface at [http://localhost:3000/consumer/](http://localhost:3000/consumer/). This is the Beta-1-supported Advanced Integration Flow: a technically complete, separate runtime surface for Discovery and Resolve, not the primary Consumer-first onboarding path. It does not receive or use a Management Token. Enter the dedicated Consumer API token directly in the Consumer interface. Consumer-first onboarding improvements are future work.
+After an administrator has activated a Credential, created a dedicated Consumer API token, and granted the required secret fields, open the Consumer interface at [http://localhost:3000/consumer/](http://localhost:3000/consumer/). This is a supported Advanced Integration Flow: a separate runtime surface for Discovery and Resolve, not the primary Consumer-first onboarding path. It does not receive or use a Management Token. Enter the dedicated Consumer API token directly in the Consumer interface.
 
 ### Troubleshooting
 
@@ -107,7 +123,7 @@ Set the required runtime environment before starting `node src/index.js`; the [I
 
 ## Examples
 
-Official n8n example workflows are available in [examples/n8n/](examples/n8n/).
+Official n8n example workflows are available in the [examples/n8n/](examples/n8n/) directory and documented in the [n8n examples guide](examples/n8n/README.md).
 
 ## Documentation
 
@@ -115,6 +131,10 @@ Official n8n example workflows are available in [examples/n8n/](examples/n8n/).
 - [Configuration Reference](docs/configuration-reference/index.md)
 - [English Quick Start](docs/quick-start-guide/index.md)
 - [User Guide](docs/user-guide/index.md)
+- [API Reference](docs/api-reference/index.md)
+- [Security Guide](docs/security-guide/index.md)
+- [Developer Guide](docs/developer-guide/index.md)
+- [Provider Documentation](docs/providers/README.md)
 - [Handbook](docs/index.md)
 
 ## Contributing and security
