@@ -42,7 +42,7 @@ Clone the repository, create your local environment file, and start the applicat
 
 ```bash
 git clone https://github.com/workingcuriosity/sekalum.git
-cd sekalum-development
+cd sekalum
 cp .env.example .env
 docker compose up --build
 ```
