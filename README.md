@@ -32,6 +32,8 @@ Sekalum Public Beta 1 focuses on the core credential platform and its documented
 
 Known improvements are tracked separately from this README. No future capability is implied by the limitations listed here.
 
+![Sekalum credential lifecycle and runtime access overview](docs/assets/Sekalum_Branded_Info_Page_EN.png)
+
 ## Public Beta quick start
 
 ### Prerequisites
