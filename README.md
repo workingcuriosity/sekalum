@@ -1,4 +1,8 @@
+![Sekalum logo](docs/assets/sekalum-logo-transparent.png)
+
 # Sekalum
+
+*Maintained by Working Curiosity.*
 
 ![Sekalum Beta-1 overview](https://github.com/user-attachments/assets/66985fe9-6bae-4261-981e-c3280d666855)
 
