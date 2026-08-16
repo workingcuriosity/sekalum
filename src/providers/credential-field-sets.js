@@ -82,7 +82,7 @@ export function oauthCredentialFields({
     {
       key: 'accessToken',
       label: 'Access Token',
-      description: 'OAuth access token managed by Credential HUB.',
+      description: 'OAuth access token managed by Sekalum.',
       type: 'password',
       required: false,
       secret: true,
@@ -97,7 +97,7 @@ export function oauthCredentialFields({
     {
       key: 'refreshToken',
       label: 'Refresh Token',
-      description: 'OAuth refresh token managed by Credential HUB.',
+      description: 'OAuth refresh token managed by Sekalum.',
       type: 'password',
       required: false,
       secret: true,

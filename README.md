@@ -1,25 +1,10 @@
-<img width="1231" height="1541" alt="Bildschirmfoto 2026-08-10 um 09 08 05" src="https://github.com/user-attachments/assets/a23efb7d-9cf3-49eb-b27a-9344b1857e26" />
+# Sekalum
 
+![Sekalum Beta-1 overview](https://github.com/user-attachments/assets/66985fe9-6bae-4261-981e-c3280d666855)
 
+*Promotional overview of the Sekalum Public Beta. The documented feature scope and current limitations below are authoritative.*
 
-# Credential HUB
-
-Credential HUB is an open-source platform for managing the lifecycle of digital credentials. It provides an Admin UI for creating and managing provider credentials, OAuth connections, API tokens, encrypted imports and exports, and lifecycle status.
-
-The current public release is [Credential HUB v1.0.0-rc.1](https://github.com/luiscyphre404-cmd/credential-hub/releases/tag/v1.0.0-rc.1), a release candidate for non-production evaluation ahead of the final 1.0.0 release.
-
-## Release Candidate 1
-
-RC1 extends the Public Beta foundation with:
-
-- OAuth refresh lifecycle support, including Resolve-triggered refresh.
-- Secret-free Integration Health visibility in the Admin dashboard.
-- Clearer bootstrap and Management Token onboarding boundaries.
-- Consumer Grant setup and diagnosis for least-privilege Consumer access.
-- UI polish and responsive improvements across the Admin and Consumer surfaces.
-- Updated public API, installation, security, provider and English reference documentation.
-
-The public documentation has been migrated to the current guide structure and is the canonical reference for RC1 setup and operation.
+Sekalum is an open-source platform for managing the lifecycle of digital credentials. It provides an Admin UI for creating and managing provider credentials, OAuth connections, API tokens, encrypted imports and exports, and lifecycle status.
 
 ## Architecture at a glance
 
@@ -27,22 +12,23 @@ The public documentation has been migrated to the current guide structure and is
 - Provider integrations are registered through a shared provider boundary; OAuth application settings are normally entered in the Wizard and encrypted by the backend.
 - Credentials and operational records use encrypted JSON storage in the persisted `storage/` directory.
 
-The public [Developer Guide](docs/developer-guide/index.md) and [Configuration Reference](docs/configuration-reference/index.md) describe these boundaries in detail.
+The Architecture Guide and Storage Guide describe these boundaries in detail.
 
-## Current RC1 Limitations
+## Current Beta-1 Limitations
 
-Credential HUB Release Candidate 1 focuses on the core credential platform and its documented HTTP interfaces. The following boundaries are intentional and remain part of the current 1.0.0 scope:
+Sekalum Public Beta 1 focuses on the core credential platform and its documented HTTP interfaces. The following boundaries are intentional and part of the current Beta-1 scope:
 
-- There are no native integrations for n8n or other workflow and automation platforms. Runtimes use the generic Consumer API; the repository provides public n8n examples as HTTP-client workflows.
+- The Sekalum n8n community node is an optional Consumer API integration. It
+  uses the same public Consumer API boundary as other runtimes and does not
+  receive a privileged integration path.
 - The Consumer interface is a supported Advanced Integration Flow, but it is not a Consumer-first onboarding flow. An administrator must first prepare the Credential, a dedicated Consumer API token, and an explicit grant for the permitted Secret fields.
-- Admin access uses a Management Token; Credential HUB does not provide username/password authentication. Initial administrator bootstrap is performed through the local Management API.
+- Public Beta 1 does not provide an interactive username/password login screen. Initial administrator bootstrap is performed through the local Management API.
 - Custom providers are declarative only. They can define provider metadata, methods, bindings, and field schemas, but they do not add OAuth configuration, executable adapters, runtime operations, hooks, scripts, or provider secrets.
 - The standard Release-1.0 image does not provide a production FTP or SFTP transport adapter. It must not be represented as providing live FTP/SFTP validation, file transfer, TLS verification, or SSH host-key verification.
-- Configure an operator-controlled protection layer before exposing the Admin UI publicly.
 
-No future capability is implied by the limitations listed here.
+Known improvements are tracked separately from this README. No future capability is implied by the limitations listed here.
 
-## RC1 quick start
+## Public Beta quick start
 
 ### Prerequisites
 
@@ -55,8 +41,8 @@ No future capability is implied by the limitations listed here.
 Clone the repository, create your local environment file, and start the application:
 
 ```bash
-git clone https://github.com/luiscyphre404-cmd/credential-hub.git
-cd credential-hub
+git clone https://github.com/workingcuriosity/sekalum.git
+cd sekalum-development
 cp .env.example .env
 docker compose up --build
 ```
@@ -78,9 +64,12 @@ After the container reports that it is listening, open:
 - Consumer interface: [http://localhost:3000/consumer/](http://localhost:3000/consumer/)
 - Health endpoint: [http://localhost:3000/health](http://localhost:3000/health)
 
-### Initial access and first administrator
+### Bootstrap and First Administrator
 
-Credential HUB does not provide username/password authentication. A new `storage/` directory starts in bootstrap mode so the first administrator can be created through the local Management API:
+This Public Beta does not provide an interactive username/password login
+screen. When the persisted user collection is empty, the application is in
+**Bootstrap** mode. Bootstrap permits creation of exactly the **First
+Administrator** through the local Management API:
 
 ```bash
 curl --request POST http://localhost:3000/api/v1/management/users \
@@ -88,7 +77,21 @@ curl --request POST http://localhost:3000/api/v1/management/users \
   --data '{"userId":"admin","displayName":"First Administrator","roleKey":"admin"}'
 ```
 
-Create this administrator before exposing the service beyond the local machine. Once users exist, API access requires an API token or the documented `x-credential-hub-user` compatibility header and role permissions. See the [API Reference](docs/api-reference/index.md#authorization-and-errors) for the authorization contract.
+Create the **First Administrator** before exposing the service beyond the
+local machine. Bootstrap ends as soon as that administrator is persisted;
+subsequent management requests are no longer unauthenticated. The Admin UI
+then requires an authorized **Management Token**, sent as
+`Authorization: Bearer <management-token>`. The Admin UI opens with a
+Management Token gate; the Dashboard and Admin navigation become available
+only after the token is validated.
+
+The header `x-credential-hub-user` is not a production authentication method.
+It exists only for the repository's `NODE_ENV=test` compatibility tests and
+must not be used for normal operation. See the [API Reference](docs/api-reference/index.md#authorization-and-errors) for the authorization contract.
+
+For the complete first-installation sequence from health check through the
+first Consumer Resolve, see the [Installation Guide — Complete First
+Installation Workflow](docs/installation-guide/index.md#complete-first-installation-workflow).
 
 ### Create a first credential
 
@@ -99,9 +102,9 @@ Create this administrator before exposing the service beyond the local machine. 
 
 For detailed provider, API-token, and credential-management guidance, see the [User Guide](docs/user-guide/index.md).
 
-### Open the Consumer interface (Advanced Integration Flow)
+### Open the Consumer interface (Beta-1 Advanced Integration Flow)
 
-After an administrator has activated a Credential, created a dedicated Consumer API token, and granted the required secret fields, open the Consumer interface at [http://localhost:3000/consumer/](http://localhost:3000/consumer/). This is a supported Advanced Integration Flow: a separate runtime surface for Discovery and Resolve, not the primary Consumer-first onboarding path. It does not receive or use a Management Token. Enter the dedicated Consumer API token directly in the Consumer interface.
+After an administrator has activated a Credential, created a dedicated Consumer API token, and granted the required secret fields, open the Consumer interface at [http://localhost:3000/consumer/](http://localhost:3000/consumer/). This is the Beta-1-supported Advanced Integration Flow: a technically complete, separate runtime surface for Discovery and Resolve, not the primary Consumer-first onboarding path. It does not receive or use a Management Token. Enter the dedicated Consumer API token directly in the Consumer interface. Consumer-first onboarding improvements remain future work under Issue #141.
 
 ### Troubleshooting
 
@@ -117,13 +120,21 @@ To run outside Docker, install dependencies from the lockfile and execute the ch
 ```bash
 npm ci
 npm run check
+npm test
 ```
 
 Set the required runtime environment before starting `node src/index.js`; the [Installation Guide](docs/installation-guide/index.md) describes both local and Compose operation.
 
+## Sekalum for n8n
+
+Sekalum for n8n is maintained as a separate integration project. This
+repository retains the Consumer API boundary and the historical Issue #131
+handover and evidence record; the standalone node source and its workflow
+deliverables are maintained outside this product repository.
+
 ## Examples
 
-Official n8n example workflows are available in the [examples/n8n/](examples/n8n/) directory and documented in the [n8n examples guide](examples/n8n/README.md).
+Official platform-level n8n templates remain available in [examples/n8n/](examples/n8n/).
 
 ## Documentation
 
@@ -131,11 +142,11 @@ Official n8n example workflows are available in the [examples/n8n/](examples/n8n
 - [Configuration Reference](docs/configuration-reference/index.md)
 - [English Quick Start](docs/quick-start-guide/index.md)
 - [User Guide](docs/user-guide/index.md)
-- [API Reference](docs/api-reference/index.md)
 - [Security Guide](docs/security-guide/index.md)
-- [Developer Guide](docs/developer-guide/index.md)
-- [Provider Documentation](docs/providers/README.md)
 - [Handbook](docs/index.md)
+- Architecture guide
+- ADR index
+- [Changelog index](docs/changelog/README.md)
 
 ## Contributing and security
 
@@ -147,8 +158,8 @@ Report security vulnerabilities only as described in [SECURITY.md](SECURITY.md),
 
 ## License and third-party software
 
-Credential HUB is licensed under the [GNU Affero General Public License v3.0 only](LICENSE). See [NOTICE](NOTICE).
+Sekalum is licensed under the [GNU Affero General Public License v3.0 only](LICENSE). See [NOTICE](NOTICE), [Legal information](docs/project/LEGAL.md), and [Third-Party Software](docs/project/THIRD_PARTY_SOFTWARE.md).
 
 ## Community & support
 
-Join the official [Credential HUB Discord community](https://discord.gg/exTu3Dy2UW) for technical support, discussion, and feature ideas. Submit reproducible bugs through [GitHub Issues](https://github.com/luiscyphre404-cmd/credential-hub/issues).
+Join the official [Sekalum Discord community](https://discord.gg/exTu3Dy2UW) for technical support, discussion, and feature ideas. Submit reproducible bugs through [GitHub Issues](https://github.com/workingcuriosity/sekalum/issues).

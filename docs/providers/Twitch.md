@@ -10,7 +10,7 @@ twitch
 
 ## Business-Ziel
 
-Der Credential Hub verwaltet Twitch OAuth2 Credentials zentral, damit Stream-Automatisierungen, Chat-Bridge, n8n-Workflows und spätere Tools sicher auf die Twitch Helix API zugreifen können.
+Der Sekalum verwaltet Twitch OAuth2 Credentials zentral, damit Stream-Automatisierungen, Chat-Bridge, n8n-Workflows und spätere Tools sicher auf die Twitch Helix API zugreifen können.
 
 ## Konfiguration
 
@@ -22,7 +22,7 @@ TWITCH_CLIENT_SECRET=
 TWITCH_REDIRECT_URI=
 ```
 
-Die Redirect URI muss in der Twitch Developer Console exakt so hinterlegt sein, wie sie im Credential Hub konfiguriert ist.
+Die Redirect URI muss in der Twitch Developer Console exakt so hinterlegt sein, wie sie im Sekalum konfiguriert ist.
 
 ## OAuth-Endpunkte
 

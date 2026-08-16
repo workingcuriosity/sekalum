@@ -1,0 +1,18 @@
+services:
+  credential-hub:
+    image: credential-hub:1.0.0-beta.1-dev
+    build:
+      context: .
+      args:
+        APP_VERSION: 1.0.0-beta.1
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./src:/app/src
+      - ./storage:/app/storage

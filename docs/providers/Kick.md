@@ -10,7 +10,7 @@ kick
 
 ## Business-Ziel
 
-Der Credential Hub verwaltet Kick OAuth Credentials zentral, damit Stream-Automatisierungen, Chat-Bridge, n8n-Workflows und spätere Tools sicher auf die Kick Public API zugreifen können.
+Der Sekalum verwaltet Kick OAuth Credentials zentral, damit Stream-Automatisierungen, Chat-Bridge, n8n-Workflows und spätere Tools sicher auf die Kick Public API zugreifen können.
 
 ## Konfiguration
 
@@ -22,7 +22,7 @@ KICK_CLIENT_SECRET=
 KICK_REDIRECT_URI=
 ```
 
-Die Redirect URI muss im Kick Developer Portal exakt so hinterlegt sein, wie sie im Credential Hub konfiguriert ist.
+Die Redirect URI muss im Kick Developer Portal exakt so hinterlegt sein, wie sie im Sekalum konfiguriert ist.
 
 ## OAuth-Endpunkte
 

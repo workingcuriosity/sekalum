@@ -1,8 +1,34 @@
+---
+title: Provider Documentation
+version: 1.1.0
+status: Active
+category: Providers
+canonical: true
+maintainer: cyphre-san productions
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+copyright: "© 2026 cyphre-san productions"
+target_audience:
+  - Developers
+  - Integrators
+  - Administrators
+dependent_documents:
+  - docs/configuration-reference/index.md
+  - docs/api-reference/index.md
+change_history:
+  - version: 1.1.0
+    date: 2026-07-13
+    change: Adds the Release-1.0 connection-test capability matrix and explicit transport limits.
+  - version: 1.0.0
+    date: 2026-07-11
+    change: CP-006 verifies registered providers, capabilities and the X documentation against service providers and tests.
+---
+
 # Provider Documentation
 
 ## Purpose
 
-This directory contains the canonical provider documentation for the Credential Hub.
+This directory contains the canonical provider documentation for the Sekalum.
 
 Each provider has exactly one canonical documentation file.
 
@@ -49,7 +75,7 @@ Each provider has exactly one canonical documentation file.
 | X | OAuth2 | OAuth, refresh, health check | No draft test; authorize through OAuth | X.md |
 | YouTube | Not registered | None | Not available | YouTube.md (future Google capability) |
 
-`validation` enables the Credential HUB test control; it does not by itself promise that every deployment contains a live provider transport. The active Release-1.0 standard image includes the OpenAI HTTP path. FTP and SFTP retain their provider, target-policy, timeout, and cleanup contracts but require a separately implemented and reviewed transport adapter before a production connection can be promised. The security and request/response boundaries are defined in the [Security Guide](../security-guide/index.md) and [API Reference](../api-reference/index.md#draft-connection-test).
+`validation` enables the Sekalum test control; it does not by itself promise that every deployment contains a live provider transport. The active Release-1.0 standard image includes the OpenAI HTTP path. FTP and SFTP retain their provider, target-policy, timeout, and cleanup contracts but require a separately implemented and reviewed transport adapter before a production connection can be promised. The security and request/response boundaries are defined in the [Security Guide](../security-guide/index.md) and [API Reference](../api-reference/index.md#draft-connection-test).
 
 ---
 
@@ -82,3 +108,4 @@ Each provider document describes:
 
 - [Configuration Reference](../configuration-reference/index.md)
 - [API Reference](../api-reference/index.md)
+- Documentation Governance

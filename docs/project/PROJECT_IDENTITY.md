@@ -1,0 +1,57 @@
+---
+title: Sekalum Project Identity
+version: 1.1.0
+status: Active
+category: Project
+canonical: true
+maintainer: Working Curiosity
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+copyright: "© 2026 Working Curiosity"
+target_audience:
+  - Users
+  - Contributors
+  - Auditors
+dependent_documents:
+  - LICENSE
+  - NOTICE
+  - DISCLAIMER.md
+  - docs/project/LEGAL.md
+change_history:
+  - version: 1.1.0
+    date: 2026-08-16
+    change: Establishes Sekalum as the current product and root package identity while preserving legacy runtime, persistence and API identifiers for compatibility.
+  - version: 1.0.0
+    date: 2026-07-16
+    change: Adds required canonical metadata.
+---
+
+# Sekalum – Project Identity
+
+## Project
+Sekalum
+
+## Maintainer
+Working Curiosity
+
+## Contact
+luiscyphre404@gmail.com
+
+## Repository
+https://github.com/workingcuriosity/sekalum
+
+## License
+GNU Affero General Public License v3.0 only (AGPL-3.0-only)
+
+This document is the canonical source for project identity information.
+
+## Technical identity compatibility
+
+The current product and root package identity is `Sekalum` / `sekalum`. The
+following identifiers remain legacy-compatible and are not renamed by this
+migration: the `/credential-hub` base-path form, `x-credential-hub-user`
+test-only header, `CREDENTIAL_HUB_*` variables used by historical evidence,
+credential transfer and encrypted-storage format identifiers, OAuth result
+event types, and existing persistence keys. These identifiers are external,
+persisted or historical contracts; changing them requires a separately
+approved migration and compatibility plan.

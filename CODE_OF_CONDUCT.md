@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Credential HUB aims to provide a respectful, professional and welcoming community.
+Sekalum aims to provide a respectful, professional and welcoming community.
 
 Expected behaviour:
 

@@ -12,7 +12,7 @@ API Key Provider.
 
 Der OpenAI Provider verwaltet API-Key-basierte Credentials für OpenAI- und ChatGPT-API-Zugriffe.
 
-Der Provider stellt Validierungs- und Health-Check-Funktionen bereit und integriert sich vollständig in den Credential Hub Credential Lifecycle.
+Der Provider stellt Validierungs- und Health-Check-Funktionen bereit und integriert sich vollständig in den Sekalum Credential Lifecycle.
 
 ## Authentifizierungsmodell
 

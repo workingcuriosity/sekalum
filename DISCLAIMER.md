@@ -1,6 +1,6 @@
 # DISCLAIMER
 
-Credential HUB is provided **"as is"** without any warranty.
+Sekalum is provided **"as is"** without any warranty.
 
 ## Use at your own risk
 

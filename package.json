@@ -1,24 +1,49 @@
 {
-  "name": "credential-hub",
+  "name": "sekalum",
   "version": "1.0.0-beta.1",
-  "description": "Open Source credential lifecycle management platform.",
+  "description": "Sekalum open-source credential lifecycle management platform.",
   "private": true,
   "license": "AGPL-3.0-only",
-  "author": "cyphre-san productions",
-  "homepage": "https://github.com/luiscyphre404-cmd/credential-hub#readme",
+  "author": "Working Curiosity",
+  "homepage": "https://github.com/workingcuriosity/sekalum#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/luiscyphre404-cmd/credential-hub.git"
+    "url": "https://github.com/workingcuriosity/sekalum.git"
   },
   "bugs": {
-    "url": "https://github.com/luiscyphre404-cmd/credential-hub/issues"
+    "url": "https://github.com/workingcuriosity/sekalum/issues"
   },
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
     "oauth": "node src/cli/run-oauth.js",
     "refresh": "node src/cli/run-refresh.js",
-    "check": "node --check src/index.js && node --check src/bootstrap.js && node --check src/cli/run-oauth.js && node --check src/cli/run-refresh.js"
+    "check": "node --check src/index.js && node --check src/bootstrap.js && node --check src/cli/run-oauth.js && node --check src/cli/run-refresh.js",
+    "test": "NODE_ENV=test npm run check && NODE_ENV=test node --test tests/unit/*.test.js tests/component/*.test.js tests/architecture/*.test.js tests/integration/*.test.js",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:architecture": "node --test tests/architecture/*.test.js",
+    "test:component": "node --test tests/component/*.test.js",
+    "test:integration": "node --test tests/integration/*.test.js",
+    "ui:model:validate": "node scripts/ui-model-validator.mjs",
+    "ui:model:generate": "node scripts/ui-model-generator.mjs",
+    "ui:model:check": "node scripts/ui-model-validator.mjs --check-generated",
+    "ui:selectors:check": "node scripts/ui-selector-check.mjs",
+    "ui:test": "playwright test",
+    "ui:test:smoke": "playwright test tests/ui/canonical-ui.smoke.spec.mjs",
+    "ui:test:live": "node scripts/ui-live-evidence.mjs",
+    "ui:test:seed": "node scripts/ui-test-fixtures.mjs seed",
+    "ui:test:seed:empty": "node scripts/ui-test-fixtures.mjs seed-empty",
+    "ui:test:seed:grant": "node scripts/ui-test-fixtures.mjs seed-grant",
+    "ui:test:seed:token": "node scripts/ui-test-fixtures.mjs seed-token",
+    "ui:test:reset": "node scripts/ui-test-fixtures.mjs reset",
+    "ui:test:cleanup": "node scripts/ui-test-fixtures.mjs cleanup",
+    "ui:verification:report": "node scripts/ui-executable-report.mjs",
+    "ui:verification:check": "node scripts/ui-verification-runner.mjs",
+    "ui:quality:check": "npm run ui:model:check && npm run ui:selectors:check && npm run ui:verification:check",
+    "docs:audit": "node scripts/documentation-quality-audit.mjs",
+    "docs:check": "node scripts/documentation-quality-audit.mjs --strict",
+    "docs:check:public": "node scripts/documentation-quality-audit.mjs --strict --public",
+    "test:public": "node scripts/public-test-runner.mjs"
   },
   "dependencies": {
     "ajv": "^8.20.0",

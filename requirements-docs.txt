@@ -1,0 +1,5 @@
+mkdocs>=1.6,<2
+mkdocs-material>=9.5,<10
+mkdocs-mermaid2-plugin>=1.1,<2
+mkdocs-with-pdf>=0.9,<1
+mike>=2.1,<3

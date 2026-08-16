@@ -1,3 +1,36 @@
+---
+title: Configuration Reference
+version: 1.0.3
+status: Active
+category: Configuration
+canonical: true
+maintainer: cyphre-san productions
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+copyright: "© 2026 cyphre-san productions"
+target_audience:
+  - Administratoren
+  - Betreiber
+  - Entwickler
+dependent_documents:
+  - docs/project/Storage.md
+  - docs/api-reference/index.md
+  - docs/providers/README.md
+change_history:
+  - version: 1.0.3
+    date: 2026-07-13
+    change: Classifies OAuth redirect URIs as system-managed values derived from request origin, BASE_PATH, and provider metadata.
+  - version: 1.0.2
+    date: 2026-07-12
+    change: Documents Wizard-managed encrypted OAuth application configuration and environment fallback precedence.
+  - version: 1.0.1
+    date: 2026-07-12
+    change: Documents the BASE_PATH contract for reverse-proxy deployments.
+  - version: 1.0.0
+    date: 2026-07-11
+    change: CP-005 verifiziert die aktive globale Konfiguration gegen Config, Container, OAuth-Services und Persistenztests.
+---
+
 # Configuration Reference
 
 ## Scope
@@ -28,7 +61,7 @@ TOKEN_ENCRYPTION_KEY=YOUR_32_CHARACTER_ENCRYPTION_KEY
 # TOKEN_ENCRYPTION_KEY_VERSION: numeric version for new writes
 ```
 
-`TOKEN_ENCRYPTION_KEYS` must be a non-empty JSON object with numeric versions. `TOKEN_ENCRYPTION_KEY_VERSION` selects the key used for new writes; old versions must remain available while payloads still reference them.
+`TOKEN_ENCRYPTION_KEYS` must be a non-empty JSON object with numeric versions. `TOKEN_ENCRYPTION_KEY_VERSION` selects the key used for new writes; old versions must remain available while payloads still reference them. The Storage Developer Guide defines the persistence and rotation behavior.
 
 ## OAuth provider application configuration
 
@@ -36,7 +69,7 @@ Release 1.0 uses **Wizard-managed provider application configuration** as the no
 
 Provider application secrets are never returned by the Provider API, OAuth-start response, callback result page, or browser message. The browser stores neither client IDs nor client secrets in local storage. The encrypted record is referenced by an internal configuration ID so refresh operations can reuse the same application configuration.
 
-The record becomes durable only as part of a successfully imported OAuth credential. Credential HUB removes it after OAuth-start failure, provider cancellation, callback or token-exchange failure, and credential-import failure so failed attempts do not leave unreferenced application secrets behind.
+The record becomes durable only as part of a successfully imported OAuth credential. Sekalum removes it after OAuth-start failure, provider cancellation, callback or token-exchange failure, and credential-import failure so failed attempts do not leave unreferenced application secrets behind.
 
 Environment variables remain a compatibility fallback for existing deployments and the legacy `GET /oauth/:provider/login` entry point. Resolution order is:
 
@@ -125,8 +158,8 @@ The Admin UI language is not server configuration. It is resolved in the browser
 
 Administrators can instead create a new declarative provider through **Custom providers** in the Admin UI. This persists the validated definition in the application storage area and hydrates it on the next start; no change to `CUSTOM_PROVIDER_DEFINITIONS`, an environment file, or a project file is required. UI-created providers accept identity, category, display metadata, credential methods, credential fields, and method bindings only. Provider-configuration fields, OAuth configuration, runtime operations, executable code, hooks, scripts, and definition secrets are rejected. Invalid UI definitions are rejected without registration.
 
-Custom provider definitions cannot contain executable code, modules, OAuth endpoints, or runtime operations. Supported legacy configuration authentication types are `api-key`, `username-password`, `connection`, and `manual`. Invalid legacy configuration definitions fail registration during startup. See the Provider Overview for the public field and capability contract.
+Custom provider definitions cannot contain executable code, modules, OAuth endpoints, or runtime operations. Supported legacy configuration authentication types are `api-key`, `username-password`, `connection`, and `manual`. Invalid legacy configuration definitions fail registration during startup. See the Provider Metadata Guideline for the complete contract.
 
 ## Verification boundary
 
-This reference does not define provider credential payloads, installation, operations, or private deployment values.
+CP-005 verified this document against `src/config/config.js`, `src/container/application-service-provider.js`, `src/oauth/`, `src/api/`, `src/scheduler/scheduler-service.js`, `src/storage/encrypted-json-store.js`, and the encryption and OAuth tests. It does not define provider credential payloads, installation, operations, or private deployment values.

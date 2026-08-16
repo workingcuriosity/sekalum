@@ -1,0 +1,32 @@
+name: Credential Hub CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef"
+      THREADS_CLIENT_ID: "test-threads-client-id"
+      THREADS_REDIRECT_URI: "http://localhost:3000/oauth/threads/callback"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+      - run: npm run ui:model:check
+      - run: npm run ui:selectors:check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run ui:verification:check
+      - run: npm test --if-present
+      - run: npm run build --if-present

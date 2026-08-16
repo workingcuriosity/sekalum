@@ -22,7 +22,7 @@ FACEBOOK_CLIENT_SECRET=
 FACEBOOK_REDIRECT_URI=
 ```
 
-Die Redirect URI muss in der Meta/Facebook Developer App exakt so hinterlegt sein, wie sie im Credential Hub konfiguriert ist.
+Die Redirect URI muss in der Meta/Facebook Developer App exakt so hinterlegt sein, wie sie im Sekalum konfiguriert ist.
 
 ## OAuth-Endpunkte
 

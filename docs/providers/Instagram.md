@@ -6,7 +6,7 @@ MS9 F6.2 ergänzt Instagram als eigenen fachlichen Provider innerhalb der Meta-F
 
 ## Business-Ziel
 
-Der Credential Hub verwaltet Instagram-Credentials zentral, damit spätere Instagram-Automatisierungen auf Basis der Instagram API sicher mit Access-/Refresh-Lifecycle angebunden werden können.
+Der Sekalum verwaltet Instagram-Credentials zentral, damit spätere Instagram-Automatisierungen auf Basis der Instagram API sicher mit Access-/Refresh-Lifecycle angebunden werden können.
 
 ## Konfiguration
 

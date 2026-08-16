@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://credential-hub.invalid/schemas/canonical-ui-interaction-model.schema.json",
+  "title": "Canonical UI Interaction Model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "model", "source_of_truth", "ownership", "scope", "traceability", "change_control", "taxonomy", "nodes", "interactions", "interaction_execution", "capabilities", "feedback", "route_matrix", "api_only_paths", "terminal_paths", "audit"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "model": {
+      "$ref": "#/$defs/model"
+    },
+    "source_of_truth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "path", "schema", "normative", "generated_views"],
+      "properties": {
+        "format": {"const": "YAML"},
+        "path": {"const": "docs/ui/canonical-ui-interaction-model.yaml"},
+        "schema": {"const": "docs/ui/canonical-ui-interaction-model.schema.json"},
+        "normative": {"const": true},
+        "generated_views": {"type": "array", "minItems": 2, "items": {"type": "string"}}
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "maintainer", "architecture_review", "documentation_maintainer", "validation_owner", "security_review"],
+      "properties": {
+        "owner": {"type": "string", "minLength": 1},
+        "maintainer": {"type": "string", "minLength": 1},
+        "architecture_review": {"type": "string", "minLength": 1},
+        "documentation_maintainer": {"type": "string", "minLength": 1},
+        "validation_owner": {"type": "string", "minLength": 1},
+        "security_review": {"type": "string", "minLength": 1}
+      }
+    },
+    "scope": {"$ref": "#/$defs/includedExcluded"},
+    "traceability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_fields", "direction"],
+      "properties": {
+        "required_fields": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "direction": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "change_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_triggers", "definition_of_done"],
+      "properties": {
+        "review_triggers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "definition_of_done": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "repository_head", "counts", "findings", "non_exposed_capabilities", "phase_3_recommendations"],
+      "properties": {
+        "scope": {"type": "string", "minLength": 1},
+        "repository_head": {"type": "string", "minLength": 1},
+        "counts": {"type": "object", "additionalProperties": false, "required": ["areas", "pages", "panels", "tabs", "dialogs", "modals", "forms", "buttons", "links", "tables", "messages", "interactions"], "properties": {
+          "areas": {"type": "integer", "minimum": 0}, "pages": {"type": "integer", "minimum": 0}, "panels": {"type": "integer", "minimum": 0}, "tabs": {"type": "integer", "minimum": 0}, "dialogs": {"type": "integer", "minimum": 0}, "modals": {"type": "integer", "minimum": 0}, "forms": {"type": "integer", "minimum": 0}, "buttons": {"type": "integer", "minimum": 0}, "links": {"type": "integer", "minimum": 0}, "tables": {"type": "integer", "minimum": 0}, "messages": {"type": "integer", "minimum": 0}, "interactions": {"type": "integer", "minimum": 0}
+        }},
+        "findings": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "category", "status", "evidence", "recommendation"], "properties": {"id": {"type": "string"}, "category": {"type": "string"}, "severity": {"type": "string"}, "status": {"type": "string"}, "observed_behavior": {"type": "string"}, "expected_behavior": {"type": "string"}, "evidence": {"type": "array", "items": {"type": "string"}}, "affected_ui_nodes": {"type": "array", "items": {"type": "string"}}, "affected_interactions": {"type": "array", "items": {"type": "string"}}, "affected_capabilities": {"type": "array", "items": {"type": "string"}}, "user_impact": {"type": "string"}, "security_impact": {"type": "string"}, "recommendation": {"type": "string"}, "required_follow_up": {"type": "string"}, "verification_method": {"type": "string"}}}},
+        "non_exposed_capabilities": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["capability_id", "classification", "reason"], "properties": {"capability_id": {"type": "string"}, "classification": {"type": "string"}, "reason": {"type": "string"}}}},
+        "phase_3_recommendations": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "route_matrix": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["route", "node_id", "role", "authentication", "navigation_entry", "terminal"],
+        "properties": {
+          "route": {"type": "string", "minLength": 1},
+          "node_id": {"type": "string", "pattern": "^UI-[A-Z0-9-]+$"},
+          "role": {"type": "string", "minLength": 1},
+          "authentication": {"type": "string", "minLength": 1},
+          "navigation_entry": {"type": "string", "minLength": 1},
+          "terminal": {"type": "boolean"}
+        }
+      }
+    },
+    "api_only_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["route", "capability_id", "owner", "reason"],
+        "properties": {
+          "route": {"type": "string", "minLength": 1},
+          "capability_id": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"},
+          "owner": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "terminal_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node_id", "condition", "result"],
+        "properties": {
+          "node_id": {"type": "string", "pattern": "^UI-[A-Z0-9-]+$"},
+          "condition": {"type": "string", "minLength": 1},
+          "result": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "taxonomy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_types", "interaction_outcomes", "node_statuses", "feedback_types", "selector_strategies"],
+      "properties": {
+        "node_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "interaction_outcomes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "node_statuses": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "feedback_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "selector_strategies": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+      }
+    },
+    "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+    "interactions": {"type": "array", "items": {"$ref": "#/$defs/interaction"}},
+    "interaction_execution": {"type": "array", "items": {"$ref": "#/$defs/interactionExecution"}},
+    "capabilities": {"type": "array", "items": {"$ref": "#/$defs/capability"}},
+    "feedback": {"type": "array", "items": {"$ref": "#/$defs/feedback"}}
+  },
+  "$defs": {
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "version", "status"],
+      "properties": {
+        "id": {"const": "CUI-IM"},
+        "title": {"const": "Canonical UI Interaction Model"},
+        "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+        "status": {"enum": ["FOUNDATION", "ACTIVE", "DEPRECATED", "UNKNOWN_REQUIRES_REVIEW"]}
+      }
+    },
+    "includedExcluded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["includes", "excludes"],
+      "properties": {
+        "includes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "excludes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_files", "canonical_references", "test_references", "live_evidence"],
+      "properties": {
+        "source_files": {"type": "array", "items": {"type": "string"}},
+        "canonical_references": {"type": "array", "items": {"type": "string"}},
+        "test_references": {"type": "array", "items": {"type": "string"}},
+        "live_evidence": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "status", "roles", "entry_conditions", "visible_when", "data_dependencies", "source_files", "canonical_references", "test_references", "live_verified"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^UI-[A-Z0-9-]+$"},
+        "type": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "route": {"type": ["string", "null"]},
+        "parent": {"type": ["string", "null"]},
+        "status": {"type": "string", "minLength": 1},
+        "roles": {"type": "array", "items": {"type": "string"}},
+        "permissions": {"type": "array", "items": {"type": "string"}},
+        "entry_conditions": {"type": "array", "items": {"type": "string"}},
+        "visible_when": {"type": "array", "items": {"type": "string"}},
+        "data_dependencies": {"type": "array", "items": {"type": "string"}},
+        "source_files": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "canonical_references": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "test_references": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "live_verified": {"type": "boolean"},
+        "handler": {"type": ["string", "null"]},
+        "backend": {"type": ["string", "null"]},
+        "test_required": {"type": "boolean"},
+        "selectors": {"type": "array", "items": {"$ref": "#/$defs/selector"}},
+        "live_evidence": {"type": "array", "items": {"$ref": "#/$defs/liveEvidence"}},
+        "traceability": {"$ref": "#/$defs/trace"}
+      }
+    },
+    "interaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "trigger", "control", "preconditions", "action", "success", "failure", "next_state", "side_effects", "messages", "security_boundary", "capability_ids", "source_files", "test_ids"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^INT-[A-Z0-9-]+$"},
+        "source": {"type": "string", "pattern": "^UI-[A-Z0-9-]+$"},
+        "trigger": {"type": "string", "minLength": 1},
+        "control": {"type": "string", "pattern": "^UI-[A-Z0-9-]+$"},
+        "preconditions": {"type": "array", "items": {"type": "string"}},
+        "action": {"type": "string", "minLength": 1},
+        "request": {"type": ["object", "null"]},
+        "success": {"type": "array", "items": {"type": "string"}},
+        "failure": {"type": "array", "items": {"type": "string"}},
+        "next_state": {"type": ["string", "null"]},
+        "side_effects": {"type": "array", "items": {"type": "string"}},
+        "messages": {"type": "array", "items": {"type": "string"}},
+        "security_boundary": {"type": "string", "minLength": 1},
+        "capability_ids": {"type": "array", "items": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"}},
+        "source_files": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "test_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "outcome": {"type": "string"},
+        "handler": {"type": "string"},
+        "redirect": {"type": ["string", "null"]},
+        "verification": {"$ref": "#/$defs/browserVerification"}
+      }
+    },
+    "interactionExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interaction_id", "status"],
+      "properties": {
+        "interaction_id": {"type": "string", "pattern": "^INT-[A-Z0-9-]+$"},
+        "status": {"enum": ["EXECUTABLE", "BLOCKED", "NOT_EXECUTED"]},
+        "reason": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "blocking_dependency": {"type": "string", "minLength": 1},
+        "required_fixture": {"type": "string", "minLength": 1},
+        "required_work": {"type": "string", "minLength": 1}
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "value", "scope", "source_file", "required", "runtime_generated"],
+      "properties": {
+        "strategy": {"type": "string", "minLength": 1},
+        "value": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "source_file": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "runtime_generated": {"type": "boolean"},
+        "exclusive": {"type": "boolean"}
+      }
+    },
+    "browserVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["test_id", "environment", "route", "fixture", "status", "steps", "evidence"],
+      "properties": {
+        "test_id": {"type": "string"}, "environment": {"const": "local-ui-fixture"}, "route": {"type": "string"}, "fixture": {"type": "string"}, "status": {"enum": ["EXECUTABLE", "BLOCKED", "NOT_EXECUTED"]}, "reason": {"type": "string"}, "evidence": {"type": "string"}, "steps": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["action", "selector"], "properties": {"action": {"enum": ["fill_fixture", "click", "check", "expect_count", "expect_visible", "expect_text", "expect_not_text"]}, "selector": {"type": "string"}, "fixture_value": {"type": "string"}, "value": {"type": "string"}}}}
+      }
+    },
+    "liveEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "verified_at", "commit", "test_id", "result", "evidence_reference", "limitations"],
+      "properties": {
+        "environment": {"type": "string"}, "verified_at": {"type": "string"}, "commit": {"type": "string"}, "test_id": {"type": "string"}, "result": {"type": "string"}, "evidence_reference": {"type": "string"}, "limitations": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "description", "status", "implemented", "documented", "ui_reachable", "api_reachable", "tested", "live_verified", "source_files", "canonical_references", "test_references"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^CAP-[A-Z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "minLength": 1},
+        "implemented": {"type": "boolean"},
+        "documented": {"type": "boolean"},
+        "ui_reachable": {"type": "boolean"},
+        "api_reachable": {"type": "boolean"},
+        "tested": {"type": "boolean"},
+        "live_verified": {"type": "boolean"},
+        "source_files": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "canonical_references": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "test_references": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "classification": {"type": "string"},
+        "api_routes": {"type": "array", "items": {"type": "string"}},
+        "traceability": {"$ref": "#/$defs/trace"}
+      }
+    },
+    "feedback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "message_key", "source_files", "test_references"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^FB-[A-Z0-9-]+$"},
+        "type": {"type": "string", "minLength": 1},
+        "message_key": {"type": "string", "minLength": 1},
+        "source_files": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "test_references": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "duration": {"type": ["string", "null"]},
+        "blocking": {"type": ["boolean", "null"]},
+        "recovery": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

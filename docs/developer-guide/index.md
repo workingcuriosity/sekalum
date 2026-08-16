@@ -1,23 +1,86 @@
+---
+title: Developer Guide
+version: 1.2.0
+status: Active
+category: Developer Guide
+canonical: false
+maintainer: cyphre-san productions
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+copyright: "© 2026 cyphre-san productions"
+target_audience:
+  - Developers
+  - Architects
+dependent_documents:
+  - docs/architecture/Gesamtarchitektur.md
+  - docs/data-model-reference/index.md
+  - docs/api-reference/index.md
+  - docs/project/Storage.md
+  - docs/adr/ADR-Index.md
+  - docs/project/PROVIDER_METADATA_GUIDELINE.md
+  - docs/architecture/ARCHITECTURE_DEPENDENCY_MATRIX.md
+  - docs/adr/ADR-020-Credential-Consumer-API.md
+  - docs/adr/ADR-021-Generic-Credential-Method-Model.md
+  - docs/security-guide/index.md
+change_history:
+  - version: 1.2.0
+    date: 2026-08-02
+    change: Adds the Consumer Integration Foundation with roles, architecture orientation, lifecycle terminology and n8n classification for Beta-1 integrators.
+  - version: 1.1.0
+    date: 2026-07-30
+    change: Synchronizes Consumer integration guidance with normative ADR-020 v1.3.0, including the optional credential-bound Runtime-Public Discovery projection and its security boundary.
+  - version: 1.0.7
+    date: 2026-07-30
+    change: Adds the platform-independent Canonical Consumer Integration Algorithm and Beta-1 integration procedure.
+  - version: 1.0.6
+    date: 2026-07-16
+    change: Updates the Generic Credential Method guidance for the active R5 implementation.
+  - version: 1.0.5
+    date: 2026-07-16
+    change: Adds the accepted generic Credential Method architecture and its issue #47 implementation boundary.
+  - version: 1.0.4
+    date: 2026-07-16
+    change: Adds the Consumer Grant provisioning path for the generic HTTP Consumer API integration.
+  - version: 1.0.2
+    date: 2026-07-12
+    change: Documents encrypted provider configuration, OAuth context propagation, Admin shell, and callback result messaging.
+  - version: 1.0.1
+    date: 2026-07-12
+    change: Documents the shared Admin i18n layer and its safe error-display boundary.
+  - version: 1.0.0
+    date: 2026-07-12
+    change: CP-011 promotes the Developer Guide entry point from Draft to active navigation for the technical references.
+---
+
 # Developer Guide
 
-## Zweck
+## Purpose
 
-Dieser Guide ist der aktive Einstieg fuer Entwicklungsarbeit. Er ordnet die bestehenden technischen Referenzen ein, ohne ihre fachlichen oder technischen Vertraege zu duplizieren.
+This guide is the active entry point for development work. It organizes the existing technical references without duplicating their domain or technical contracts.
 
-## Technische Orientierung
+## Technical orientation
 
-| Thema | Fuehrende Quelle |
+| Topic | Leading source |
 |---|---|
-| HTTP-Routen, Authentifizierung und Berechtigungen | [API Reference](../api-reference/index.md) |
-| Laufzeitkonfiguration und Provider-Konfiguration | [Configuration Reference](../configuration-reference/index.md) |
-| Provider-Capabilities und Provider-spezifische Quellen | [Provider Overview](../providers/README.md) |
-| Installation and operation | [Installation Guide](../installation-guide/index.md) |
-| Secret handling and trust boundary | [Security Guide](../security-guide/index.md) |
+| Overall architecture and component roles | Overall Architecture |
+| Domain objects, lifecycle and legacy boundary | [Data Model Reference](../data-model-reference/index.md) |
+| HTTP routes, authentication and permissions | [API Reference](../api-reference/index.md) |
+| Persistence, encryption and storage boundaries | Storage Developer Guide |
+| Runtime and provider configuration | [Configuration Reference](../configuration-reference/index.md) |
+| Provider capabilities and provider-specific sources | [Provider Overview](../providers/README.md) |
+| Metadata-driven provider and custom-provider contract | Provider Metadata Guideline |
+| Generic Credential Method architecture | ADR-021 |
+| Architecture decisions | ADR Index |
+| Testing approach | Testing Strategy |
+
+## Development rules and follow-up work
+
+Project-wide development rules are in Development Rules. Unapproved architecture improvements are classified in the Architecture Backlog Index. Historical architecture reviews and milestone records are evidence and do not replace the sources listed above.
 
 ## Consumer Integration Foundation
 
 This section is the first orientation for developers integrating an external
-application, service, automation or workflow runtime with Credential HUB. The
+application, service, automation or workflow runtime with Sekalum. The
 Beta-1 Consumer Flow is a supported Advanced Integration Flow: it is complete
 and usable, but it assumes that an administrator has already configured the
 Credential, Consumer token and grant. It is not a Consumer-first onboarding
@@ -33,16 +96,16 @@ The roles are deliberately separate:
 - **Consumer Runtime:** an application, service, automation or workflow that
   uses the isolated Consumer API at runtime. It must select a Credential from
   public metadata and request only the authorized Secret fields it needs.
-- **Credential HUB:** the control and mediation boundary. It authenticates the
+- **Sekalum:** the control and mediation boundary. It authenticates the
   Consumer, applies the Consumer Grant and Credential lifecycle checks, exposes
   public selection metadata, and resolves only explicitly authorized fields.
 - **Target API:** the external service that the Consumer calls after obtaining
-  the required, transient Credential values. Credential HUB is not the Target
+  the required, transient Credential values. Sekalum is not the Target
   API or the Consumer's application runtime.
 
-![Administrator, Credential HUB, Consumer Runtime and Target API responsibilities](images/consumer-integration-roles.svg)
+![Administrator, Sekalum, Consumer Runtime and Target API responsibilities](images/consumer-integration-roles.svg)
 
-*Roles and Responsibility Boundary: Credential HUB authorizes the handoff; the
+*Roles and Responsibility Boundary: Sekalum authorizes the handoff; the
 Consumer Runtime controls use and disposal after delivery.*
 
 ### Roles and architecture
@@ -54,7 +117,7 @@ Administrator
     |
     | Credential + Grant + permissions
     v
-Credential HUB
+Sekalum
     |
     | authenticated Consumer API access
     v
@@ -76,8 +139,9 @@ Consumer Runtime uses only the public selection and authorized Resolve path.*
 
 The Management API is used for administration. The Consumer API is a separate
 data-plane boundary and is method-agnostic; Provider and CredentialMethod
-internals are not part of the Consumer contract. The API Reference is the
-normative public source for routes, payloads and error handling.
+internals are not part of the Consumer contract. See ADR-020
+and ADR-021 for the
+normative architecture decisions.
 
 ### Consumer integration lifecycle
 
@@ -127,7 +191,7 @@ Secure Disposal
 
 You need:
 
-- the Credential HUB base URL;
+- the Sekalum base URL;
 - an active Consumer API token with `credentials:consume` and the matching
   owner permission;
 - an active Credential visible to that Consumer; and
@@ -187,7 +251,7 @@ after an error. The exact response and error envelope remain defined by the
 Use the resolved values only for the immediate target operation. Treat them as
 transient runtime data: do not persist them, log them, put them in URLs,
 include them in retry payloads or return them in complete workflow output.
-Discard them as soon as the target operation permits. Credential HUB responses
+Discard them as soon as the target operation permits. Sekalum responses
 use `Cache-Control: no-store`; this does not replace the Consumer Runtime's
 own secure disposal responsibilities.
 
@@ -233,12 +297,12 @@ async function requestJson(url, options) {
   try {
     body = await response.json();
   } catch {
-    throw new Error(`Credential HUB returned a non-JSON response (${response.status})`);
+    throw new Error(`Sekalum returned a non-JSON response (${response.status})`);
   }
 
   if (!response.ok || body?.success === false) {
     const code = body?.error?.code ?? `HTTP_${response.status}`;
-    throw new Error(`Credential HUB request failed: ${code}`);
+    throw new Error(`Sekalum request failed: ${code}`);
   }
 
   return body;
@@ -376,13 +440,13 @@ def request_json(base_url, token, path, *, method="GET", payload=None):
         except (ValueError, TypeError):
             error_body = {}
         code = error_body.get("error", {}).get("code", f"HTTP_{error.code}")
-        raise ConsumerApiError(f"Credential HUB request failed: {code}") from None
+        raise ConsumerApiError(f"Sekalum request failed: {code}") from None
     except (URLError, TimeoutError, ValueError) as error:
-        raise ConsumerApiError("Credential HUB request could not be completed") from error
+        raise ConsumerApiError("Sekalum request could not be completed") from error
 
     if not isinstance(response_body, dict) or response_body.get("success") is False:
         code = response_body.get("error", {}).get("code", "INVALID_RESPONSE")
-        raise ConsumerApiError(f"Credential HUB request failed: {code}")
+        raise ConsumerApiError(f"Sekalum request failed: {code}")
 
     return response_body
 
@@ -503,9 +567,9 @@ wipe.
 
 ### n8n and other runtimes
 
-n8n is not a special Credential HUB integration. It is a workflow runtime and
+n8n is not a special Sekalum integration. It is a workflow runtime and
 one possible HTTP Consumer Runtime, alongside a custom application, service or
-automation. It is not a Credential HUB plugin, a Credential Provider, or a
+automation. It is not a Sekalum plugin, a Credential Provider, or a
 privileged access path.
 
 ![n8n workflow using the generic HTTP Consumer API](images/n8n-consumer-runtime.svg)
@@ -521,7 +585,7 @@ n8n Workflow
     |
     | HTTP Request Node
     v
-Credential HUB Consumer API
+Sekalum Consumer API
     |
     v
 Discovery
@@ -549,6 +613,11 @@ data and must be discarded after the target operation. The [Security
 Guide](../security-guide/index.md#consumer-trust-boundary) defines the
 responsibility boundary after delivery.
 
+The repository contains an internal OpenAI-specific n8n governance test
+artifact, but it is not a public product integration or a general-purpose
+quick-start workflow. The generic Consumer API procedure above is the
+supported integration guidance for n8n and all other runtimes.
+
 For security responsibilities after delivery, see the [Security Guide](../security-guide/index.md#consumer-trust-boundary).
 
 ### Real Beta-1 product journey
@@ -564,10 +633,7 @@ Discovery → Resolve screenshots.
 
 The active model separates an external Provider from its Credential Methods. A Provider may expose multiple declarative CredentialMethods and ProviderMethodBindings, while a Credential created for such a Provider records one explicit `credentialMethodKey`. The selected CredentialMethod defines the field schema, secret fields, and operation capabilities; its Provider binding can supply an adapter only for an operation declared by the method. Application code must not infer a method from a Provider key, an `authType`, or secret names.
 
-The Provider Registry, Wizard, Dashboard, REST, CSV, import/export, lifecycle
-dispatch and Credential model share this contract. Method-aware creation rejects
-missing or unbound methods, and the Consumer API remains provider- and
-method-agnostic.
+R5 implements the Provider Registry, Wizard, Dashboard, REST, CSV, import/export, lifecycle dispatch, and Credential model around this contract. Method-aware creation rejects a missing or unbound method; startup persists an explicit compatible method key for deterministically migratable legacy records and rejects ambiguous records with `CREDENTIAL_METHOD_MIGRATION_AMBIGUOUS`. No legacy Provider-level runtime selection remains. The Discord webhook binding is the reference implementation only: it has declarative metadata and no declared operations. Do not add webhook or other method-specific special cases to the Core or Consumer API. See ADR-021 for the binding contract and migration boundary.
 
 ## Admin internationalization baseline
 
@@ -589,7 +655,7 @@ Do not extend this path with provider-configuration fields, OAuth settings, adap
 
 ## Consumer API integration
 
-Runtime consumers use the isolated Consumer API rather than the Management API. They authenticate with an active Bearer API token that has the `credentials:consume` scope and whose owner has the same permission. The consumer identity is the API-token ID; before runtime use, an administrator provisions an explicit grant through `POST /api/v1/management/consumer-grants` with `consumerId`, `credentialId`, `providerKey`, and the permitted `secretNames`. The grant must allow the target Credential, provider, and each requested secret field. Only active Credentials and fields marked secret by the selected CredentialMethod can be resolved. The Consumer route remains method-agnostic and returns no CredentialMethod identifier or other internal method metadata. See the [API Reference](../api-reference/index.md) for the response and error contract.
+Runtime consumers use the isolated Consumer API rather than the Management API. They authenticate with an active Bearer API token that has the `credentials:consume` scope and whose owner has the same permission. The consumer identity is the API-token ID; before runtime use, an administrator provisions an explicit grant through `POST /api/v1/management/consumer-grants` with `consumerId`, `credentialId`, `providerKey`, and the permitted `secretNames`. The grant must allow the target Credential, provider, and each requested secret field. Only active Credentials and fields marked secret by the selected CredentialMethod can be resolved. The Consumer route remains method-agnostic and returns no CredentialMethod identifier or other internal method metadata. See the [API Reference](../api-reference/index.md) for the response and error contract and ADR-020 for the architecture decision.
 
 When Discovery provides an optional Runtime-Public projection, use only the
 values explicitly classified for the selected Credential and authenticated
@@ -636,10 +702,16 @@ Until future convenience features such as server-side Discovery filters or
 native integrations are introduced through a separate decision, consumers use
 the existing public Consumer API through a generic HTTP-client flow.
 
+## AI-assisted workflow and quality gates
+
+AI may assist implementation, documentation, tests, review preparation, refactoring suggestions, and architecture discussion. It does not replace architectural decisions, code review, security review, release approval, or project ownership. Every change is subject to the same capability audit, architecture boundary review, automated tests, documentation review, and maintainer approval. The complete policy is in AI-Assisted Development.
+
 ## Community channels
 
-The official [Credential HUB Discord community](https://discord.gg/exTu3Dy2UW) supports technical questions, development discussion, community questions, and feature ideas. GitHub remains authoritative for Issues, Pull Requests, release tracking, and project planning. Security vulnerabilities must follow the [Security Guide](../security-guide/index.md) and must not be posted to Discord.
+The official [Sekalum Discord community](https://discord.gg/exTu3Dy2UW) supports technical questions, development discussion, community questions, and feature ideas. GitHub remains authoritative for Issues, Pull Requests, release tracking, and project planning. Security vulnerabilities must follow the [Security Guide](../security-guide/index.md) and must not be posted to Discord.
 
 ## Abgrenzung
 
-Dieser Guide definiert weder API-Payloads noch Datenmodell- oder Storage-Vertraege. Aenderungen an diesen Grenzen werden in den jeweiligen kanonischen Referenzen, den zugehoerigen Tests und gegebenenfalls in ADRs dokumentiert.
+This guide defines neither API payloads nor data-model or storage contracts.
+Changes to those boundaries are documented in the relevant canonical
+references, associated tests and, where applicable, ADRs.

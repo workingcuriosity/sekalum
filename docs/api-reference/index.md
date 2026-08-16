@@ -1,3 +1,86 @@
+---
+title: API Reference
+version: 2.2.0
+classification: Public
+status: Active
+category: API
+canonical: true
+owner: Sekalum
+approved_by: pending
+maintainer: cyphre-san productions
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+copyright: "© 2026 cyphre-san productions"
+target_audience:
+  - Entwickler
+  - Integratoren
+  - Administratoren
+dependent_documents:
+  - docs/api/REST_API.md
+  - docs/api/OAuth_API.md
+  - docs/api/Health_API.md
+  - docs/adr/ADR-020-Credential-Consumer-API.md
+  - docs/adr/ADR-021-Generic-Credential-Method-Model.md
+  - docs/data-model-reference/index.md
+  - docs/architecture/Gesamtarchitektur.md
+  - docs/architecture/C4_ARCHITECTURE.md
+  - docs/architecture/glossary/GLOSSARY.md
+  - docs/security-guide/index.md
+  - docs/developer-guide/index.md
+  - docs/project/PROVIDER_METADATA_GUIDELINE.md
+  - docs/architecture/ARCHITECTURE_DEPENDENCY_MATRIX.md
+  - docs/architecture/governance/audits/ADR-020_ISSUE-136_GOVERNANCE_REVIEW_RECORD.md
+  - docs/architecture/governance/audits/ADR-020_ISSUE-136_INDEPENDENT_SECURITY_ARCHITECTURE_AUDIT.md
+  - docs/architecture/governance/audits/ADR-020_ISSUE-136_GOVERNANCE_AUTHORITY_DECISION.md
+  - docs/architecture/governance/audits/ADR-020_ISSUE-136_FINAL_BASELINE_REVIEW_RECORD.md
+change_history:
+  - version: 2.2.0
+    date: 2026-08-09
+    change: Documents the existing dashboard endpoint's secret-free Integration Health projection for Issue #77 without adding a health API or changing management permissions.
+  - version: 2.0.0
+    date: 2026-07-30
+    change: Synchronizes the normative Consumer API reference with ADR-020 v1.3.0 and documents the optional, credential-bound Runtime-Public Discovery projection and its security boundaries.
+  - version: 2.1.0
+    date: 2026-08-04
+    change: Documents the one-time Bootstrap exception for First Administrator creation and the subsequent Management Token boundary.
+  - version: 1.9.0
+    date: 2026-07-30
+    change: Documents the canonical platform-independent Consumer Integration Algorithm and the Beta-1 transient integration workaround.
+  - version: 1.8.0
+    date: 2026-07-26
+    change: Documents the canonical public Consumer Discovery and credential selection contract from ADR-020.
+  - version: 1.7.0
+    date: 2026-07-26
+    change: Harmonizes public management and Consumer API boundaries with ADR-020 and the CredentialMethod data contract with ADR-021.
+  - version: 1.6.0
+    date: 2026-07-16
+    change: Documents the active method-aware Credential, Provider metadata, lifecycle, and Consumer API contracts from R5.
+  - version: 1.5.1
+    date: 2026-07-16
+    change: Documents administrator-only Consumer Grant provisioning for the isolated Credential Consumer API.
+  - version: 1.4.0
+    date: 2026-07-13
+    change: Documents the authorized, non-persistent Credential connection-test contract and public error boundary.
+  - version: 1.3.0
+    date: 2026-07-13
+    change: Defines the secret-safe public Credential update patch contract used by Credential management.
+  - version: 1.2.0
+    date: 2026-07-13
+    change: Adds the compensated initial Secret-Version failure contract for Credential creation.
+  - version: 1.1.0
+    date: 2026-07-13
+    change: Defines the hardened credential-creation contract, stable failure codes, and secret-free response shape.
+  - version: 1.0.2
+    date: 2026-07-13
+    change: Documents system-managed field metadata and server-derived OAuth redirect URIs.
+  - version: 1.0.1
+    date: 2026-07-12
+    change: Adds the authorized OAuth-start route, public provider-configuration metadata, and stable OAuth result codes.
+  - version: 1.0.0
+    date: 2026-07-11
+    change: CP-004 verifiziert die REST-, OAuth- und Health-Routen gegen den Callback-Server, Controller und Integrationstests.
+---
+
 # API Reference
 
 ## Scope
@@ -11,13 +94,36 @@ The public API has two distinct responsibilities:
 - the Consumer API resolves explicitly authorized Secret fields for runtime
   Consumers and does not expose management metadata or management operations.
 
-This reference owns the externally observable HTTP payloads, routes,
-permissions and error contracts. Provider and CredentialMethod implementation
-details remain outside the public Consumer response contract.
+ADR-020 owns the Consumer API decision and authorization boundary. ADR-021 owns
+the CredentialMethod and ProviderMethodBinding contract used by management
+validation and by the Consumer API only to determine whether a requested field
+is an eligible Secret. This reference owns the externally observable HTTP
+payloads, routes, permissions and error contracts.
 
 ## Authorization and errors
 
 All `/api/v1` routes pass through the authorization wrapper. When authorization is active, callers authenticate with `Authorization: Bearer <api-token>`; management routes fail closed when it is absent or invalid. Authentication is followed by RBAC authorization for the permission shown below.
+
+### Bootstrap and First Administrator
+
+When the persisted user collection is empty, Bootstrap is active. The **First
+Administrator** may then be created through:
+
+```text
+POST /api/v1/management/users
+```
+
+This one-time creation request is the only management exception to the normal
+authentication boundary. Bootstrap ends as soon as the **First Administrator**
+is persisted. From that point onward, management routes require an
+authorized API token sent as `Authorization: Bearer <api-token>`; the Admin UI
+labels the authorized token used for this purpose as the **Management Token**.
+There is no username/password login flow in Beta 1. The Admin UI validates the
+Management Token before exposing the Dashboard and Admin navigation.
+
+The `x-credential-hub-user` header is not a production authentication method.
+It is accepted only by the `NODE_ENV=test` compatibility path used by
+repository tests. Production clients must use Bearer Authentication.
 
 Successful JSON responses normally use `success: true`; controller responses may additionally include `data`, `meta`, or `pagination`. Errors use:
 
@@ -158,7 +264,7 @@ CredentialMethod or database identifier.
 
 ### Runtime-Public Discovery projection
 
-Discovery may include an optional
+In accordance with ADR-020 v1.3.0, Discovery may include an optional
 Runtime-Public projection for an active Credential. The projection is a
 normative, generic Consumer API capability and is not a separate endpoint or
 consumer-specific configuration mechanism.
@@ -269,7 +375,7 @@ Content-Type: application/json
 ```
 
 Validate the response shape, lifecycle state and returned field set. Do not
-broaden the field list after an error and do not retry with a management token.
+broaden the field list after an error and do not retry with a Management Token.
 
 #### 5. Target API
 
@@ -309,9 +415,21 @@ runtime must apply the same selection, transient-use and disposal rules.
 
 `POST /api/v1/consumer/credentials/:credentialKey/resolve` accepts a non-empty `secretNames` array. A request needs a valid, active Bearer API token with the `credentials:consume` scope, an owning user authorized for `credentials:consume`, and a matching Consumer Grant for the API-token identity, Credential, provider, and every requested secret field. Wildcard grants are not supported. The path segment is the opaque public `credentialKey`; existing credential-ID values may remain accepted there for backward compatibility, but internal database identifiers are not the canonical selection contract.
 
-Administrators provision those grants through `POST /api/v1/management/consumer-grants`, which requires a Management Bearer API token with the `consumer-grants:manage` permission. The request body contains `consumerId` (the API-token ID), `credentialId`, `providerKey`, and a non-empty `secretNames` array. Provisioning is audit logged with the identity, Credential, provider, and field count, never with secret values or names. Management routes do not accept an identity header.
+Administrators provision those grants through `POST /api/v1/management/consumer-grants`, which requires a **Management Token** with the `consumer-grants:manage` permission. The request body contains `consumerId` (the API-token ID), `credentialId`, `providerKey`, and a non-empty `secretNames` array. Provisioning is audit logged with the identity, Credential, provider, and field count, never with secret values or names. Management routes do not accept an identity header.
 
-The Admin Wizard lists consumers with `GET /api/v1/management/api-tokens`, can create a dedicated consumer token with `POST /api/v1/management/api-tokens`, and uses `POST /api/v1/management/consumer-grants/diagnose` to test the selected grant without resolving a secret. The one-time plaintext consumer token and the management token are held only in browser memory; neither is written to browser storage.
+The Admin Consumer permissions page presents this existing contract without
+changing it: Discovery is the public metadata and field-contract view, while
+Resolve is the explicitly requested and authorized Secret-field operation.
+The Consumer API Token authenticates the Consumer; the Management Token is
+only for administration.
+
+The Admin Grant form may show a read-only preview before a grant is saved. It
+is a presentation of the selected Credential, existing Discovery and
+Runtime-Public projections, selected Resolve Secret fields and excluded
+fields; it does not execute an API request or create a grant. The server-side
+grant and Resolve rules remain authoritative.
+
+The Admin Wizard lists consumers with `GET /api/v1/management/api-tokens`, can create a dedicated consumer token with `POST /api/v1/management/api-tokens`, and uses `POST /api/v1/management/consumer-grants/diagnose` to test the selected grant without resolving a secret. The one-time plaintext consumer token and the Management Token are held only in browser memory; neither is written to browser storage.
 
 Example grant request (replace placeholders in a secure shell or secret manager; do not commit tokens):
 
@@ -323,7 +441,7 @@ curl --fail --silent --show-error \
   --data '{"consumerId":"consumer-token-id","credentialId":"credential-id","providerKey":"openai","secretNames":["apiKey"]}'
 ```
 
-Only Credentials in lifecycle state `active` are consumable. Each requested name must be a Secret field in the selected CredentialMethod contract and must exist on the Credential. Credentials without a method key are not eligible for Consumer resolution. The Consumer API does not select, interpret or branch on a CredentialMethod; it uses the selected method contract only for Secret-field eligibility. The endpoint returns only the public `credentialKey`, lifecycle state and the requested, authorized name/value pairs. It responds with `Cache-Control: no-store` on both success and failure.
+Only Credentials in lifecycle state `active` are consumable. Each requested name must be a Secret field in the selected CredentialMethod contract and must exist on the Credential. Credentials without a method key are not eligible for Consumer resolution. Before returning an authorized OAuth result, Sekalum may use the existing provider `refresh` capability to refresh an active credential whose access token is within the configured refresh window; the Consumer request and response contract remain unchanged. The Consumer API does not select, interpret or branch on a CredentialMethod; it uses the selected method contract only for Secret-field eligibility. The endpoint returns only the public `credentialKey`, lifecycle state and the requested, authorized name/value pairs. It responds with `Cache-Control: no-store` on both success and failure.
 
 Request:
 
@@ -366,6 +484,12 @@ Each attempt is audit logged without secret names, values, bearer tokens, reques
 | GET | `/api/v1/dashboard` | `management:read` | Returns the administration dashboard. |
 
 `/api/v1/dashboard` accepts `expiringWithinDays`; it must be a positive integer.
+The response also contains `integrationHealth`, an administrator-facing
+projection derived from existing Credential, Consumer Grant, Provider
+capability, expiration, rotation, history and Resolve-boundary state. It
+contains only statuses, counts, provider keys and non-secret display metadata;
+it never returns Secret or Token values and does not perform health probes,
+refreshes or repairs.
 
 ### Provider metadata response
 
@@ -379,7 +503,7 @@ The endpoint rejects provider-configuration fields, OAuth configuration, runtime
 
 The OAuth-start request body contains user-configurable `providerConfiguration` and optional `scopes`. Any client-supplied `redirectUri` is ignored and replaced with the callback URI derived from `PUBLIC_BASE_URL` or the validated request origin, active `BASE_PATH`, and provider key. A successful response returns the authorization URL, redirect URI, callback path, effective scopes, and an opaque provider-configuration ID. It never echoes provider configuration values. Validation and startup failures return stable codes such as `PROVIDER_CONFIGURATION_MISSING` or `OAUTH_START_FAILED` through the standard error envelope.
 
-The browser callback result uses the stable outcome codes `OAUTH_CALLBACK_FAILED`, `OAUTH_STATE_INVALID`, `OAUTH_PROVIDER_REJECTED`, and `OAUTH_REDIRECT_URI_MISMATCH`. The mismatch result may include the non-secret redirect URI used by Credential HUB; the HTML result page does not expose raw provider or backend messages.
+The browser callback result uses the stable outcome codes `OAUTH_CALLBACK_FAILED`, `OAUTH_STATE_INVALID`, `OAUTH_PROVIDER_REJECTED`, and `OAUTH_REDIRECT_URI_MISMATCH`. The mismatch result may include the non-secret redirect URI used by Sekalum; the HTML result page does not expose raw provider or backend messages.
 
 ## Management routes
 
@@ -418,4 +542,4 @@ The browser callback result uses the stable outcome codes `OAUTH_CALLBACK_FAILED
 
 This reference was checked against `src/oauth/oauth-callback-server.js`, all controllers under `src/controllers/`, and the API integration tests. It does not define provider fields, runtime configuration, deployment endpoints, or historical API behavior.
 
-The route groups in this document are the public reference for REST, OAuth and health behavior.
+The former [REST notes](../api/REST_API.md), [OAuth notes](../api/OAuth_API.md), and [Health notes](../api/Health_API.md) remain supporting pointers to this canonical source.

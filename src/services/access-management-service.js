@@ -2,7 +2,7 @@ const DEFAULT_ROLES = Object.freeze([
   {
     roleKey: 'admin',
     displayName: 'Administrator',
-    description: 'Vollzugriff auf Credential HUB Verwaltung und Betriebsfunktionen.',
+    description: 'Vollzugriff auf Sekalum Verwaltung und Betriebsfunktionen.',
     permissions: ['credentials:manage', 'credentials:read', 'credentials:consume', 'consumer-grants:manage', 'providers:manage', 'providers:read', 'scheduler:manage', 'scheduler:read', 'management:read', 'users:manage', 'users:read', 'audit:read', 'export:read', 'backup:manage', 'backup:read', 'metrics:read', 'api-tokens:manage', 'api-tokens:read']
   },
   {

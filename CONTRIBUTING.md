@@ -1,4 +1,4 @@
-# Contributing to Credential HUB
+# Contributing to Sekalum
 
 Thank you for your interest in contributing.
 
@@ -12,20 +12,18 @@ By submitting contributions, you agree that your contribution is licensed under 
 - Update documentation for functional changes.
 - Include tests where appropriate.
 
-## Contributions
+## AI-Assisted Contributions
 
-Contributions should include a clear description, focused changes, relevant
-documentation updates and appropriate validation. Contributors remain
-responsible for every submitted change, including code, documentation and
-third-party content.
+AI-assisted contributions are welcome. They must satisfy the same architecture, security, review, documentation, and testing requirements as manually written contributions. Contributors remain responsible for every submitted change, including code, documentation, tests, and third-party content. See AI-Assisted Development for the project workflow.
 
 ## Pull Requests
 
 - One logical change per pull request.
 - Keep commits focused.
 - Ensure documentation is updated.
-- Run the available checks before opening a pull request.
-- Keep commits focused and describe user-visible or operational impact.
+- Complete the mandatory Implementation Strategy and UI Quality Gates before implementation.
+- Record whether the work is a Single Package or Multi Package before changing implementation files.
+- Keep the pull request in Draft until every applicable quality gate, test, browser/deployment check, and canonical Markdown update is complete.
 
 Maintainer:
 cyphre-san productions

@@ -6,7 +6,7 @@ MS9 F1: implementiert als nativer OAuth2 Provider.
 
 ## Zweck
 
-Der Google Provider verwaltet Google OAuth2 Credentials als ersten nativen OAuth-Provider des Credential Hub.
+Der Google Provider verwaltet Google OAuth2 Credentials als ersten nativen OAuth-Provider des Sekalum.
 
 Er dient als Referenz für weitere OAuth2-basierte Provider, ohne das bestehende OAuth-Framework umzubauen.
 
@@ -43,7 +43,7 @@ Der Provider erwartet folgende Umgebungsvariablen:
 |---|---|
 | `GOOGLE_CLIENT_ID` | OAuth Client ID aus der Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret aus der Google Cloud Console |
-| `GOOGLE_REDIRECT_URI` | Callback-URL des Credential Hub |
+| `GOOGLE_REDIRECT_URI` | Callback-URL des Sekalum |
 
 ## OAuth Flow
 
@@ -115,7 +115,7 @@ Der CLI-Befehl gibt die Google Authorization URL aus. Diese URL wird im Browser 
 
 ### 4. Credential speichern
 
-Nach erfolgreicher Anmeldung ruft Google den Callback des Credential Hub auf. Der Credential Hub importiert das Ergebnis als Credential.
+Nach erfolgreicher Anmeldung ruft Google den Callback des Sekalum auf. Der Sekalum importiert das Ergebnis als Credential.
 
 Gespeichert werden fachlich:
 

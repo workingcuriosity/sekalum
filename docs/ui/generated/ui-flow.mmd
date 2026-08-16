@@ -1,0 +1,253 @@
+%% GENERATED FILE. Source: ../canonical-ui-interaction-model.yaml. Do not edit manually.
+%% Human-readable UI hierarchy. Parent-child edges are solid; executable local interactions are dashed.
+flowchart TB
+  UI_APP["Sekalum Web UI<br/>UI-APP"]
+  subgraph UI_AREAS["Sekalum UI Areas"]
+    direction LR
+    subgraph UI_ADMIN_GROUP["Admin UI"]
+      direction TB
+      UI_ADMIN["Admin UI<br/>UI-ADMIN"]
+      subgraph UI_ADMIN_WIZARD_GROUP["Credential Wizard"]
+        direction TB
+        UI_ADMIN_WIZARD["Credential Wizard<br/>UI-ADMIN-WIZARD"]
+        UI_CONSUMER_HANDOFF["Open Consumer interface<br/>UI-CONSUMER-HANDOFF"]
+        UI_WIZARD_STEP_TYPE["Select credential type<br/>UI-WIZARD-STEP-TYPE"]
+        UI_WIZARD_STEP_PROVIDER["Select provider<br/>UI-WIZARD-STEP-PROVIDER"]
+        UI_WIZARD_STEP_FORM["Enter credential data<br/>UI-WIZARD-STEP-FORM"]
+        UI_WIZARD_STEP_OAUTH["OAuth authorization<br/>UI-WIZARD-STEP-OAUTH"]
+        UI_WIZARD_STEP_SUMMARY["Review and create credential<br/>UI-WIZARD-STEP-SUMMARY"]
+        UI_WIZARD_NEXT["Credential Wizard next<br/>UI-WIZARD-NEXT"]
+        UI_WIZARD_BACK["Credential Wizard back<br/>UI-WIZARD-BACK"]
+        UI_ADMIN_WIZARD --> UI_CONSUMER_HANDOFF
+        UI_ADMIN_WIZARD --> UI_WIZARD_STEP_TYPE
+        UI_ADMIN_WIZARD --> UI_WIZARD_STEP_PROVIDER
+        UI_ADMIN_WIZARD --> UI_WIZARD_STEP_FORM
+        UI_ADMIN_WIZARD --> UI_WIZARD_STEP_OAUTH
+        UI_ADMIN_WIZARD --> UI_WIZARD_STEP_SUMMARY
+        UI_ADMIN_WIZARD --> UI_WIZARD_NEXT
+        UI_ADMIN_WIZARD --> UI_WIZARD_BACK
+        UI_CONSUMER_HANDOFF ~~~ UI_WIZARD_STEP_TYPE
+        UI_WIZARD_STEP_TYPE ~~~ UI_WIZARD_STEP_PROVIDER
+        UI_WIZARD_STEP_PROVIDER ~~~ UI_WIZARD_STEP_FORM
+        UI_WIZARD_STEP_FORM ~~~ UI_WIZARD_STEP_OAUTH
+        UI_WIZARD_STEP_OAUTH ~~~ UI_WIZARD_STEP_SUMMARY
+        UI_WIZARD_STEP_SUMMARY ~~~ UI_WIZARD_NEXT
+        UI_WIZARD_NEXT ~~~ UI_WIZARD_BACK
+      end
+      UI_ADMIN_DASHBOARD["Dashboard<br/>UI-ADMIN-DASHBOARD"]
+      subgraph UI_ADMIN_PROVIDERS_GROUP["Custom Provider Wizard"]
+        direction TB
+        UI_ADMIN_PROVIDERS["Custom Provider Wizard<br/>UI-ADMIN-PROVIDERS"]
+        UI_PROVIDER_DETAILS["Provider details form<br/>UI-PROVIDER-DETAILS"]
+        UI_PROVIDER_METHODS["Provider credential methods<br/>UI-PROVIDER-METHODS"]
+        UI_PROVIDER_FIELDS["Provider credential fields<br/>UI-PROVIDER-FIELDS"]
+        UI_PROVIDER_REVIEW["Provider review<br/>UI-PROVIDER-REVIEW"]
+        UI_ADMIN_PROVIDERS --> UI_PROVIDER_DETAILS
+        UI_ADMIN_PROVIDERS --> UI_PROVIDER_METHODS
+        UI_ADMIN_PROVIDERS --> UI_PROVIDER_FIELDS
+        UI_ADMIN_PROVIDERS --> UI_PROVIDER_REVIEW
+        UI_PROVIDER_DETAILS ~~~ UI_PROVIDER_METHODS
+        UI_PROVIDER_METHODS ~~~ UI_PROVIDER_FIELDS
+        UI_PROVIDER_FIELDS ~~~ UI_PROVIDER_REVIEW
+      end
+      subgraph UI_ADMIN_CREDENTIALS_GROUP["Credential Management"]
+        direction TB
+        UI_ADMIN_CREDENTIALS["Credential Management<br/>UI-ADMIN-CREDENTIALS"]
+        UI_CREDENTIALS_TABLE["Credentials table<br/>UI-CREDENTIALS-TABLE"]
+        UI_CREDENTIAL_DETAIL["Credential detail view<br/>UI-CREDENTIAL-DETAIL"]
+        UI_CREDENTIAL_EDIT["Edit credential dialog<br/>UI-CREDENTIAL-EDIT"]
+        UI_CREDENTIAL_DELETE["Delete credential confirmation<br/>UI-CREDENTIAL-DELETE"]
+        UI_ADMIN_CREDENTIALS --> UI_CREDENTIALS_TABLE
+        UI_ADMIN_CREDENTIALS --> UI_CREDENTIAL_DETAIL
+        UI_ADMIN_CREDENTIALS --> UI_CREDENTIAL_EDIT
+        UI_ADMIN_CREDENTIALS --> UI_CREDENTIAL_DELETE
+        UI_CREDENTIALS_TABLE ~~~ UI_CREDENTIAL_DETAIL
+        UI_CREDENTIAL_DETAIL ~~~ UI_CREDENTIAL_EDIT
+        UI_CREDENTIAL_EDIT ~~~ UI_CREDENTIAL_DELETE
+      end
+      subgraph UI_ADMIN_GRANTS_GROUP["Consumer Grants"]
+        direction TB
+        UI_ADMIN_GRANTS["Consumer Grants<br/>UI-ADMIN-GRANTS"]
+        UI_GRANTS_TABLE["Consumer grants table<br/>UI-GRANTS-TABLE"]
+        UI_GRANT_EDIT["Edit consumer grant dialog<br/>UI-GRANT-EDIT"]
+        subgraph UI_GRANT_CREATE_GROUP["Create consumer grant dialog"]
+          direction TB
+          UI_GRANT_CREATE["Create consumer grant dialog<br/>UI-GRANT-CREATE"]
+          UI_GRANT_CREATE_SUBMIT["Save consumer grant<br/>UI-GRANT-CREATE-SUBMIT"]
+          UI_GRANT_CREATE --> UI_GRANT_CREATE_SUBMIT
+        end
+        UI_GRANT_REFRESH["Consumer grants refresh<br/>UI-GRANT-REFRESH"]
+        UI_GRANT_CREATE_OPEN["Open consumer grant creation<br/>UI-GRANT-CREATE-OPEN"]
+        UI_ADMIN_GRANTS --> UI_GRANTS_TABLE
+        UI_ADMIN_GRANTS --> UI_GRANT_EDIT
+        UI_ADMIN_GRANTS --> UI_GRANT_CREATE
+        UI_ADMIN_GRANTS --> UI_GRANT_REFRESH
+        UI_ADMIN_GRANTS --> UI_GRANT_CREATE_OPEN
+        UI_GRANTS_TABLE ~~~ UI_GRANT_EDIT
+        UI_GRANT_EDIT ~~~ UI_GRANT_CREATE
+        UI_GRANT_CREATE ~~~ UI_GRANT_REFRESH
+        UI_GRANT_REFRESH ~~~ UI_GRANT_CREATE_OPEN
+      end
+      subgraph UI_ADMIN_TOKENS_GROUP["API Tokens"]
+        direction TB
+        UI_ADMIN_TOKENS["API Tokens<br/>UI-ADMIN-TOKENS"]
+        UI_TOKENS_TABLE["API tokens table<br/>UI-TOKENS-TABLE"]
+        UI_TOKEN_CREATE["Create API token dialog<br/>UI-TOKEN-CREATE"]
+        UI_TOKEN_REVOKE["Revoke API token confirmation<br/>UI-TOKEN-REVOKE"]
+        UI_ADMIN_TOKENS --> UI_TOKENS_TABLE
+        UI_ADMIN_TOKENS --> UI_TOKEN_CREATE
+        UI_ADMIN_TOKENS --> UI_TOKEN_REVOKE
+        UI_TOKENS_TABLE ~~~ UI_TOKEN_CREATE
+        UI_TOKEN_CREATE ~~~ UI_TOKEN_REVOKE
+      end
+      subgraph UI_ADMIN_TRANSFER_GROUP["Credential Transfer"]
+        direction TB
+        UI_ADMIN_TRANSFER["Credential Transfer<br/>UI-ADMIN-TRANSFER"]
+        UI_TRANSFER_EXPORT["Credential export form<br/>UI-TRANSFER-EXPORT"]
+        UI_TRANSFER_IMPORT["Credential import form<br/>UI-TRANSFER-IMPORT"]
+        UI_ADMIN_TRANSFER --> UI_TRANSFER_EXPORT
+        UI_ADMIN_TRANSFER --> UI_TRANSFER_IMPORT
+        UI_TRANSFER_EXPORT ~~~ UI_TRANSFER_IMPORT
+      end
+      UI_ADMIN_NAV["Admin navigation<br/>UI-ADMIN-NAV"]
+      UI_ADMIN_FOOTER["Admin support and legal links<br/>UI-ADMIN-FOOTER"]
+      subgraph UI_ADMIN_LOGIN_FORM_GROUP["Admin login form"]
+        direction TB
+        UI_ADMIN_LOGIN_FORM["Admin login form<br/>UI-ADMIN-LOGIN-FORM"]
+        UI_ADMIN_LOGIN_SUBMIT["Admin login submit<br/>UI-ADMIN-LOGIN-SUBMIT"]
+        UI_ADMIN_LOGIN_FORM --> UI_ADMIN_LOGIN_SUBMIT
+      end
+      UI_ADMIN --> UI_ADMIN_WIZARD
+      UI_ADMIN --> UI_ADMIN_DASHBOARD
+      UI_ADMIN --> UI_ADMIN_PROVIDERS
+      UI_ADMIN --> UI_ADMIN_CREDENTIALS
+      UI_ADMIN --> UI_ADMIN_GRANTS
+      UI_ADMIN --> UI_ADMIN_TOKENS
+      UI_ADMIN --> UI_ADMIN_TRANSFER
+      UI_ADMIN --> UI_ADMIN_NAV
+      UI_ADMIN --> UI_ADMIN_FOOTER
+      UI_ADMIN --> UI_ADMIN_LOGIN_FORM
+      UI_ADMIN_WIZARD ~~~ UI_ADMIN_DASHBOARD
+      UI_ADMIN_DASHBOARD ~~~ UI_ADMIN_PROVIDERS
+      UI_ADMIN_PROVIDERS ~~~ UI_ADMIN_CREDENTIALS
+      UI_ADMIN_CREDENTIALS ~~~ UI_ADMIN_GRANTS
+      UI_ADMIN_GRANTS ~~~ UI_ADMIN_TOKENS
+      UI_ADMIN_TOKENS ~~~ UI_ADMIN_TRANSFER
+      UI_ADMIN_TRANSFER ~~~ UI_ADMIN_NAV
+      UI_ADMIN_NAV ~~~ UI_ADMIN_FOOTER
+      UI_ADMIN_FOOTER ~~~ UI_ADMIN_LOGIN_FORM
+    end
+    subgraph UI_CONSUMER_GROUP["Consumer UI"]
+      direction TB
+      UI_CONSUMER["Consumer UI<br/>UI-CONSUMER"]
+      UI_CONSUMER_DISCOVERY["Consumer credential discovery<br/>UI-CONSUMER-DISCOVERY"]
+      UI_CONSUMER_RESOLVE["Consumer secret resolution<br/>UI-CONSUMER-RESOLVE"]
+      subgraph UI_CONSUMER_AUTH_GROUP["Consumer token form"]
+        direction TB
+        UI_CONSUMER_AUTH["Consumer token form<br/>UI-CONSUMER-AUTH"]
+        UI_CONSUMER_DISCOVERY_SUBMIT["Consumer discovery submit<br/>UI-CONSUMER-DISCOVERY-SUBMIT"]
+        UI_CONSUMER_AUTH --> UI_CONSUMER_DISCOVERY_SUBMIT
+      end
+      UI_CONSUMER_STATUS["Consumer status<br/>UI-CONSUMER-STATUS"]
+      UI_CONSUMER --> UI_CONSUMER_DISCOVERY
+      UI_CONSUMER --> UI_CONSUMER_RESOLVE
+      UI_CONSUMER --> UI_CONSUMER_AUTH
+      UI_CONSUMER --> UI_CONSUMER_STATUS
+      UI_CONSUMER_DISCOVERY ~~~ UI_CONSUMER_RESOLVE
+      UI_CONSUMER_RESOLVE ~~~ UI_CONSUMER_AUTH
+      UI_CONSUMER_AUTH ~~~ UI_CONSUMER_STATUS
+    end
+  end
+  UI_APP --> UI_ADMIN
+  UI_APP --> UI_CONSUMER
+  subgraph ROUTE_MATRIX["Canonical route matrix"]
+    direction LR
+    UI_ADMIN_NAV -.->|/admin/| UI_ADMIN_WIZARD
+    UI_ADMIN_NAV -.->|/admin/dashboard.html| UI_ADMIN_DASHBOARD
+    UI_ADMIN_NAV -.->|/admin/providers.html| UI_ADMIN_PROVIDERS
+    UI_ADMIN_NAV -.->|/admin/credentials.html| UI_ADMIN_CREDENTIALS
+    UI_ADMIN_NAV -.->|/admin/consumer-grants.html| UI_ADMIN_GRANTS
+    UI_ADMIN_NAV -.->|/admin/api-tokens.html| UI_ADMIN_TOKENS
+    UI_ADMIN_NAV -.->|/admin/credential-transfer.html| UI_ADMIN_TRANSFER
+    UI_CONSUMER_HANDOFF -.->|/consumer/| UI_CONSUMER
+  end
+  subgraph EXECUTION_CLASSIFICATIONS["Interaction execution classifications — outside the UI hierarchy"]
+    direction LR
+    EXECUTION_BLOCKED["BLOCKED<br/>1 interaction"]
+    EXECUTION_NOT_EXECUTED["NOT_EXECUTED<br/>57 interactions"]
+  end
+  subgraph LEGEND["Legend"]
+    direction LR
+    LEGEND_LAYOUT["Layout / shell"]
+    LEGEND_NAVIGATION["Navigation / entry"]
+    LEGEND_VIEW["Screen / view"]
+    LEGEND_DIALOG["Dialog / confirmation"]
+    LEGEND_FEEDBACK["Feedback / status"]
+    LEGEND_BLOCKED["BLOCKED"]
+    LEGEND_NOT_EXECUTED["NOT_EXECUTED"]
+  end
+  class UI_APP layout
+  class UI_ADMIN layout
+  class UI_CONSUMER layout
+  class UI_ADMIN_WIZARD navigation
+  class UI_ADMIN_DASHBOARD navigation
+  class UI_ADMIN_PROVIDERS navigation
+  class UI_ADMIN_CREDENTIALS navigation
+  class UI_ADMIN_GRANTS navigation
+  class UI_ADMIN_TOKENS navigation
+  class UI_ADMIN_TRANSFER navigation
+  class UI_CONSUMER_DISCOVERY view
+  class UI_CONSUMER_RESOLVE view
+  class UI_CONSUMER_HANDOFF navigation
+  class UI_WIZARD_STEP_TYPE view
+  class UI_WIZARD_STEP_PROVIDER view
+  class UI_WIZARD_STEP_FORM view
+  class UI_WIZARD_STEP_OAUTH view
+  class UI_WIZARD_STEP_SUMMARY view
+  class UI_PROVIDER_DETAILS view
+  class UI_PROVIDER_METHODS view
+  class UI_PROVIDER_FIELDS view
+  class UI_PROVIDER_REVIEW view
+  class UI_CREDENTIALS_TABLE view
+  class UI_CREDENTIAL_DETAIL dialog
+  class UI_CREDENTIAL_EDIT dialog
+  class UI_CREDENTIAL_DELETE dialog
+  class UI_GRANTS_TABLE view
+  class UI_GRANT_EDIT dialog
+  class UI_GRANT_CREATE dialog
+  class UI_TOKENS_TABLE view
+  class UI_TOKEN_CREATE dialog
+  class UI_TOKEN_REVOKE dialog
+  class UI_TRANSFER_EXPORT view
+  class UI_TRANSFER_IMPORT view
+  class UI_ADMIN_NAV navigation
+  class UI_ADMIN_FOOTER navigation
+  class UI_CONSUMER_AUTH view
+  class UI_CONSUMER_STATUS feedback
+  class UI_ADMIN_LOGIN_FORM view
+  class UI_ADMIN_LOGIN_SUBMIT navigation
+  class UI_WIZARD_NEXT navigation
+  class UI_WIZARD_BACK navigation
+  class UI_CONSUMER_DISCOVERY_SUBMIT navigation
+  class UI_GRANT_REFRESH navigation
+  class UI_GRANT_CREATE_OPEN navigation
+  class UI_GRANT_CREATE_SUBMIT navigation
+  class EXECUTION_BLOCKED,LEGEND_BLOCKED blocked
+  class EXECUTION_NOT_EXECUTED,LEGEND_NOT_EXECUTED notExecuted
+  class LEGEND_LAYOUT layout
+  class LEGEND_NAVIGATION navigation
+  class LEGEND_VIEW view
+  class LEGEND_DIALOG dialog
+  class LEGEND_FEEDBACK feedback
+  classDef layout fill:#f3edff,stroke:#8b6bd6,color:#241447,stroke-width:2px
+  classDef navigation fill:#edf6ff,stroke:#4e8fc8,color:#12395d,stroke-width:1.5px
+  classDef view fill:#edf9ee,stroke:#69a66d,color:#1d4d22,stroke-width:1.5px
+  classDef dialog fill:#f3fbf2,stroke:#69a66d,color:#1d4d22,stroke-dasharray: 5 3
+  classDef feedback fill:#fff7e8,stroke:#d09133,color:#654008,stroke-width:1.5px
+  classDef blocked fill:#fff0f0,stroke:#c04a4a,color:#6b1515,stroke-width:2px,stroke-dasharray: 6 3
+  classDef notExecuted fill:#f5f5f5,stroke:#777,color:#333,stroke-dasharray: 4 3
+  style UI_AREAS fill:#ffffff,stroke:#cccccc,stroke-width:1px
+  style UI_ADMIN_GROUP fill:#f8fbff,stroke:#85b3dd,stroke-width:1.5px
+  style UI_CONSUMER_GROUP fill:#fffaf0,stroke:#e7b45c,stroke-width:1.5px
+  style EXECUTION_CLASSIFICATIONS fill:#fafafa,stroke:#999,stroke-dasharray: 4 3
+  style LEGEND fill:#ffffff,stroke:#bbbbbb,stroke-width:1px

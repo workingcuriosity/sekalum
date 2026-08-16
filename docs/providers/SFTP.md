@@ -14,6 +14,7 @@ Der SFTP Provider verwaltet Zugangsdaten für sichere Dateiübertragungen über 
 
 Typische Einsatzbereiche:
 
+- VPS-Hosts
 - NAS-Systeme
 - Webserver
 - Backup-Ziele
@@ -119,6 +120,7 @@ Enthalten in F7.1:
 
 Nicht enthalten in F7.1:
 
+- SSH Private Key Authentication
 - Known Host / Fingerprint Pinning
 - reale SFTP Library Dependency
 - Dateiübertragungen

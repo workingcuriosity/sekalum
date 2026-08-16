@@ -1,8 +1,54 @@
+---
+title: Quick Start Guide
+version: 1.0.6
+status: Active
+category: Quick Start
+canonical: true
+scope: Release 1.0 international onboarding baseline
+maintainer: cyphre-san productions
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+copyright: "© 2026 cyphre-san productions"
+target_audience:
+  - International users
+  - Administrators
+  - Operators
+dependent_documents:
+  - docs/installation-guide/index.md
+  - docs/configuration-reference/index.md
+  - docs/user-guide/index.md
+  - docs/api-reference/index.md
+  - docs/security-guide/index.md
+  - docs/project/THIRD_PARTY_SOFTWARE.md
+change_history:
+  - version: 1.0.5
+    date: 2026-08-02
+    change: Adds the post-setup Consumer interface handoff and clarifies the separate Consumer context.
+  - version: 1.0.6
+    date: 2026-08-04
+    change: Adds the consistent Beta-1 Bootstrap, First Administrator and Management Token onboarding path.
+  - version: 1.0.4
+    date: 2026-08-02
+    change: Replaces the illustrative Consumer visual with real, sanitized Beta-1 Consumer Flow screenshots.
+  - version: 1.0.3
+    date: 2026-08-02
+    change: Adds the public Beta-1 Consumer Flow quick start and a safe illustrative connection-state visual.
+  - version: 1.0.2
+    date: 2026-07-17
+    change: Clarifies that OAuth redirect URIs are system-managed registration values, not Wizard input.
+  - version: 1.0.1
+    date: 2026-07-12
+    change: Uses Wizard-managed encrypted OAuth application configuration as the primary onboarding path.
+  - version: 1.0.0
+    date: 2026-07-12
+    change: Adds the mandatory English Release 1.0 onboarding path.
+---
+
 # Quick Start Guide
 
 ## Purpose
 
-Credential HUB manages the lifecycle of digital credentials, including provider credentials, OAuth connections, API tokens, encrypted import and export data, and lifecycle status. This guide is the English onboarding path for Release 1.0 Beta 1. It does not translate the complete product documentation.
+Sekalum manages the lifecycle of digital credentials, including provider credentials, OAuth connections, API tokens, encrypted import and export data, and lifecycle status. This guide is the English onboarding path for Release 1.0 Beta 1. It does not translate the complete product documentation.
 
 ## Prerequisites
 
@@ -49,11 +95,37 @@ With the default root deployment, open:
 
 To run below a public prefix, set `BASE_PATH` to a value such as `/credential-hub`. The corresponding paths become `/credential-hub/admin/`, `/credential-hub/admin/dashboard.html`, and `/credential-hub/health`. A reverse proxy must preserve the prefix rather than strip it.
 
+## Bootstrap and Admin access
+
+Beta 1 has no username/password login screen. On a new installation with an
+empty persisted user collection, **Bootstrap** is active. Create the
+**First Administrator** through the local Management API before exposing the
+service beyond the local machine:
+
+```bash
+curl --request POST http://localhost:3000/api/v1/management/users \
+  --header 'Content-Type: application/json' \
+  --data '{"userId":"admin","displayName":"First Administrator","roleKey":"admin"}'
+```
+
+Bootstrap ends when the **First Administrator** is persisted. The Admin UI then opens
+with a **Management Token** gate. Enter an authorized **Management Token**;
+the Admin UI validates `Authorization: Bearer <management-token>` before it
+reveals the Dashboard and Admin navigation. The Consumer API uses a separate
+Consumer API token and does not use the Management Token.
+
+The `x-credential-hub-user` header is not a production login mechanism. It is
+retained only for `NODE_ENV=test` compatibility tests.
+
+For the complete first-installation sequence, including health validation,
+Credential preparation, Consumer Grant setup and the first Resolve, see the
+[Installation Guide — Complete First Installation Workflow](../installation-guide/index.md#complete-first-installation-workflow).
+
 ## Create a first credential
 
 1. Open the Credential Wizard.
 2. Select an authentication method and a registered provider.
-3. Enter only the user-configurable fields requested by the provider definition. For OAuth, this can include the application client ID, scopes, and client secret where required. The redirect URI is system-managed: copy the read-only technical value shown by Credential HUB when registering the provider application; do not enter it as a Wizard field.
+3. Enter only the user-configurable fields requested by the provider definition. For OAuth, this can include the application client ID, scopes, and client secret where required. The redirect URI is system-managed: copy the read-only technical value shown by Sekalum when registering the provider application; do not enter it as a Wizard field.
 4. Complete authorization at the provider and ensure the registered callback URI includes the active `BASE_PATH` when one is configured. If authorization is cancelled or fails, use the retry action in the Wizard.
 5. Review the summary and create the credential.
 
@@ -104,6 +176,20 @@ granted fields; Secret values are not shown.*
 *Real Beta-1 Grant form: the administrator selects named Secret fields without
 entering or viewing their values.*
 
+Before saving, the Grant form provides a read-only Permission Summary. It
+separates selected Resolve Secret fields from excluded fields and explains
+that Discovery and Runtime-Public remain the existing public projections. The
+preview makes no API call, exposes no Secret values and does not change the
+grant.
+
+The Consumer permissions page explains this least-privilege selection in
+business terms. Discovery exposes only active Credentials with a matching
+grant and their public field contract. Resolve returns only explicitly
+requested Secret fields permitted for that Credential and Consumer; it never
+provides wildcard access or provider internals. A Consumer API Token is used
+by the Consumer Runtime, while a Management Token is reserved for
+administration.
+
 ### 3. Consumer token and handoff
 
 The API Token form makes the dedicated Consumer token and its
@@ -138,7 +224,7 @@ path after an administrator has prepared the grant.*
 
 **Prerequisites:** An administrator has already created and activated the credential, created a dedicated Consumer API token with the `credentials:consume` scope, and granted the Consumer access to the credential and the specific secret fields it may resolve. A Management Token is not a Consumer token.
 
-Consumer-first onboarding improvements are planned for a future release.
+Consumer-first onboarding improvements are planned outside Beta 1 under Issue #141.
 
 1. After a successful Consumer Grant setup and Resolve verification in the Credential Wizard, choose **Open Consumer interface**. You can also open the Consumer view directly at `/consumer/`. The link opens a separate Consumer context and does not transfer a Management Token. Enter the dedicated Consumer API token there and treat it as sensitive: use it only for the current session and do not put it in screenshots, logs, source code, or browser persistence.
 
@@ -158,7 +244,7 @@ Consumer-first onboarding improvements are planned for a future release.
 
    *Actual Beta-1 credential selection. The selected credential is identified through its public `credentialKey`.*
 
-4. Select only the secret field names required for the current operation and choose **Resolve**. Credential HUB returns only explicitly requested, authorized fields. The Consumer cannot use wildcard selection or bypass the configured grant.
+4. Select only the secret field names required for the current operation and choose **Resolve**. Sekalum returns only explicitly requested, authorized fields. The Consumer cannot use wildcard selection or bypass the configured grant.
 
    ![Field contract and permitted secret field selection](images/field-contract.jpg)
 
@@ -170,7 +256,7 @@ Consumer-first onboarding improvements are planned for a future release.
 
    *Actual Beta-1 Resolve result. The resolved value remains masked until an explicit, time-limited reveal action.*
 
-Credential HUB enforces authentication, authorization, grants, credential lifecycle, and controlled resolution. Once a value is delivered to the Consumer, the Consumer is responsible for its own storage, logging, display, and transmission controls. For endpoint and field-contract details, see the [API Reference](../api-reference/index.md) and [Security Guide](../security-guide/index.md).
+Sekalum enforces authentication, authorization, grants, credential lifecycle, and controlled resolution. Once a value is delivered to the Consumer, the Consumer is responsible for its own storage, logging, display, and transmission controls. For endpoint and field-contract details, see the [API Reference](../api-reference/index.md) and [Security Guide](../security-guide/index.md).
 
 Developers integrating an external JavaScript or Python service can use the [Node.js Consumer Runtime example](../developer-guide/index.md#nodejs-consumer-runtime-example) or [Python Consumer Runtime example](../developer-guide/index.md#python-consumer-runtime-example) for the same Discovery → `credentialKey` → Resolve sequence without adding a product-specific library. n8n users should follow the [n8n Consumer Runtime guidance](../developer-guide/index.md#n8n-and-other-runtimes); n8n uses the same generic HTTP Consumer API path and has no privileged integration.
 
@@ -189,10 +275,11 @@ Developers integrating an external JavaScript or Python service can use the [Nod
 - [User Guide](../user-guide/index.md)
 - [API Reference](../api-reference/index.md)
 - [Security Guide](../security-guide/index.md)
+- [Third-Party Software](../project/THIRD_PARTY_SOFTWARE.md)
 
 ## Need Help?
 
-- Join the official [Credential HUB Discord community](https://discord.gg/exTu3Dy2UW) for technical support, discussion, and feature ideas.
+- Join the official [Sekalum Discord community](https://discord.gg/exTu3Dy2UW) for technical support, discussion, and feature ideas.
 - Use the documentation sources listed above for product and configuration guidance.
-- Submit reproducible bugs through [GitHub Issues](https://github.com/luiscyphre404-cmd/credential-hub/issues).
+- Submit reproducible bugs through [GitHub Issues](https://github.com/workingcuriosity/sekalum/issues).
 - Report security vulnerabilities only through the process in the [Security Guide](../security-guide/index.md), never through Discord.

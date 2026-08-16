@@ -1,0 +1,4109 @@
+schema_version: 0.2.0
+model:
+  id: CUI-IM
+  title: Canonical UI Interaction Model
+  version: 0.2.0
+  status: ACTIVE
+source_of_truth:
+  format: YAML
+  path: docs/ui/canonical-ui-interaction-model.yaml
+  schema: docs/ui/canonical-ui-interaction-model.schema.json
+  normative: true
+  generated_views:
+    - docs/ui/generated/ui-tree.md
+    - docs/ui/generated/ui-flow.mmd
+ownership:
+  owner: Sekalum
+  maintainer: cyphre-san productions
+  architecture_review: Architecture Governance
+  documentation_maintainer: Documentation Engineer
+  validation_owner: Test Engineer
+  security_review: Security Engineer
+scope:
+  includes:
+    - UI structure
+    - navigation
+    - interaction behaviour
+    - visibility and role dependencies
+    - UI feedback
+    - UI traceability
+  excludes:
+    - architecture decisions
+    - API specifications
+    - data model
+    - security model
+    - product requirements
+    - release decisions
+traceability:
+  required_fields:
+    - source_files
+    - canonical_references
+    - test_references
+    - live_evidence
+  direction:
+    - UI
+    - capability
+    - code
+    - API/service
+    - canonical requirement
+    - test
+    - live evidence
+change_control:
+  review_triggers:
+    - new_page
+    - new_route
+    - new_panel
+    - new_dialog
+    - new_modal
+    - new_wizard
+    - new_form_control
+    - new_message
+    - new_role_dependency
+    - new_capability_exposure
+    - changed_navigation
+    - changed_error_or_recovery_path
+  definition_of_done:
+    - source_updated
+    - schema_validated
+    - generated_views_regenerated
+    - traceability_updated
+    - relevant_tests_updated
+    - generator_drift_check_passed
+route_matrix:
+  - route: /admin/
+    node_id: UI-ADMIN-WIZARD
+    role: administrator
+    authentication: management bearer token
+    navigation_entry: Admin navigation → Credential Wizard
+    terminal: false
+  - route: /admin/dashboard.html
+    node_id: UI-ADMIN-DASHBOARD
+    role: administrator
+    authentication: management bearer token
+    navigation_entry: Admin navigation → Dashboard
+    terminal: false
+  - route: /admin/providers.html
+    node_id: UI-ADMIN-PROVIDERS
+    role: administrator
+    authentication: management bearer token
+    navigation_entry: Admin navigation → Providers
+    terminal: false
+  - route: /admin/credentials.html
+    node_id: UI-ADMIN-CREDENTIALS
+    role: administrator
+    authentication: management bearer token
+    navigation_entry: Admin navigation → Credentials
+    terminal: false
+  - route: /admin/consumer-grants.html
+    node_id: UI-ADMIN-GRANTS
+    role: administrator
+    authentication: management bearer token
+    navigation_entry: Admin navigation → Consumer Grants
+    terminal: false
+  - route: /admin/api-tokens.html
+    node_id: UI-ADMIN-TOKENS
+    role: administrator
+    authentication: management bearer token
+    navigation_entry: Admin navigation → API Tokens
+    terminal: false
+  - route: /admin/credential-transfer.html
+    node_id: UI-ADMIN-TRANSFER
+    role: administrator
+    authentication: management bearer token
+    navigation_entry: Admin navigation → Credential Transfer
+    terminal: false
+  - route: /consumer/
+    node_id: UI-CONSUMER
+    role: consumer
+    authentication: consumer bearer token
+    navigation_entry: Wizard handoff or direct route
+    terminal: false
+api_only_paths:
+  - route: /api/v1/management/users
+    capability_id: CAP-MANAGEMENT-INTERNAL
+    owner: management boundary
+    reason: no current UI surface; API-only by intentional 1.x scope
+  - route: /api/v1/management/roles
+    capability_id: CAP-MANAGEMENT-INTERNAL
+    owner: management boundary
+    reason: no current UI surface; API-only by intentional 1.x scope
+  - route: /api/v1/management/audit-log
+    capability_id: CAP-MANAGEMENT-INTERNAL
+    owner: management boundary
+    reason: no current UI surface; API-only by intentional 1.x scope
+  - route: /api/v1/management/metrics
+    capability_id: CAP-MANAGEMENT-INTERNAL
+    owner: management boundary
+    reason: no current UI surface; API-only by intentional 1.x scope
+  - route: /api/v1/management/backups
+    capability_id: CAP-MANAGEMENT-INTERNAL
+    owner: management boundary
+    reason: no current UI surface; API-only by intentional 1.x scope
+terminal_paths:
+  - node_id: UI-ADMIN-FOOTER
+    condition: external support, legal or security link selected
+    result: external or document destination; no in-app successor
+  - node_id: UI-CONSUMER-STATUS
+    condition: discovery or resolve completes with success or failure
+    result: terminal feedback for the current request; recovery remains available
+      where implemented
+  - node_id: UI-WIZARD-STEP-OAUTH
+    condition: OAuth provider authorization handoff starts
+    result: external provider page; callback returns through the documented OAuth
+      boundary
+taxonomy:
+  node_types:
+    - application
+    - area
+    - page
+    - section
+    - panel
+    - wizard
+    - wizard_step
+    - form
+    - field
+    - button
+    - link
+    - menu
+    - tab
+    - modal
+    - drawer
+    - table
+    - row_action
+    - notification
+    - empty_state
+    - loading_state
+    - error_state
+    - confirmation
+    - redirect
+    - external_handoff
+  interaction_outcomes:
+    - open_modal
+    - close_modal
+    - navigate
+    - refresh
+    - load_data
+    - save_data
+    - validate_input
+    - start_oauth
+    - open_external_page
+    - create_token
+    - create_grant
+    - revoke_or_delete
+    - copy_value
+    - show_or_hide
+    - show_loading
+    - show_success
+    - show_warning
+    - show_error
+    - block_continuation
+    - require_confirmation
+    - redirect
+    - change_authentication_state
+  node_statuses:
+    - FOUNDATION
+    - ACTIVE
+    - DEPRECATED
+    - UNKNOWN_REQUIRES_REVIEW
+  feedback_types:
+    - SUCCESS
+    - INFO
+    - WARNING
+    - VALIDATION_ERROR
+    - AUTHENTICATION_ERROR
+    - AUTHORIZATION_ERROR
+    - NETWORK_ERROR
+    - SYSTEM_ERROR
+    - EMPTY_STATE
+    - LOADING
+  selector_strategies:
+    - test_id
+    - id
+    - role_and_name
+    - name
+    - label
+    - route
+    - structural_fallback
+    - not_applicable
+nodes:
+  - id: UI-APP
+    type: application
+    title: Sekalum Web UI
+    status: ACTIVE
+    route: null
+    parent: null
+    roles:
+      - administrator
+      - consumer
+    permissions: []
+    entry_conditions:
+      - running HTTP service
+    visible_when:
+      - application is served
+    data_dependencies: []
+    source_files:
+      - public/admin/admin-shell.js
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/integration/consumer-ui.test.js
+    live_verified: true
+    handler: null
+    backend: null
+  - id: UI-ADMIN
+    type: area
+    title: Admin UI
+    status: ACTIVE
+    route: /admin/
+    parent: UI-APP
+    roles:
+      - administrator
+    permissions:
+      - management:read
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - admin session is authenticated
+    data_dependencies:
+      - adminApi
+    source_files:
+      - public/admin/admin-shell.js
+      - public/admin/auth.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-auth.test.js
+      - tests/integration/admin-ui.test.js
+    live_verified: true
+    handler: initAdminShell
+    backend: src/oauth/oauth-callback-server.js
+  - id: UI-CONSUMER
+    type: area
+    title: Consumer UI
+    status: ACTIVE
+    route: /consumer/
+    parent: UI-APP
+    roles:
+      - consumer
+    permissions:
+      - credentials:consume
+    entry_conditions:
+      - consumer token supplied
+    visible_when:
+      - consumer page is served
+    data_dependencies:
+      - consumerApi
+    source_files:
+      - public/consumer/index.html
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/consumer-ui.test.js
+    live_verified: true
+    handler: initialize
+    backend: src/oauth/oauth-callback-server.js
+  - id: UI-ADMIN-WIZARD
+    type: page
+    title: Credential Wizard
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+      - providers:read
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - provider metadata
+      - credential metadata
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/integration/credential-creation-flow.test.js
+    live_verified: false
+    handler: initializeWizard
+    backend: src/oauth/oauth-callback-server.js
+  - id: UI-ADMIN-DASHBOARD
+    type: page
+    title: Dashboard
+    status: ACTIVE
+    route: /admin/dashboard.html
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - management:read
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - dashboard data
+      - provider data
+    source_files:
+      - public/admin/dashboard.html
+      - public/admin/dashboard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/integration/dashboard-api.test.js
+    live_verified: false
+    handler: loadDashboard
+    backend: /api/v1/dashboard
+  - id: UI-ADMIN-PROVIDERS
+    type: page
+    title: Custom Provider Wizard
+    status: ACTIVE
+    route: /admin/providers.html
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - providers:manage
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - provider definition form state
+    source_files:
+      - public/admin/providers.html
+      - public/admin/providers.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/integration/providers-api.test.js
+    live_verified: false
+    handler: initProviderWizard
+    backend: /api/v1/providers
+  - id: UI-ADMIN-CREDENTIALS
+    type: page
+    title: Credential Management
+    status: ACTIVE
+    route: /admin/credentials.html
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - credentials:read
+      - credentials:manage
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - credentials
+      - providers
+    source_files:
+      - public/admin/credentials.html
+      - public/admin/credentials.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/integration/credentials-list-api.test.js
+    live_verified: false
+    handler: loadCredentials
+    backend: /api/v1/credentials
+  - id: UI-ADMIN-GRANTS
+    type: page
+    title: Consumer Grants
+    status: ACTIVE
+    route: /admin/consumer-grants.html
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - consumer-grants:manage
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - consumer grants
+      - credentials
+      - tokens
+    source_files:
+      - public/admin/consumer-grants.html
+      - public/admin/consumer-grants.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/unit/consumer-grant-service.test.js
+    live_verified: false
+    handler: loadGrants
+    backend: /api/v1/management/consumer-grants
+  - id: UI-ADMIN-TOKENS
+    type: page
+    title: API Tokens
+    status: ACTIVE
+    route: /admin/api-tokens.html
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - api-tokens:read
+      - api-tokens:manage
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - api token metadata
+    source_files:
+      - public/admin/api-tokens.html
+      - public/admin/api-tokens.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: loadApiTokens
+    backend: /api/v1/management/api-tokens
+    selectors:
+      - strategy: test_id
+        value: api-token-refresh
+        scope: api-token-page
+        source_file: public/admin/api-tokens.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-ADMIN-TRANSFER
+    type: page
+    title: Credential Transfer
+    status: ACTIVE
+    route: /admin/credential-transfer.html
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - admin authentication succeeds
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - credential list
+      - import/export state
+    source_files:
+      - public/admin/credential-transfer.html
+      - public/admin/credential-transfer.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/credential-transfer-api.test.js
+      - tests/integration/admin-ui.test.js
+    live_verified: false
+    handler: loadCredentials
+    backend: /api/v1/credentials/export and /api/v1/credentials/import
+  - id: UI-CONSUMER-DISCOVERY
+    type: panel
+    title: Consumer credential discovery
+    status: ACTIVE
+    route: /consumer/
+    parent: UI-CONSUMER
+    roles:
+      - consumer
+    permissions:
+      - credentials:consume
+    entry_conditions:
+      - consumer token accepted
+    visible_when:
+      - discovery request succeeds
+    data_dependencies:
+      - available credentials
+    source_files:
+      - public/consumer/index.html
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/consumer-ui.test.js
+    live_verified: false
+    handler: loadCredentials
+    backend: /api/v1/consumer/credentials
+  - id: UI-CONSUMER-RESOLVE
+    type: panel
+    title: Consumer secret resolution
+    status: ACTIVE
+    route: /consumer/
+    parent: UI-CONSUMER
+    roles:
+      - consumer
+    permissions:
+      - credentials:consume
+    entry_conditions:
+      - credential selected and fields selected
+    visible_when:
+      - resolve request completes
+    data_dependencies:
+      - selected credential
+      - selected secret names
+    source_files:
+      - public/consumer/index.html
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/consumer-ui.test.js
+    live_verified: false
+    handler: resolveCredential
+    backend: /api/v1/consumer/credentials/:credentialKey/resolve
+    selectors:
+      - strategy: test_id
+        value: consumer-resolve-submit
+        scope: consumer-secret-selection
+        source_file: public/consumer/consumer.js
+        required: true
+        runtime_generated: true
+        exclusive: true
+  - id: UI-CONSUMER-HANDOFF
+    type: link
+    title: Open Consumer interface
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - credentials:consume
+    entry_conditions:
+      - credential and consumer grant verified
+    visible_when:
+      - consumer integration complete
+    data_dependencies:
+      - consumer handoff destination
+    source_files:
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/quick-start-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: renderConsumerGrantPanel
+    backend: null
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: consumer-handoff-open
+        scope: consumer-grant-panel
+        source_file: public/admin/wizard.js
+        required: true
+        runtime_generated: true
+        exclusive: true
+  - id: UI-WIZARD-STEP-TYPE
+    type: wizard_step
+    title: Select credential type
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - wizard loaded
+    visible_when:
+      - wizard step is 1
+    data_dependencies:
+      - provider types
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/credential-creation-flow.test.js
+    live_verified: false
+    handler: renderTypeSelection
+    backend: /api/v1/providers
+  - id: UI-WIZARD-STEP-PROVIDER
+    type: wizard_step
+    title: Select provider
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - providers:read
+    entry_conditions:
+      - credential type selected
+    visible_when:
+      - wizard step is 2
+    data_dependencies:
+      - provider list
+      - provider search
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/credential-creation-flow.test.js
+    live_verified: false
+    handler: renderProviders
+    backend: /api/v1/providers
+  - id: UI-WIZARD-STEP-FORM
+    type: wizard_step
+    title: Enter credential data
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - provider selected
+    visible_when:
+      - wizard step is 3
+    data_dependencies:
+      - provider fields
+      - credential method
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/credential-creation-flow.test.js
+    live_verified: false
+    handler: renderCredentialForm
+    backend: /api/v1/credentials/test-connection
+  - id: UI-WIZARD-STEP-OAUTH
+    type: wizard_step
+    title: OAuth authorization
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+      - providers:manage
+    entry_conditions:
+      - provider supports OAuth
+    visible_when:
+      - OAuth method selected
+    data_dependencies:
+      - OAuth authorization URL
+      - callback state
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/oauth-http-login.test.js
+      - tests/integration/oauth-callback-public-language.test.js
+    live_verified: false
+    handler: startOAuth
+    backend: /api/v1/providers/:providerKey/oauth/start
+  - id: UI-WIZARD-STEP-SUMMARY
+    type: wizard_step
+    title: Review and create credential
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - credential data valid
+    visible_when:
+      - wizard step is 5
+    data_dependencies:
+      - credential payload
+      - grant configuration
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: createCredential
+    backend: /api/v1/credentials
+    selectors:
+      - strategy: test_id
+        value: credential-wizard-create
+        scope: wizard-summary
+        source_file: public/admin/index.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-PROVIDER-DETAILS
+    type: form
+    title: Provider details form
+    status: ACTIVE
+    route: /admin/providers.html
+    parent: UI-ADMIN-PROVIDERS
+    roles:
+      - administrator
+    permissions:
+      - providers:manage
+    entry_conditions:
+      - provider wizard step 1
+    visible_when:
+      - provider step is 1
+    data_dependencies:
+      - displayName
+      - key
+      - category
+      - description
+    source_files:
+      - public/admin/providers.html
+      - public/admin/providers.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/providers-api.test.js
+    live_verified: false
+    handler: details
+    backend: /api/v1/providers
+  - id: UI-PROVIDER-METHODS
+    type: panel
+    title: Provider credential methods
+    status: ACTIVE
+    route: /admin/providers.html
+    parent: UI-ADMIN-PROVIDERS
+    roles:
+      - administrator
+    permissions:
+      - providers:manage
+    entry_conditions:
+      - provider wizard step 2
+    visible_when:
+      - provider step is 2
+    data_dependencies:
+      - methods array
+    source_files:
+      - public/admin/providers.html
+      - public/admin/providers.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/providers-api.test.js
+    live_verified: false
+    handler: renderMethods
+    backend: null
+  - id: UI-PROVIDER-FIELDS
+    type: panel
+    title: Provider credential fields
+    status: ACTIVE
+    route: /admin/providers.html
+    parent: UI-ADMIN-PROVIDERS
+    roles:
+      - administrator
+    permissions:
+      - providers:manage
+    entry_conditions:
+      - provider wizard step 3
+    visible_when:
+      - provider step is 3
+    data_dependencies:
+      - fields array
+      - method bindings
+    source_files:
+      - public/admin/providers.html
+      - public/admin/providers.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/providers-api.test.js
+    live_verified: false
+    handler: renderFields
+    backend: null
+  - id: UI-PROVIDER-REVIEW
+    type: panel
+    title: Provider review
+    status: ACTIVE
+    route: /admin/providers.html
+    parent: UI-ADMIN-PROVIDERS
+    roles:
+      - administrator
+    permissions:
+      - providers:manage
+    entry_conditions:
+      - provider definition valid
+    visible_when:
+      - provider step is 4
+    data_dependencies:
+      - provider payload
+    source_files:
+      - public/admin/providers.html
+      - public/admin/providers.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/providers-api.test.js
+    live_verified: false
+    handler: renderReview
+    backend: /api/v1/providers
+  - id: UI-CREDENTIALS-TABLE
+    type: table
+    title: Credentials table
+    status: ACTIVE
+    route: /admin/credentials.html
+    parent: UI-ADMIN-CREDENTIALS
+    roles:
+      - administrator
+    permissions:
+      - credentials:read
+    entry_conditions:
+      - credentials loaded
+    visible_when:
+      - credentials page active
+    data_dependencies:
+      - credentials list
+    source_files:
+      - public/admin/credentials.html
+      - public/admin/credentials.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: renderCredentials
+    backend: /api/v1/credentials
+  - id: UI-CREDENTIAL-DETAIL
+    type: modal
+    title: Credential detail view
+    status: ACTIVE
+    route: /admin/credentials.html
+    parent: UI-ADMIN-CREDENTIALS
+    roles:
+      - administrator
+    permissions:
+      - credentials:read
+    entry_conditions:
+      - credential selected or detail identifier requested
+    visible_when:
+      - detail panel is open
+    data_dependencies:
+      - credential identifier
+      - provider
+      - public metadata
+      - status
+    source_files:
+      - public/admin/credentials.html
+      - public/admin/credentials.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: openDetail
+    backend: /api/v1/credentials/:credentialId
+    selectors:
+      - strategy: test_id
+        value: credential-detail
+        scope: credentials-page
+        source_file: public/admin/credentials.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-CREDENTIAL-EDIT
+    type: modal
+    title: Edit credential dialog
+    status: ACTIVE
+    route: /admin/credentials.html
+    parent: UI-ADMIN-CREDENTIALS
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - credential row edit action
+    visible_when:
+      - edit panel is open
+    data_dependencies:
+      - credential metadata
+      - provider metadata
+    source_files:
+      - public/admin/credentials.html
+      - public/admin/credentials.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+    live_verified: false
+    handler: openEdit
+    backend: /api/v1/credentials/:credentialId
+  - id: UI-CREDENTIAL-DELETE
+    type: confirmation
+    title: Delete credential confirmation
+    status: ACTIVE
+    route: /admin/credentials.html
+    parent: UI-ADMIN-CREDENTIALS
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - credential row delete action
+    visible_when:
+      - delete panel is open
+    data_dependencies:
+      - credential identifier
+    source_files:
+      - public/admin/credentials.html
+      - public/admin/credentials.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+    live_verified: false
+    handler: openDelete
+    backend: /api/v1/credentials/:credentialId
+  - id: UI-GRANTS-TABLE
+    type: table
+    title: Consumer grants table
+    status: ACTIVE
+    route: /admin/consumer-grants.html
+    parent: UI-ADMIN-GRANTS
+    roles:
+      - administrator
+    permissions:
+      - consumer-grants:manage
+    entry_conditions:
+      - grants loaded
+    visible_when:
+      - grants page active
+    data_dependencies:
+      - grant list
+    source_files:
+      - public/admin/consumer-grants.html
+      - public/admin/consumer-grants.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/unit/consumer-grant-service.test.js
+    live_verified: false
+    handler: renderGrants
+    backend: /api/v1/management/consumer-grants
+  - id: UI-GRANT-EDIT
+    type: modal
+    title: Edit consumer grant dialog
+    status: ACTIVE
+    route: /admin/consumer-grants.html
+    parent: UI-ADMIN-GRANTS
+    roles:
+      - administrator
+    permissions:
+      - consumer-grants:manage
+    entry_conditions:
+      - grant row edit action
+    visible_when:
+      - grant edit panel is open
+    data_dependencies:
+      - grant identifier
+      - secret field list
+    source_files:
+      - public/admin/consumer-grants.html
+      - public/admin/consumer-grants.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/unit/consumer-grant-service.test.js
+    live_verified: false
+    handler: openEdit
+    backend: /api/v1/management/consumer-grants/:grantId
+  - id: UI-GRANT-CREATE
+    type: modal
+    title: Create consumer grant dialog
+    status: ACTIVE
+    route: /admin/consumer-grants.html
+    parent: UI-ADMIN-GRANTS
+    roles:
+      - administrator
+    permissions:
+      - consumer-grants:manage
+    entry_conditions:
+      - credential list loaded
+    visible_when:
+      - grant create panel is open
+    data_dependencies:
+      - consumer identifier
+      - credential identifier
+      - allowed secret field names
+    source_files:
+      - public/admin/consumer-grants.html
+      - public/admin/consumer-grants.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: submitCreate
+    backend: /api/v1/management/consumer-grants
+    selectors:
+      - strategy: test_id
+        value: consumer-grant-create-form
+        scope: consumer-grants-page
+        source_file: public/admin/consumer-grants.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+      - strategy: test_id
+        value: consumer-grant-create-secrets
+        scope: consumer-grant-create-form
+        source_file: public/admin/consumer-grants.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-TOKENS-TABLE
+    type: table
+    title: API tokens table
+    status: ACTIVE
+    route: /admin/api-tokens.html
+    parent: UI-ADMIN-TOKENS
+    roles:
+      - administrator
+    permissions:
+      - api-tokens:read
+    entry_conditions:
+      - tokens loaded
+    visible_when:
+      - tokens page active
+    data_dependencies:
+      - token metadata
+    source_files:
+      - public/admin/api-tokens.html
+      - public/admin/api-tokens.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: renderApiTokens
+    backend: /api/v1/management/api-tokens
+    selectors:
+      - strategy: id
+        value: api-token-table-body
+        scope: api-token-page
+        source_file: public/admin/api-tokens.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-TOKEN-CREATE
+    type: modal
+    title: Create API token dialog
+    status: ACTIVE
+    route: /admin/api-tokens.html
+    parent: UI-ADMIN-TOKENS
+    roles:
+      - administrator
+    permissions:
+      - api-tokens:manage
+    entry_conditions:
+      - create token action
+    visible_when:
+      - create panel is open
+    data_dependencies:
+      - name
+      - userId
+      - expiry
+      - scopes
+    source_files:
+      - public/admin/api-tokens.html
+      - public/admin/api-tokens.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: submitCreateTokenForm
+    backend: /api/v1/management/api-tokens
+    selectors:
+      - strategy: test_id
+        value: api-token-create-open
+        scope: api-token-page
+        source_file: public/admin/api-tokens.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+      - strategy: test_id
+        value: api-token-create-submit
+        scope: api-token-create-form
+        source_file: public/admin/api-tokens.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+      - strategy: test_id
+        value: api-token-create-form
+        scope: api-token-page
+        source_file: public/admin/api-tokens.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-TOKEN-REVOKE
+    type: confirmation
+    title: Revoke API token confirmation
+    status: ACTIVE
+    route: /admin/api-tokens.html
+    parent: UI-ADMIN-TOKENS
+    roles:
+      - administrator
+    permissions:
+      - api-tokens:manage
+    entry_conditions:
+      - token row revoke action
+    visible_when:
+      - revoke panel is open
+    data_dependencies:
+      - token identifier
+    source_files:
+      - public/admin/api-tokens.html
+      - public/admin/api-tokens.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+    live_verified: false
+    handler: revokeToken
+    backend: /api/v1/management/api-tokens/:tokenId
+  - id: UI-TRANSFER-EXPORT
+    type: form
+    title: Credential export form
+    status: ACTIVE
+    route: /admin/credential-transfer.html
+    parent: UI-ADMIN-TRANSFER
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - transfer page loaded
+    visible_when:
+      - export section visible
+    data_dependencies:
+      - selected credentials
+      - export password
+    source_files:
+      - public/admin/credential-transfer.html
+      - public/admin/credential-transfer.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/credential-transfer-api.test.js
+    live_verified: false
+    handler: exportCredentials
+    backend: /api/v1/credentials/export
+  - id: UI-TRANSFER-IMPORT
+    type: form
+    title: Credential import form
+    status: ACTIVE
+    route: /admin/credential-transfer.html
+    parent: UI-ADMIN-TRANSFER
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - transfer page loaded
+    visible_when:
+      - import section visible
+    data_dependencies:
+      - source format
+      - file/content
+      - password
+      - conflict strategy
+    source_files:
+      - public/admin/credential-transfer.html
+      - public/admin/credential-transfer.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/credential-transfer-api.test.js
+    live_verified: false
+    handler: importCredentials
+    backend: /api/v1/credentials/import
+  - id: UI-ADMIN-NAV
+    type: menu
+    title: Admin navigation
+    status: ACTIVE
+    route: null
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions:
+      - management:read
+    entry_conditions:
+      - admin shell initialized
+    visible_when:
+      - authenticated admin
+    data_dependencies:
+      - navigation routes
+    source_files:
+      - public/admin/admin-shell.js
+    canonical_references:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+    live_verified: false
+    handler: renderNavigation
+    backend: null
+  - id: UI-ADMIN-FOOTER
+    type: link
+    title: Admin support and legal links
+    status: ACTIVE
+    route: null
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions: []
+    entry_conditions:
+      - admin shell initialized
+    visible_when:
+      - page footer visible
+    data_dependencies:
+      - project links
+      - support links
+    source_files:
+      - public/admin/admin-shell.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+    live_verified: false
+    handler: renderFooter
+    backend: null
+  - id: UI-CONSUMER-AUTH
+    type: form
+    title: Consumer token form
+    status: ACTIVE
+    route: /consumer/
+    parent: UI-CONSUMER
+    roles:
+      - consumer
+    permissions:
+      - credentials:consume
+    entry_conditions:
+      - consumer page loaded
+    visible_when:
+      - consumer page visible
+    data_dependencies:
+      - consumer token
+    source_files:
+      - public/consumer/index.html
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/consumer-ui.test.js
+    live_verified: false
+    handler: testConnection
+    backend: /api/v1/consumer/credentials
+  - id: UI-CONSUMER-STATUS
+    type: notification
+    title: Consumer status
+    status: ACTIVE
+    route: /consumer/
+    parent: UI-CONSUMER
+    roles:
+      - consumer
+    permissions: []
+    entry_conditions:
+      - consumer interaction occurs
+    visible_when:
+      - status update
+    data_dependencies:
+      - localized status text
+    source_files:
+      - public/consumer/index.html
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/consumer-ui.test.js
+    live_verified: false
+    handler: setStatus
+    backend: null
+  - id: UI-ADMIN-LOGIN-FORM
+    type: form
+    title: Admin login form
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN
+    roles:
+      - administrator
+    permissions: []
+    entry_conditions:
+      - no valid management token
+    visible_when:
+      - admin is unauthenticated
+    data_dependencies:
+      - management token
+    source_files:
+      - public/admin/auth.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: authenticateAdmin
+    backend: /api/v1/dashboard
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: admin-login-form
+        scope: admin-login-page
+        source_file: public/admin/auth.js
+        required: true
+        runtime_generated: true
+        exclusive: true
+  - id: UI-ADMIN-LOGIN-SUBMIT
+    type: button
+    title: Admin login submit
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-LOGIN-FORM
+    roles:
+      - administrator
+    permissions: []
+    entry_conditions:
+      - management token entered
+    visible_when:
+      - admin login form visible
+    data_dependencies:
+      - management token
+    source_files:
+      - public/admin/auth.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: authenticateAdmin
+    backend: /api/v1/dashboard
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: admin-login-submit
+        scope: admin-login-form
+        source_file: public/admin/auth.js
+        required: true
+        runtime_generated: true
+        exclusive: true
+  - id: UI-WIZARD-NEXT
+    type: button
+    title: Credential Wizard next
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - admin authenticated
+    visible_when:
+      - wizard is not at terminal step
+    data_dependencies:
+      - wizard state
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: goNext
+    backend: null
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: credential-wizard-next
+        scope: credential-wizard
+        source_file: public/admin/index.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-WIZARD-BACK
+    type: button
+    title: Credential Wizard back
+    status: ACTIVE
+    route: /admin/
+    parent: UI-ADMIN-WIZARD
+    roles:
+      - administrator
+    permissions:
+      - credentials:manage
+    entry_conditions:
+      - admin authenticated
+    visible_when:
+      - wizard step greater than one
+    data_dependencies:
+      - wizard state
+    source_files:
+      - public/admin/index.html
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: goBack
+    backend: null
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: credential-wizard-back
+        scope: credential-wizard
+        source_file: public/admin/index.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-CONSUMER-DISCOVERY-SUBMIT
+    type: button
+    title: Consumer discovery submit
+    status: ACTIVE
+    route: /consumer/
+    parent: UI-CONSUMER-AUTH
+    roles:
+      - consumer
+    permissions:
+      - credentials:consume
+    entry_conditions:
+      - consumer token entered
+    visible_when:
+      - consumer form visible
+    data_dependencies:
+      - consumer token
+    source_files:
+      - public/consumer/index.html
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: loadCredentials
+    backend: /api/v1/consumer/credentials
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: consumer-discovery-submit
+        scope: consumer-token-form
+        source_file: public/consumer/index.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-GRANT-REFRESH
+    type: button
+    title: Consumer grants refresh
+    status: ACTIVE
+    route: /admin/consumer-grants.html
+    parent: UI-ADMIN-GRANTS
+    roles:
+      - administrator
+    permissions:
+      - consumer-grants:manage
+    entry_conditions:
+      - admin authenticated
+    visible_when:
+      - grants page visible
+    data_dependencies:
+      - grant list
+    source_files:
+      - public/admin/consumer-grants.html
+      - public/admin/consumer-grants.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: loadGrants
+    backend: /api/v1/management/consumer-grants
+    test_required: true
+    selectors:
+      - strategy: id
+        value: refresh-consumer-grants
+        scope: consumer-grants-page
+        source_file: public/admin/consumer-grants.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-GRANT-CREATE-OPEN
+    type: button
+    title: Open consumer grant creation
+    status: ACTIVE
+    route: /admin/consumer-grants.html
+    parent: UI-ADMIN-GRANTS
+    roles:
+      - administrator
+    permissions:
+      - consumer-grants:manage
+    entry_conditions:
+      - admin authenticated
+    visible_when:
+      - grants page visible
+    data_dependencies:
+      - grant form
+    source_files:
+      - public/admin/consumer-grants.html
+      - public/admin/consumer-grants.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: openCreate
+    backend: null
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: consumer-grant-create-open
+        scope: consumer-grants-page
+        source_file: public/admin/consumer-grants.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+  - id: UI-GRANT-CREATE-SUBMIT
+    type: button
+    title: Save consumer grant
+    status: ACTIVE
+    route: /admin/consumer-grants.html
+    parent: UI-GRANT-CREATE
+    roles:
+      - administrator
+    permissions:
+      - consumer-grants:manage
+    entry_conditions:
+      - grant form valid
+    visible_when:
+      - grant create panel is open
+    data_dependencies:
+      - consumer identifier
+      - credential identifier
+      - selected secret field names
+    source_files:
+      - public/admin/consumer-grants.html
+      - public/admin/consumer-grants.js
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    live_verified: false
+    handler: submitCreate
+    backend: /api/v1/management/consumer-grants
+    test_required: true
+    selectors:
+      - strategy: test_id
+        value: consumer-grant-create-submit
+        scope: consumer-grant-create-form
+        source_file: public/admin/consumer-grants.html
+        required: true
+        runtime_generated: false
+        exclusive: true
+interactions:
+  - id: INT-TOKEN-LIST-OPEN
+    source: UI-ADMIN-TOKENS
+    trigger: open API token management
+    control: UI-ADMIN-TOKENS
+    preconditions:
+      - authenticated admin
+    action: GET API token list
+    success:
+      - token list rendered
+    failure:
+      - token list error rendered
+    next_state: UI-TOKENS-TABLE
+    side_effects: []
+    messages:
+      - FB-LOADING
+      - FB-SYSTEM-ERROR
+    security_boundary: api-tokens:read authorization
+    capability_ids:
+      - CAP-TOKEN-READ
+    source_files:
+      - public/admin/api-tokens.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: load_data
+    handler: loadApiTokens
+    redirect: /admin/api-tokens.html
+  - id: INT-TOKEN-CREATE-FIXTURE
+    source: UI-TOKEN-CREATE
+    trigger: submit token form
+    control: UI-TOKEN-CREATE
+    preconditions:
+      - empty token list
+      - valid token form
+    action: POST synthetic API token
+    success:
+      - redacted token display shown
+      - token list refreshed
+    failure:
+      - creation error rendered
+    next_state: UI-TOKENS-TABLE
+    side_effects:
+      - synthetic token persisted in fixture namespace
+    messages:
+      - FB-SUCCESS
+      - FB-VALIDATION
+      - FB-SYSTEM-ERROR
+    security_boundary: api-tokens:manage authorization and fixture namespace
+    capability_ids:
+      - CAP-TOKEN-CREATE
+    source_files:
+      - public/admin/api-tokens.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: create_token
+    handler: submitCreateTokenForm
+    redirect: null
+  - id: INT-TOKEN-DETAIL-NOT-FOUND
+    source: UI-TOKENS-TABLE
+    trigger: request missing token detail
+    control: UI-TOKENS-TABLE
+    preconditions:
+      - authenticated admin
+      - unknown token identifier
+    action: GET missing API token
+    success:
+      - not-found error rendered
+    failure:
+      - unexpected token detail rendered
+    next_state: UI-TOKENS-TABLE
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: api-tokens:read authorization
+    capability_ids:
+      - CAP-TOKEN-READ
+    source_files:
+      - public/admin/api-tokens.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: fetchTokenDetail
+    redirect: null
+  - id: INT-WIZARD-NEXT
+    source: UI-WIZARD-STEP-TYPE
+    trigger: click Next
+    control: UI-WIZARD-NEXT
+    preconditions:
+      - selected type
+    action: advance wizard
+    success:
+      - provider step rendered
+    failure:
+      - validation error displayed
+    next_state: UI-WIZARD-STEP-PROVIDER
+    side_effects:
+      - wizard state updated
+    messages:
+      - FB-VALIDATION
+    security_boundary: admin session
+    capability_ids:
+      - CAP-PROVIDER-DISCOVERY
+    source_files:
+      - public/admin/wizard.js
+    test_ids:
+      - tests/integration/credential-creation-flow.test.js
+    outcome: navigate
+    handler: goNext
+    redirect: null
+  - id: INT-WIZARD-CREATE
+    source: UI-WIZARD-STEP-SUMMARY
+    trigger: click create credential
+    control: UI-WIZARD-STEP-SUMMARY
+    preconditions:
+      - credential payload valid
+    action: POST credential
+    success:
+      - credential created
+      - result shown
+    failure:
+      - validation error shown and no credential created
+    next_state: UI-WIZARD-STEP-SUMMARY
+    side_effects:
+      - synthetic credential persisted in fixture namespace
+    messages:
+      - FB-SUCCESS
+      - FB-VALIDATION
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization and fixture namespace
+    capability_ids:
+      - CAP-CREDENTIAL-CREATE
+    source_files:
+      - public/admin/wizard.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: save_data
+    handler: createCredential
+    redirect: null
+  - id: INT-WIZARD-OAUTH
+    source: UI-WIZARD-STEP-OAUTH
+    trigger: click OAuth start
+    control: UI-WIZARD-STEP-OAUTH
+    preconditions:
+      - OAuth provider selected
+    action: request authorization URL and open provider handoff
+    success:
+      - provider authorization page opened
+    failure:
+      - error shown
+    next_state: UI-WIZARD-STEP-OAUTH
+    side_effects:
+      - popup opened
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: OAuth state and provider boundary
+    capability_ids:
+      - CAP-OAUTH-ONBOARDING
+    source_files:
+      - public/admin/wizard.js
+      - src/oauth/oauth-callback-server.js
+    test_ids:
+      - tests/integration/oauth-http-login.test.js
+    outcome: open_external_page
+    handler: startOAuth
+    redirect: /oauth/:provider/login
+  - id: INT-WIZARD-TEST
+    source: UI-WIZARD-STEP-FORM
+    trigger: click connection test
+    control: UI-WIZARD-STEP-FORM
+    preconditions:
+      - credential fields entered
+    action: POST test connection
+    success:
+      - connection result rendered
+    failure:
+      - reproducible validation error rendered
+    next_state: UI-WIZARD-STEP-FORM
+    side_effects: []
+    messages:
+      - FB-SUCCESS
+      - FB-VALIDATION
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization and fixture namespace
+    capability_ids:
+      - CAP-CREDENTIAL-CONNECTION-TEST
+    source_files:
+      - public/admin/wizard.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: validate_input
+    handler: testConnection
+    redirect: null
+  - id: INT-CREDENTIAL-LIST-OPEN
+    source: UI-ADMIN-CREDENTIALS
+    trigger: click credentials navigation
+    control: UI-ADMIN-CREDENTIALS
+    preconditions:
+      - authenticated admin
+    action: GET credential list
+    success:
+      - credential list rendered
+    failure:
+      - list error rendered
+    next_state: UI-CREDENTIALS-TABLE
+    side_effects: []
+    messages:
+      - FB-LOADING
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:read authorization
+    capability_ids:
+      - CAP-CREDENTIAL-READ
+    source_files:
+      - public/admin/admin-shell.js
+      - public/admin/credentials.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: load_data
+    handler: loadCredentials
+    redirect: /admin/credentials.html
+  - id: INT-CREDENTIAL-DETAIL
+    source: UI-CREDENTIAL-DETAIL
+    trigger: detail request completes
+    control: UI-CREDENTIAL-DETAIL
+    preconditions:
+      - credential identifier exists
+    action: inspect credential detail
+    success:
+      - identifier provider status and metadata shown
+    failure:
+      - not-found error shown
+    next_state: UI-CREDENTIAL-DETAIL
+    side_effects: []
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:read authorization and secret redaction
+    capability_ids:
+      - CAP-CREDENTIAL-READ
+    source_files:
+      - public/admin/credentials.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: inspect_data
+    handler: openDetail
+    redirect: null
+  - id: INT-PROVIDER-CREATE
+    source: UI-PROVIDER-REVIEW
+    trigger: click create provider
+    control: UI-PROVIDER-REVIEW
+    preconditions:
+      - provider definition valid
+    action: POST provider definition
+    success:
+      - success message
+      - provider hidden from create action
+    failure:
+      - error shown
+    next_state: UI-ADMIN-PROVIDERS
+    side_effects:
+      - provider persisted
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: providers:manage authorization
+    capability_ids:
+      - CAP-PROVIDER-CREATE
+    source_files:
+      - public/admin/providers.js
+    test_ids:
+      - tests/integration/providers-api.test.js
+    outcome: save_data
+    handler: createProvider
+    redirect: null
+  - id: INT-CREDENTIAL-EDIT
+    source: UI-CREDENTIAL-EDIT
+    trigger: submit edit form
+    control: UI-CREDENTIAL-EDIT
+    preconditions:
+      - credential edit open
+      - fields valid
+    action: PUT credential
+    success:
+      - table refreshed
+    failure:
+      - error shown
+    next_state: UI-ADMIN-CREDENTIALS
+    side_effects:
+      - credential updated
+    messages:
+      - FB-SUCCESS
+      - FB-VALIDATION
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization
+    capability_ids:
+      - CAP-CREDENTIAL-EDIT
+    source_files:
+      - public/admin/credentials.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: save_data
+    handler: submitEdit
+    redirect: null
+  - id: INT-CREDENTIAL-DELETE
+    source: UI-CREDENTIAL-DELETE
+    trigger: confirm delete
+    control: UI-CREDENTIAL-DELETE
+    preconditions:
+      - delete confirmation open
+    action: DELETE credential
+    success:
+      - table refreshed
+    failure:
+      - error shown
+    next_state: UI-ADMIN-CREDENTIALS
+    side_effects:
+      - credential deleted
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization
+    capability_ids:
+      - CAP-CREDENTIAL-DELETE
+    source_files:
+      - public/admin/credentials.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: revoke_or_delete
+    handler: confirmDelete
+    redirect: null
+  - id: INT-GRANT-EDIT
+    source: UI-GRANT-EDIT
+    trigger: submit grant form
+    control: UI-GRANT-EDIT
+    preconditions:
+      - non-empty secret field list
+    action: PUT consumer grant
+    success:
+      - grant table refreshed
+    failure:
+      - validation or API error
+    next_state: UI-ADMIN-GRANTS
+    side_effects:
+      - consumer access changed
+    messages:
+      - FB-SUCCESS
+      - FB-VALIDATION
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization
+    capability_ids:
+      - CAP-GRANT-EDIT
+    source_files:
+      - public/admin/consumer-grants.js
+    test_ids:
+      - tests/unit/consumer-grant-service.test.js
+    outcome: save_data
+    handler: submitEdit
+    redirect: null
+  - id: INT-GRANT-LIST-OPEN
+    source: UI-ADMIN-GRANTS
+    trigger: open consumer grant management
+    control: UI-ADMIN-GRANTS
+    preconditions:
+      - authenticated admin
+      - credential exists
+    action: GET consumer grant list
+    success:
+      - grant list rendered
+    failure:
+      - grant list error rendered
+    next_state: UI-GRANTS-TABLE
+    side_effects: []
+    messages:
+      - FB-LOADING
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization
+    capability_ids:
+      - CAP-GRANT-READ
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: load_data
+    handler: loadGrants
+    redirect: /admin/consumer-grants.html
+  - id: INT-GRANT-CREATE-OPEN
+    source: UI-GRANT-CREATE
+    trigger: open grant creation dialog
+    control: UI-GRANT-CREATE-OPEN
+    preconditions:
+      - authenticated admin
+      - credential list loaded
+    action: open grant form
+    success:
+      - grant form shown
+    failure:
+      - form unavailable
+    next_state: UI-GRANT-CREATE
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization
+    capability_ids:
+      - CAP-GRANT-CREATE
+    source_files:
+      - public/admin/consumer-grants.js
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: navigate
+    handler: openCreate
+    redirect: null
+  - id: INT-GRANT-SECRET-SELECT
+    source: UI-GRANT-CREATE
+    trigger: select allowed secret fields
+    control: UI-GRANT-CREATE
+    preconditions:
+      - grant form open
+      - credential selected
+    action: update selected secret field names
+    success:
+      - selected fields reflected in form
+    failure:
+      - validation feedback
+    next_state: UI-GRANT-CREATE
+    side_effects: []
+    messages:
+      - FB-VALIDATION
+    security_boundary: secret field allowlist
+    capability_ids:
+      - CAP-GRANT-CREATE
+    source_files:
+      - public/admin/consumer-grants.js
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: change_form_state
+    handler: renderCreateSecrets
+    redirect: null
+  - id: INT-GRANT-CREATE-SAVE
+    source: UI-GRANT-CREATE-SUBMIT
+    trigger: submit new grant form
+    control: UI-GRANT-CREATE-SUBMIT
+    preconditions:
+      - consumer
+      - credential and secret fields selected
+    action: POST consumer grant
+    success:
+      - grant table refreshed with created grant
+    failure:
+      - validation or API error
+    next_state: UI-GRANTS-TABLE
+    side_effects:
+      - synthetic grant persisted in fixture namespace
+    messages:
+      - FB-SUCCESS
+      - FB-VALIDATION
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization and fixture namespace
+    capability_ids:
+      - CAP-GRANT-CREATE
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: save_data
+    handler: submitCreate
+    redirect: null
+  - id: INT-GRANT-EDIT-OPEN
+    source: UI-GRANT-EDIT
+    trigger: open existing grant
+    control: UI-GRANT-EDIT
+    preconditions:
+      - grant exists
+    action: GET consumer grant detail
+    success:
+      - grant edit form shown
+    failure:
+      - not-found error shown
+    next_state: UI-GRANT-EDIT
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization
+    capability_ids:
+      - CAP-GRANT-READ
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: inspect_data
+    handler: openEdit
+    redirect: null
+  - id: INT-GRANT-EDIT-SAVE
+    source: UI-GRANT-EDIT
+    trigger: save edited grant
+    control: UI-GRANT-EDIT
+    preconditions:
+      - grant edit open
+      - non-empty secret field list
+    action: PUT consumer grant
+    success:
+      - updated secret field list rendered
+    failure:
+      - validation or API error
+    next_state: UI-ADMIN-GRANTS
+    side_effects:
+      - synthetic grant permissions updated
+    messages:
+      - FB-SUCCESS
+      - FB-VALIDATION
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization
+    capability_ids:
+      - CAP-GRANT-EDIT
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: save_data
+    handler: submitEdit
+    redirect: null
+  - id: INT-GRANT-DETAIL-NOT-FOUND
+    source: UI-GRANT-EDIT
+    trigger: request missing grant detail
+    control: UI-GRANT-EDIT
+    preconditions:
+      - authenticated admin
+      - unknown grant identifier
+    action: GET missing consumer grant
+    success:
+      - not-found error rendered
+    failure:
+      - unexpected grant detail rendered
+    next_state: UI-ADMIN-GRANTS
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization
+    capability_ids:
+      - CAP-GRANT-READ
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: fetchGrantDetail
+    redirect: null
+  - id: INT-TOKEN-CREATE
+    source: UI-TOKEN-CREATE
+    trigger: submit token form
+    control: UI-TOKEN-CREATE
+    preconditions:
+      - token fields valid
+    action: POST API token
+    success:
+      - one-time token value shown
+    failure:
+      - error shown
+    next_state: UI-TOKEN-CREATE
+    side_effects:
+      - token persisted
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: api-tokens:manage authorization
+    capability_ids:
+      - CAP-TOKEN-CREATE
+    source_files:
+      - public/admin/api-tokens.js
+    test_ids:
+      - tests/integration/api-token-bearer-auth.test.js
+    outcome: create_token
+    handler: createToken
+    redirect: null
+  - id: INT-TOKEN-REVOKE
+    source: UI-TOKEN-REVOKE
+    trigger: confirm revoke
+    control: UI-TOKEN-REVOKE
+    preconditions:
+      - revoke confirmation open
+    action: DELETE API token
+    success:
+      - table refreshed
+    failure:
+      - error shown
+    next_state: UI-ADMIN-TOKENS
+    side_effects:
+      - token invalidated
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: api-tokens:manage authorization
+    capability_ids:
+      - CAP-TOKEN-REVOKE
+    source_files:
+      - public/admin/api-tokens.js
+    test_ids:
+      - tests/integration/api-token-bearer-auth.test.js
+    outcome: revoke_or_delete
+    handler: revokeToken
+    redirect: null
+  - id: INT-TRANSFER-EXPORT
+    source: UI-TRANSFER-EXPORT
+    trigger: submit export form
+    control: UI-TRANSFER-EXPORT
+    preconditions:
+      - export password and selection valid
+    action: POST credential export
+    success:
+      - download generated
+    failure:
+      - error shown
+    next_state: UI-ADMIN-TRANSFER
+    side_effects:
+      - encrypted export generated
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization and export password
+    capability_ids:
+      - CAP-CREDENTIAL-EXPORT
+    source_files:
+      - public/admin/credential-transfer.js
+    test_ids:
+      - tests/integration/credential-transfer-api.test.js
+    outcome: save_data
+    handler: exportCredentials
+    redirect: null
+  - id: INT-TRANSFER-PREVIEW
+    source: UI-TRANSFER-IMPORT
+    trigger: click preview
+    control: UI-TRANSFER-IMPORT
+    preconditions:
+      - import source supplied
+    action: POST import preview
+    success:
+      - preview rendered
+      - import enabled
+    failure:
+      - error shown
+    next_state: UI-TRANSFER-IMPORT
+    side_effects:
+      - preview state stored
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization and import password
+    capability_ids:
+      - CAP-CREDENTIAL-IMPORT
+    source_files:
+      - public/admin/credential-transfer.js
+    test_ids:
+      - tests/integration/credential-transfer-api.test.js
+    outcome: validate_input
+    handler: previewImport
+    redirect: null
+  - id: INT-TRANSFER-IMPORT
+    source: UI-TRANSFER-IMPORT
+    trigger: submit import form
+    control: UI-TRANSFER-IMPORT
+    preconditions:
+      - preview passed
+    action: POST credential import
+    success:
+      - credentials imported
+    failure:
+      - error shown
+    next_state: UI-TRANSFER-IMPORT
+    side_effects:
+      - credentials persisted
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization and import password
+    capability_ids:
+      - CAP-CREDENTIAL-IMPORT
+    source_files:
+      - public/admin/credential-transfer.js
+    test_ids:
+      - tests/integration/credential-transfer-api.test.js
+    outcome: save_data
+    handler: importCredentials
+    redirect: null
+  - id: INT-CONSUMER-HANDOFF-SUCCESS
+    source: UI-CONSUMER-HANDOFF
+    trigger: open verified Consumer handoff
+    control: UI-CONSUMER-HANDOFF
+    preconditions:
+      - credential created
+      - consumer grant verified
+    action: navigate to Consumer interface
+    success:
+      - Consumer token form shown
+    failure:
+      - handoff unavailable
+    next_state: UI-CONSUMER-AUTH
+    side_effects:
+      - management session not transferred
+    messages:
+      - FB-SUCCESS
+      - FB-SYSTEM-ERROR
+    security_boundary: separate consumer context
+    capability_ids:
+      - CAP-CONSUMER-HANDOFF
+    source_files:
+      - public/admin/wizard.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: navigate
+    handler: renderConsumerGrantPanel
+    redirect: /consumer/
+  - id: INT-CONSUMER-HANDOFF-FAILED
+    source: UI-CONSUMER-HANDOFF
+    trigger: open Consumer with invalid handoff token
+    control: UI-CONSUMER-HANDOFF
+    preconditions:
+      - invalid synthetic consumer token
+    action: start Consumer discovery
+    success:
+      - safe handoff failure shown
+    failure:
+      - consumer access granted unexpectedly
+    next_state: UI-CONSUMER-AUTH
+    side_effects: []
+    messages:
+      - FB-AUTHENTICATION-ERROR
+    security_boundary: consumer bearer token
+    capability_ids:
+      - CAP-CONSUMER-HANDOFF
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: discover
+    redirect: null
+  - id: INT-CONSUMER-DISCOVER-EMPTY
+    source: UI-CONSUMER-AUTH
+    trigger: submit empty-discovery Consumer token
+    control: UI-CONSUMER-DISCOVERY-SUBMIT
+    preconditions:
+      - synthetic Consumer has no grants
+    action: GET consumer credentials
+    success:
+      - empty discovery state rendered
+    failure:
+      - unexpected credential rendered
+    next_state: UI-CONSUMER-DISCOVERY
+    side_effects: []
+    messages:
+      - FB-SUCCESS
+    security_boundary: consumer bearer token
+    capability_ids:
+      - CAP-CONSUMER-DISCOVERY
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: load_data
+    handler: discover
+    redirect: null
+  - id: INT-CONSUMER-DISCOVER-ERROR
+    source: UI-CONSUMER-AUTH
+    trigger: submit failing-discovery Consumer token
+    control: UI-CONSUMER-DISCOVERY-SUBMIT
+    preconditions:
+      - synthetic discovery failure
+    action: GET consumer credentials
+    success:
+      - safe discovery error rendered
+    failure:
+      - technical error exposed
+    next_state: UI-CONSUMER-AUTH
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer bearer token
+    capability_ids:
+      - CAP-CONSUMER-DISCOVERY
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: discover
+    redirect: null
+  - id: INT-CONSUMER-RESOLVE-GRANT-MISSING
+    source: UI-CONSUMER-RESOLVE
+    trigger: resolve with missing grant
+    control: UI-CONSUMER-RESOLVE
+    preconditions:
+      - synthetic Consumer has no grant
+    action: POST Resolve
+    success:
+      - safe authorization error rendered
+    failure:
+      - secret result rendered
+    next_state: UI-CONSUMER-RESOLVE
+    side_effects: []
+    messages:
+      - FB-AUTHORIZATION-ERROR
+    security_boundary: consumer grant boundary
+    capability_ids:
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: resolve
+    redirect: null
+  - id: INT-CONSUMER-RESOLVE-TOKEN-INVALID
+    source: UI-CONSUMER-RESOLVE
+    trigger: resolve with invalid Consumer token
+    control: UI-CONSUMER-RESOLVE
+    preconditions:
+      - synthetic token invalid for Resolve
+    action: POST Resolve
+    success:
+      - safe authentication error rendered
+    failure:
+      - secret result rendered
+    next_state: UI-CONSUMER-RESOLVE
+    side_effects: []
+    messages:
+      - FB-AUTHENTICATION-ERROR
+    security_boundary: consumer bearer token
+    capability_ids:
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: resolve
+    redirect: null
+  - id: INT-CONSUMER-RESOLVE-CREDENTIAL-MISSING
+    source: UI-CONSUMER-RESOLVE
+    trigger: resolve unknown credential
+    control: UI-CONSUMER-RESOLVE
+    preconditions:
+      - synthetic credential absent
+    action: POST Resolve
+    success:
+      - safe missing-credential error rendered
+    failure:
+      - secret result rendered
+    next_state: UI-CONSUMER-RESOLVE
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer credential boundary
+    capability_ids:
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: resolve
+    redirect: null
+  - id: INT-CONSUMER-RESOLVE-SECRET-DENIED
+    source: UI-CONSUMER-RESOLVE
+    trigger: resolve ungranted secret field
+    control: UI-CONSUMER-RESOLVE
+    preconditions:
+      - synthetic Consumer lacks requested secret permission
+    action: POST Resolve
+    success:
+      - safe authorization error rendered
+    failure:
+      - secret result rendered
+    next_state: UI-CONSUMER-RESOLVE
+    side_effects: []
+    messages:
+      - FB-AUTHORIZATION-ERROR
+    security_boundary: explicit secret field grant boundary
+    capability_ids:
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: error_feedback
+    handler: resolve
+    redirect: null
+  - id: INT-CONSUMER-RECOVERY
+    source: UI-CONSUMER-AUTH
+    trigger: acknowledge failure and retry with valid Consumer token
+    control: UI-CONSUMER-DISCOVERY-SUBMIT
+    preconditions:
+      - previous Consumer error
+    action: repeat discovery and Resolve
+    success:
+      - valid discovery and Resolve state restored
+    failure:
+      - recovery error rendered
+    next_state: UI-CONSUMER-RESOLVE
+    side_effects:
+      - previous error state cleared
+    messages:
+      - FB-SYSTEM-ERROR
+      - FB-SUCCESS
+    security_boundary: consumer bearer token and grant boundary
+    capability_ids:
+      - CAP-CONSUMER-DISCOVERY
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+      - tests/ui/fixture-server.mjs
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: recovery
+    handler: discover
+    redirect: null
+  - id: INT-CONSUMER-DISCOVER
+    source: UI-CONSUMER-AUTH
+    trigger: submit consumer token
+    control: UI-CONSUMER-AUTH
+    preconditions:
+      - token supplied
+    action: GET consumer credentials
+    success:
+      - discovery rendered
+    failure:
+      - status error shown
+    next_state: UI-CONSUMER-DISCOVERY
+    side_effects:
+      - consumer token retained in memory
+    messages:
+      - FB-SUCCESS
+      - FB-AUTHENTICATION-ERROR
+      - FB-NETWORK-ERROR
+    security_boundary: consumer bearer token
+    capability_ids:
+      - CAP-CONSUMER-DISCOVERY
+    source_files:
+      - public/consumer/consumer.js
+    test_ids:
+      - tests/integration/consumer-ui.test.js
+    outcome: load_data
+    handler: discover
+    redirect: null
+  - id: INT-CONSUMER-RESOLVE
+    source: UI-CONSUMER-RESOLVE
+    trigger: submit selected secret fields
+    control: UI-CONSUMER-RESOLVE
+    preconditions:
+      - consumer token valid
+      - fields selected
+    action: POST resolve credential
+    success:
+      - resolved secrets rendered
+    failure:
+      - status error shown
+    next_state: UI-CONSUMER-RESOLVE
+    side_effects:
+      - secret response rendered
+    messages:
+      - FB-SUCCESS
+      - FB-AUTHENTICATION-ERROR
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer bearer token and grant boundary
+    capability_ids:
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+    test_ids:
+      - tests/integration/consumer-ui.test.js
+    outcome: load_data
+    handler: resolveCredential
+    redirect: null
+  - id: INT-ADMIN-LOGIN
+    source: UI-ADMIN-LOGIN-FORM
+    trigger: submit fixture admin token
+    control: UI-ADMIN-LOGIN-SUBMIT
+    preconditions:
+      - local test fixture
+    action: validate dashboard authorization
+    success:
+      - admin shell visible
+    failure:
+      - safe authentication feedback
+    next_state: UI-ADMIN-WIZARD
+    side_effects:
+      - fixture token retained in test browser memory
+    messages:
+      - FB-SUCCESS
+      - FB-AUTHENTICATION-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-AUTH
+    source_files:
+      - public/admin/auth.js
+    test_ids:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+    outcome: change_authentication_state
+    handler: authenticateAdmin
+    redirect: null
+  - id: INT-NAVIGATION
+    source: UI-ADMIN-NAV
+    trigger: click navigation link
+    control: UI-ADMIN-NAV
+    preconditions:
+      - authenticated admin
+    action: navigate to application path
+    success:
+      - target page loaded
+    failure:
+      - browser navigation failure
+    next_state: null
+    side_effects: []
+    messages: []
+    security_boundary: admin session
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+      - public/admin/base-path.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: initNavigation
+    redirect: /admin/*
+  - id: INT-ADMIN-NAV-DASHBOARD
+    source: UI-ADMIN-NAV
+    trigger: select Dashboard
+    control: UI-ADMIN-DASHBOARD
+    preconditions:
+      - authenticated admin
+    action: navigate to dashboard route
+    success:
+      - dashboard page rendered
+    failure:
+      - route unavailable feedback
+    next_state: UI-ADMIN-DASHBOARD
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: renderNavigation
+    redirect: /admin/dashboard.html
+  - id: INT-ADMIN-NAV-WIZARD
+    source: UI-ADMIN-NAV
+    trigger: select Credential Wizard
+    control: UI-ADMIN-WIZARD
+    preconditions:
+      - authenticated admin
+    action: navigate to wizard route
+    success:
+      - wizard page rendered
+    failure:
+      - route unavailable feedback
+    next_state: UI-ADMIN-WIZARD
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: renderNavigation
+    redirect: /admin/
+  - id: INT-ADMIN-NAV-PROVIDERS
+    source: UI-ADMIN-NAV
+    trigger: select Providers
+    control: UI-ADMIN-PROVIDERS
+    preconditions:
+      - authenticated admin
+    action: navigate to provider route
+    success:
+      - provider page rendered
+    failure:
+      - route unavailable feedback
+    next_state: UI-ADMIN-PROVIDERS
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: renderNavigation
+    redirect: /admin/providers.html
+  - id: INT-ADMIN-NAV-CREDENTIALS
+    source: UI-ADMIN-NAV
+    trigger: select Credentials
+    control: UI-ADMIN-CREDENTIALS
+    preconditions:
+      - authenticated admin
+    action: navigate to credential route
+    success:
+      - credential page rendered
+    failure:
+      - route unavailable feedback
+    next_state: UI-ADMIN-CREDENTIALS
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: renderNavigation
+    redirect: /admin/credentials.html
+  - id: INT-ADMIN-NAV-GRANTS
+    source: UI-ADMIN-NAV
+    trigger: select Consumer Grants
+    control: UI-ADMIN-GRANTS
+    preconditions:
+      - authenticated admin
+    action: navigate to grant route
+    success:
+      - grant page rendered
+    failure:
+      - route unavailable feedback
+    next_state: UI-ADMIN-GRANTS
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: renderNavigation
+    redirect: /admin/consumer-grants.html
+  - id: INT-ADMIN-NAV-TOKENS
+    source: UI-ADMIN-NAV
+    trigger: select API Tokens
+    control: UI-ADMIN-TOKENS
+    preconditions:
+      - authenticated admin
+    action: navigate to token route
+    success:
+      - token page rendered
+    failure:
+      - route unavailable feedback
+    next_state: UI-ADMIN-TOKENS
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: renderNavigation
+    redirect: /admin/api-tokens.html
+  - id: INT-ADMIN-NAV-TRANSFER
+    source: UI-ADMIN-NAV
+    trigger: select Credential Transfer
+    control: UI-ADMIN-TRANSFER
+    preconditions:
+      - authenticated admin
+    action: navigate to transfer route
+    success:
+      - transfer page rendered
+    failure:
+      - route unavailable feedback
+    next_state: UI-ADMIN-TRANSFER
+    side_effects: []
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-NAVIGATION
+    source_files:
+      - public/admin/admin-shell.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: navigate
+    handler: renderNavigation
+    redirect: /admin/credential-transfer.html
+  - id: INT-DASHBOARD-LOAD
+    source: UI-ADMIN-DASHBOARD
+    trigger: open dashboard
+    control: UI-ADMIN-DASHBOARD
+    preconditions:
+      - authenticated admin
+    action: GET dashboard data
+    success:
+      - dashboard summary rendered
+    failure:
+      - dashboard load error rendered
+    next_state: UI-ADMIN-DASHBOARD
+    side_effects: []
+    messages:
+      - FB-LOADING
+      - FB-SYSTEM-ERROR
+    security_boundary: management bearer token
+    capability_ids:
+      - CAP-ADMIN-AUTH
+    source_files:
+      - public/admin/dashboard.js
+    test_ids:
+      - tests/integration/dashboard-api.test.js
+    outcome: load_data
+    handler: loadDashboard
+    redirect: null
+  - id: INT-PROVIDER-DETAILS-NEXT
+    source: UI-PROVIDER-DETAILS
+    trigger: continue provider details
+    control: UI-PROVIDER-DETAILS
+    preconditions:
+      - provider details valid
+    action: advance provider wizard
+    success:
+      - methods step rendered
+    failure:
+      - validation error displayed
+    next_state: UI-PROVIDER-METHODS
+    side_effects:
+      - provider wizard state updated
+    messages:
+      - FB-VALIDATION
+    security_boundary: providers:manage authorization
+    capability_ids:
+      - CAP-PROVIDER-CREATE
+    source_files:
+      - public/admin/providers.js
+    test_ids:
+      - tests/integration/providers-api.test.js
+    outcome: navigate
+    handler: nextStep
+    redirect: null
+  - id: INT-PROVIDER-METHODS-NEXT
+    source: UI-PROVIDER-METHODS
+    trigger: continue provider methods
+    control: UI-PROVIDER-METHODS
+    preconditions:
+      - provider methods valid
+    action: advance provider wizard
+    success:
+      - fields step rendered
+    failure:
+      - validation error displayed
+    next_state: UI-PROVIDER-FIELDS
+    side_effects:
+      - provider wizard state updated
+    messages:
+      - FB-VALIDATION
+    security_boundary: providers:manage authorization
+    capability_ids:
+      - CAP-PROVIDER-CREATE
+    source_files:
+      - public/admin/providers.js
+    test_ids:
+      - tests/integration/providers-api.test.js
+    outcome: navigate
+    handler: nextStep
+    redirect: null
+  - id: INT-PROVIDER-FIELDS-NEXT
+    source: UI-PROVIDER-FIELDS
+    trigger: continue provider fields
+    control: UI-PROVIDER-FIELDS
+    preconditions:
+      - provider fields valid
+    action: advance provider wizard
+    success:
+      - review step rendered
+    failure:
+      - validation error displayed
+    next_state: UI-PROVIDER-REVIEW
+    side_effects:
+      - provider wizard state updated
+    messages:
+      - FB-VALIDATION
+    security_boundary: providers:manage authorization
+    capability_ids:
+      - CAP-PROVIDER-CREATE
+    source_files:
+      - public/admin/providers.js
+    test_ids:
+      - tests/integration/providers-api.test.js
+    outcome: navigate
+    handler: nextStep
+    redirect: null
+  - id: INT-WIZARD-BACK-PROVIDER
+    source: UI-WIZARD-STEP-PROVIDER
+    trigger: click Back
+    control: UI-WIZARD-BACK
+    preconditions:
+      - wizard step is 2
+    action: return to credential type step
+    success:
+      - type step rendered
+    failure:
+      - previous step unavailable
+    next_state: UI-WIZARD-STEP-TYPE
+    side_effects:
+      - wizard state updated
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: admin session
+    capability_ids:
+      - CAP-PROVIDER-DISCOVERY
+    source_files:
+      - public/admin/wizard.js
+    test_ids:
+      - tests/integration/credential-creation-flow.test.js
+    outcome: navigate
+    handler: goBack
+    redirect: null
+  - id: INT-WIZARD-BACK-FORM
+    source: UI-WIZARD-STEP-FORM
+    trigger: click Back
+    control: UI-WIZARD-BACK
+    preconditions:
+      - wizard step is 3
+    action: return to provider step
+    success:
+      - provider step rendered
+    failure:
+      - previous step unavailable
+    next_state: UI-WIZARD-STEP-PROVIDER
+    side_effects:
+      - wizard state updated
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: admin session
+    capability_ids:
+      - CAP-PROVIDER-DISCOVERY
+    source_files:
+      - public/admin/wizard.js
+    test_ids:
+      - tests/integration/credential-creation-flow.test.js
+    outcome: navigate
+    handler: goBack
+    redirect: null
+  - id: INT-WIZARD-BACK-OAUTH
+    source: UI-WIZARD-STEP-OAUTH
+    trigger: click Back
+    control: UI-WIZARD-BACK
+    preconditions:
+      - OAuth wizard step active
+    action: return to credential form step
+    success:
+      - credential form rendered
+    failure:
+      - previous step unavailable
+    next_state: UI-WIZARD-STEP-FORM
+    side_effects:
+      - OAuth state retained or cancelled
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: OAuth state and provider boundary
+    capability_ids:
+      - CAP-OAUTH-ONBOARDING
+    source_files:
+      - public/admin/wizard.js
+    test_ids:
+      - tests/integration/oauth-http-login.test.js
+    outcome: navigate
+    handler: goBack
+    redirect: null
+  - id: INT-WIZARD-BACK-SUMMARY
+    source: UI-WIZARD-STEP-SUMMARY
+    trigger: click Back
+    control: UI-WIZARD-BACK
+    preconditions:
+      - summary step active
+    action: return to preceding wizard step
+    success:
+      - preceding wizard step rendered
+    failure:
+      - previous step unavailable
+    next_state: UI-WIZARD-STEP-FORM
+    side_effects:
+      - wizard state updated
+    messages:
+      - FB-SYSTEM-ERROR
+    security_boundary: admin session
+    capability_ids:
+      - CAP-CREDENTIAL-CREATE
+    source_files:
+      - public/admin/wizard.js
+    test_ids:
+      - tests/integration/credential-creation-flow.test.js
+    outcome: navigate
+    handler: goBack
+    redirect: null
+  - id: INT-GRANT-REFRESH
+    source: UI-ADMIN-GRANTS
+    trigger: click refresh grants
+    control: UI-GRANT-REFRESH
+    preconditions:
+      - authenticated admin
+    action: GET consumer grant list
+    success:
+      - grant table refreshed
+    failure:
+      - refresh error rendered
+    next_state: UI-GRANTS-TABLE
+    side_effects: []
+    messages:
+      - FB-LOADING
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer-grants:manage authorization
+    capability_ids:
+      - CAP-GRANT-READ
+    source_files:
+      - public/admin/consumer-grants.js
+    test_ids:
+      - tests/integration/admin-ui.test.js
+    outcome: refresh
+    handler: loadGrants
+    redirect: null
+  - id: INT-CONSUMER-DISCOVERY-STATUS-SUCCESS
+    source: UI-CONSUMER-DISCOVERY
+    trigger: discovery completes
+    control: UI-CONSUMER-STATUS
+    preconditions:
+      - discovery request succeeds
+    action: render success status
+    success:
+      - Consumer status reports discovery result
+    failure:
+      - status unavailable
+    next_state: UI-CONSUMER-STATUS
+    side_effects: []
+    messages:
+      - FB-SUCCESS
+    security_boundary: consumer bearer token and grant boundary
+    capability_ids:
+      - CAP-CONSUMER-DISCOVERY
+    source_files:
+      - public/consumer/consumer.js
+    test_ids:
+      - tests/integration/consumer-ui.test.js
+    outcome: show_success
+    handler: setStatus
+    redirect: null
+  - id: INT-CONSUMER-DISCOVERY-STATUS-ERROR
+    source: UI-CONSUMER-AUTH
+    trigger: discovery fails
+    control: UI-CONSUMER-STATUS
+    preconditions:
+      - discovery request fails
+    action: render discovery error status
+    success:
+      - Consumer status reports discovery error
+    failure:
+      - technical error exposed
+    next_state: UI-CONSUMER-STATUS
+    side_effects: []
+    messages:
+      - FB-AUTHENTICATION-ERROR
+      - FB-NETWORK-ERROR
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer bearer token
+    capability_ids:
+      - CAP-CONSUMER-DISCOVERY
+    source_files:
+      - public/consumer/consumer.js
+    test_ids:
+      - tests/integration/consumer-ui.test.js
+    outcome: show_error
+    handler: setStatus
+    redirect: null
+  - id: INT-CONSUMER-RESOLVE-STATUS-SUCCESS
+    source: UI-CONSUMER-RESOLVE
+    trigger: Resolve completes
+    control: UI-CONSUMER-STATUS
+    preconditions:
+      - authorized Resolve request succeeds
+    action: render Resolve success status
+    success:
+      - Consumer status reports Resolve result
+    failure:
+      - status unavailable
+    next_state: UI-CONSUMER-STATUS
+    side_effects: []
+    messages:
+      - FB-SUCCESS
+    security_boundary: consumer bearer token and grant boundary
+    capability_ids:
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+    test_ids:
+      - tests/integration/consumer-ui.test.js
+    outcome: show_success
+    handler: setStatus
+    redirect: null
+  - id: INT-CONSUMER-RESOLVE-STATUS-ERROR
+    source: UI-CONSUMER-RESOLVE
+    trigger: Resolve fails
+    control: UI-CONSUMER-STATUS
+    preconditions:
+      - Resolve request fails
+    action: render Resolve error status
+    success:
+      - Consumer status reports Resolve error
+    failure:
+      - technical error exposed
+    next_state: UI-CONSUMER-STATUS
+    side_effects: []
+    messages:
+      - FB-AUTHENTICATION-ERROR
+      - FB-AUTHORIZATION-ERROR
+      - FB-SYSTEM-ERROR
+    security_boundary: consumer bearer token and grant boundary
+    capability_ids:
+      - CAP-CONSUMER-RESOLVE
+    source_files:
+      - public/consumer/consumer.js
+    test_ids:
+      - tests/integration/consumer-ui.test.js
+    outcome: show_error
+    handler: setStatus
+    redirect: null
+interaction_execution:
+  - interaction_id: INT-TOKEN-LIST-OPEN
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-TOKEN-CREATE-FIXTURE
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-TOKEN-DETAIL-NOT-FOUND
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-WIZARD-NEXT
+    status: NOT_EXECUTED
+    reason: Wizard navigation is covered only as a prerequisite in broader flows
+    required_fixture: Isolated wizard-step fixture state
+    required_work: Add a dedicated declarative browser verification without
+      duplicating the existing creation flow
+  - interaction_id: INT-WIZARD-CREATE
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-WIZARD-OAUTH
+    status: BLOCKED
+    reason: OAuth authorization crosses an external provider boundary excluded from
+      the local fixture scope
+    evidence:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+      - scripts/ui-live-evidence.mjs
+    blocking_dependency: Approved controlled OAuth provider environment or replay contract
+  - interaction_id: INT-WIZARD-TEST
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CREDENTIAL-LIST-OPEN
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CREDENTIAL-DETAIL
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-PROVIDER-CREATE
+    status: NOT_EXECUTED
+    reason: No controlled custom-provider mutation scenario is part of the local
+      fixture
+    required_fixture: Isolated provider-definition fixture and reset contract
+    required_work: Add a declarative provider creation verification
+  - interaction_id: INT-CREDENTIAL-EDIT
+    status: NOT_EXECUTED
+    reason: Credential mutation is not independently automated in the local fixture
+      suite
+    required_fixture: Mutable credential fixture with deterministic restore
+    required_work: Add a declarative edit success and failure verification
+  - interaction_id: INT-CREDENTIAL-DELETE
+    status: NOT_EXECUTED
+    reason: Credential deletion is not independently automated in the local fixture
+      suite
+    required_fixture: Disposable credential fixture with deterministic restore
+    required_work: Add a declarative delete confirmation verification
+  - interaction_id: INT-GRANT-EDIT
+    status: NOT_EXECUTED
+    reason: The generic grant edit interaction has no independent browser verification
+    required_fixture: Existing grant with mutable permission set
+    required_work: Add a dedicated declarative grant edit verification
+  - interaction_id: INT-GRANT-LIST-OPEN
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-GRANT-CREATE-OPEN
+    status: NOT_EXECUTED
+    reason: Dialog opening is exercised only within the aggregate grant flow
+    required_fixture: Empty grant fixture with loaded credentials
+    required_work: Add an independent declarative dialog-open assertion
+  - interaction_id: INT-GRANT-SECRET-SELECT
+    status: NOT_EXECUTED
+    reason: Secret selection is exercised only as a prerequisite of grant creation
+    required_fixture: Grant creation fixture exposing selectable fields
+    required_work: Add a focused declarative selection-state verification
+  - interaction_id: INT-GRANT-CREATE-SAVE
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-GRANT-EDIT-OPEN
+    status: NOT_EXECUTED
+    reason: Edit opening is exercised only within the aggregate grant flow
+    required_fixture: Persisted fixture grant
+    required_work: Add an independent declarative grant-detail verification
+  - interaction_id: INT-GRANT-EDIT-SAVE
+    status: NOT_EXECUTED
+    reason: Edit saving is exercised only within the aggregate grant flow
+    required_fixture: Persisted mutable fixture grant
+    required_work: Add an independent declarative grant-save verification
+  - interaction_id: INT-GRANT-DETAIL-NOT-FOUND
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-TOKEN-CREATE
+    status: NOT_EXECUTED
+    reason: The product token creation interaction is represented separately from
+      the fixture-only token creation flow
+    required_fixture: Token mutation fixture aligned to the product creation contract
+    required_work: Add a declarative product-token creation verification
+  - interaction_id: INT-TOKEN-REVOKE
+    status: NOT_EXECUTED
+    reason: Token revocation is not automated against the local fixture
+    required_fixture: Revocable token fixture with deterministic reset
+    required_work: Add a declarative revoke confirmation verification
+  - interaction_id: INT-TRANSFER-EXPORT
+    status: NOT_EXECUTED
+    reason: Encrypted export download is outside the current local browser fixture
+      scope
+    required_fixture: Download-safe encrypted export fixture
+    required_work: Add a declarative export verification
+  - interaction_id: INT-TRANSFER-PREVIEW
+    status: NOT_EXECUTED
+    reason: Import preview source files are not represented by the local browser
+      fixture
+    required_fixture: Deterministic import source fixture
+    required_work: Add a declarative import preview verification
+  - interaction_id: INT-TRANSFER-IMPORT
+    status: NOT_EXECUTED
+    reason: Import mutation is not represented by the local browser fixture
+    required_fixture: Deterministic import source and isolated restore fixture
+    required_work: Add a declarative import verification
+  - interaction_id: INT-CONSUMER-HANDOFF-SUCCESS
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-HANDOFF-FAILED
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-DISCOVER-EMPTY
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-DISCOVER-ERROR
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-RESOLVE-GRANT-MISSING
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-RESOLVE-TOKEN-INVALID
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-RESOLVE-CREDENTIAL-MISSING
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-RESOLVE-SECRET-DENIED
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-RECOVERY
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-DISCOVER
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-CONSUMER-RESOLVE
+    status: NOT_EXECUTED
+    reason: Resolve is exercised as a prerequisite in the combined discovery flow
+      but lacks an independent declaration
+    required_fixture: Existing consumer and granted credential fixture
+    required_work: Add a focused declarative resolve success verification
+  - interaction_id: INT-ADMIN-LOGIN
+    status: NOT_EXECUTED
+    reason: Public staging excludes private live-evidence artifacts.
+    required_fixture: A publication-safe browser fixture.
+    required_work: Run the public browser validation profile.
+  - interaction_id: INT-NAVIGATION
+    status: NOT_EXECUTED
+    reason: Navigation is covered incidentally by feature flows rather than as a
+      standalone route matrix
+    required_fixture: Authenticated admin route fixture
+    required_work: Add a declarative navigation matrix verification
+  - interaction_id: INT-ADMIN-NAV-DASHBOARD
+    status: NOT_EXECUTED
+    reason: Route navigation is represented explicitly but has no standalone browser
+      matrix fixture
+    required_fixture: Authenticated admin route fixture
+    required_work: Add declarative route-matrix verification
+  - interaction_id: INT-ADMIN-NAV-WIZARD
+    status: NOT_EXECUTED
+    reason: Route navigation is represented explicitly but has no standalone browser
+      matrix fixture
+    required_fixture: Authenticated admin route fixture
+    required_work: Add declarative route-matrix verification
+  - interaction_id: INT-ADMIN-NAV-PROVIDERS
+    status: NOT_EXECUTED
+    reason: Route navigation is represented explicitly but has no standalone browser
+      matrix fixture
+    required_fixture: Authenticated admin route fixture
+    required_work: Add declarative route-matrix verification
+  - interaction_id: INT-ADMIN-NAV-CREDENTIALS
+    status: NOT_EXECUTED
+    reason: Route navigation is represented explicitly but has no standalone browser
+      matrix fixture
+    required_fixture: Authenticated admin route fixture
+    required_work: Add declarative route-matrix verification
+  - interaction_id: INT-ADMIN-NAV-GRANTS
+    status: NOT_EXECUTED
+    reason: Route navigation is represented explicitly but has no standalone browser
+      matrix fixture
+    required_fixture: Authenticated admin route fixture
+    required_work: Add declarative route-matrix verification
+  - interaction_id: INT-ADMIN-NAV-TOKENS
+    status: NOT_EXECUTED
+    reason: Route navigation is represented explicitly but has no standalone browser
+      matrix fixture
+    required_fixture: Authenticated admin route fixture
+    required_work: Add declarative route-matrix verification
+  - interaction_id: INT-ADMIN-NAV-TRANSFER
+    status: NOT_EXECUTED
+    reason: Route navigation is represented explicitly but has no standalone browser
+      matrix fixture
+    required_fixture: Authenticated admin route fixture
+    required_work: Add declarative route-matrix verification
+  - interaction_id: INT-DASHBOARD-LOAD
+    status: NOT_EXECUTED
+    reason: Dashboard loading is represented explicitly but has no standalone
+      browser matrix fixture
+    required_fixture: Authenticated dashboard fixture
+    required_work: Add declarative dashboard load verification
+  - interaction_id: INT-PROVIDER-DETAILS-NEXT
+    status: NOT_EXECUTED
+    reason: Provider wizard transition is not independently automated
+    required_fixture: Isolated provider wizard fixture
+    required_work: Add declarative transition verification
+  - interaction_id: INT-PROVIDER-METHODS-NEXT
+    status: NOT_EXECUTED
+    reason: Provider wizard transition is not independently automated
+    required_fixture: Isolated provider wizard fixture
+    required_work: Add declarative transition verification
+  - interaction_id: INT-PROVIDER-FIELDS-NEXT
+    status: NOT_EXECUTED
+    reason: Provider wizard transition is not independently automated
+    required_fixture: Isolated provider wizard fixture
+    required_work: Add declarative transition verification
+  - interaction_id: INT-WIZARD-BACK-PROVIDER
+    status: NOT_EXECUTED
+    reason: Wizard reverse navigation is not independently automated
+    required_fixture: Isolated wizard-step fixture
+    required_work: Add declarative back-navigation verification
+  - interaction_id: INT-WIZARD-BACK-FORM
+    status: NOT_EXECUTED
+    reason: Wizard reverse navigation is not independently automated
+    required_fixture: Isolated wizard-step fixture
+    required_work: Add declarative back-navigation verification
+  - interaction_id: INT-WIZARD-BACK-OAUTH
+    status: NOT_EXECUTED
+    reason: Wizard reverse navigation is not independently automated
+    required_fixture: Isolated wizard-step fixture
+    required_work: Add declarative back-navigation verification
+  - interaction_id: INT-WIZARD-BACK-SUMMARY
+    status: NOT_EXECUTED
+    reason: Wizard reverse navigation is not independently automated
+    required_fixture: Isolated wizard-step fixture
+    required_work: Add declarative back-navigation verification
+  - interaction_id: INT-GRANT-REFRESH
+    status: NOT_EXECUTED
+    reason: Grant refresh is represented explicitly but is not independently automated
+    required_fixture: Persisted grant list fixture
+    required_work: Add declarative refresh verification
+  - interaction_id: INT-CONSUMER-DISCOVERY-STATUS-SUCCESS
+    status: NOT_EXECUTED
+    reason: Discovery status transition is covered within the aggregate Consumer
+      flow but not independently classified
+    required_fixture: Consumer status fixture
+    required_work: Add declarative status feedback verification
+  - interaction_id: INT-CONSUMER-DISCOVERY-STATUS-ERROR
+    status: NOT_EXECUTED
+    reason: Discovery status transition is covered within the aggregate Consumer
+      flow but not independently classified
+    required_fixture: Consumer status fixture
+    required_work: Add declarative status feedback verification
+  - interaction_id: INT-CONSUMER-RESOLVE-STATUS-SUCCESS
+    status: NOT_EXECUTED
+    reason: Resolve status transition is covered within the aggregate Consumer flow
+      but not independently classified
+    required_fixture: Consumer status fixture
+    required_work: Add declarative status feedback verification
+  - interaction_id: INT-CONSUMER-RESOLVE-STATUS-ERROR
+    status: NOT_EXECUTED
+    reason: Resolve status transition is covered within the aggregate Consumer flow
+      but not independently classified
+    required_fixture: Consumer status fixture
+    required_work: Add declarative status feedback verification
+capabilities:
+  - id: CAP-ADMIN-AUTH
+    name: Admin authentication
+    description: Authenticate an administrator with a management bearer token
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/dashboard
+    source_files:
+      - public/admin/auth.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-ADMIN-NAVIGATION
+    name: Admin navigation
+    description: Navigate among exposed admin pages
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: false
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes: []
+    source_files:
+      - public/admin/admin-shell.js
+    canonical_references:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+  - id: CAP-PROVIDER-DISCOVERY
+    name: Provider discovery
+    description: Load and select provider definitions in the credential wizard
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/providers
+    source_files:
+      - public/admin/wizard.js
+      - src/oauth/oauth-callback-server.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/credential-creation-flow.test.js
+  - id: CAP-PROVIDER-CREATE
+    name: Custom provider creation
+    description: Create declarative custom provider definitions
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/providers
+    source_files:
+      - public/admin/providers.js
+      - src/oauth/oauth-callback-server.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/providers-api.test.js
+  - id: CAP-CREDENTIAL-CREATE
+    name: Credential creation
+    description: Create credentials through the wizard
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/credentials
+    source_files:
+      - public/admin/wizard.js
+      - src/oauth/oauth-callback-server.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/credential-creation-flow.test.js
+  - id: CAP-CREDENTIAL-READ
+    name: Credential list and detail read
+    description: Load persisted credential metadata in the admin list and detail
+      view without exposing secret values
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/credentials
+      - /api/v1/credentials/:credentialId
+    source_files:
+      - public/admin/credentials.js
+      - tests/ui/fixture-server.mjs
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-CREDENTIAL-CONNECTION-TEST
+    name: Credential connection test
+    description: Validate entered credential connectivity before creation
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/credentials/test-connection
+    source_files:
+      - public/admin/wizard.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/credential-creation-flow.test.js
+  - id: CAP-CREDENTIAL-EDIT
+    name: Credential editing
+    description: Edit public credential fields and optional secret replacements
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/credentials/:credentialId
+    source_files:
+      - public/admin/credentials.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+  - id: CAP-CREDENTIAL-DELETE
+    name: Credential deletion
+    description: Delete a stored credential after confirmation
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/credentials/:credentialId
+    source_files:
+      - public/admin/credentials.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/admin-ui.test.js
+  - id: CAP-OAUTH-ONBOARDING
+    name: OAuth onboarding
+    description: Start OAuth authorization and consume callback state
+    status: UI_REACHABLE_CONDITIONALLY
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE_CONDITIONALLY
+    api_routes:
+      - /api/v1/providers/:providerKey/oauth/start
+      - /oauth/:provider/callback
+    source_files:
+      - public/admin/wizard.js
+      - src/oauth/oauth-callback-server.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/oauth-http-login.test.js
+  - id: CAP-GRANT-READ
+    name: Consumer grant list and detail read
+    description: Load synthetic consumer grant metadata and permission field names
+      without secret values
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/management/consumer-grants
+      - /api/v1/management/consumer-grants/:grantId
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-GRANT-CREATE
+    name: Consumer grant creation
+    description: Create a synthetic consumer grant with an explicit allowlist of
+      secret field names
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/management/consumer-grants
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-GRANT-EDIT
+    name: Consumer grant editing
+    description: Edit the granted secret field set for an existing consumer grant
+    status: UI_REACHABLE_CONDITIONALLY
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE_CONDITIONALLY
+    api_routes:
+      - /api/v1/management/consumer-grants/:grantId
+    source_files:
+      - public/admin/consumer-grants.js
+      - tests/ui/fixture-server.mjs
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-TOKEN-READ
+    name: API token list and detail read
+    description: Load token metadata and stable token associations without exposing
+      secret values
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/management/api-tokens
+      - /api/v1/management/api-tokens/:tokenId
+    source_files:
+      - public/admin/api-tokens.js
+      - tests/ui/fixture-server.mjs
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-TOKEN-CREATE
+    name: API token creation
+    description: Create an API token and show its redacted one-time value
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/management/api-tokens
+    source_files:
+      - public/admin/api-tokens.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-TOKEN-REVOKE
+    name: API token revocation
+    description: Revoke an API token after confirmation
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/management/api-tokens/:tokenId
+    source_files:
+      - public/admin/api-tokens.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/api-token-bearer-auth.test.js
+  - id: CAP-CREDENTIAL-EXPORT
+    name: Credential export
+    description: Generate a password-protected credential export download
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/credentials/export
+    source_files:
+      - public/admin/credential-transfer.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/credential-transfer-api.test.js
+  - id: CAP-CREDENTIAL-IMPORT
+    name: Credential import
+    description: Preview and import credential data with conflict strategy
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/credentials/import/preview
+      - /api/v1/credentials/import
+    source_files:
+      - public/admin/credential-transfer.js
+    canonical_references:
+      - docs/security-guide/index.md
+    test_references:
+      - tests/integration/credential-transfer-api.test.js
+  - id: CAP-CONSUMER-DISCOVERY
+    name: Consumer discovery
+    description: List credentials available to a consumer token
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/consumer/credentials
+    source_files:
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/consumer-ui.test.js
+  - id: CAP-CONSUMER-HANDOFF
+    name: Consumer handoff
+    description: Open the separate Consumer interface only after the local
+      credential and grant verification completes
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: false
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes: []
+    source_files:
+      - public/admin/wizard.js
+      - tests/ui/fixture-server.mjs
+    canonical_references:
+      - docs/quick-start-guide/index.md
+    test_references:
+      - tests/ui/canonical-ui.smoke.spec.mjs
+  - id: CAP-CONSUMER-RESOLVE
+    name: Consumer secret resolution
+    description: Resolve granted secret fields for a selected credential
+    status: UI_REACHABLE
+    implemented: true
+    documented: true
+    ui_reachable: true
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: UI_REACHABLE
+    api_routes:
+      - /api/v1/consumer/credentials/:credentialKey/resolve
+    source_files:
+      - public/consumer/consumer.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/consumer-ui.test.js
+  - id: CAP-MANAGEMENT-INTERNAL
+    name: Internal management operations
+    description: Management API operations without a corresponding current UI surface
+    status: API_ONLY_INTENTIONAL
+    implemented: true
+    documented: true
+    ui_reachable: false
+    api_reachable: true
+    tested: true
+    live_verified: false
+    classification: API_ONLY_INTENTIONAL
+    api_routes:
+      - /api/v1/management/users
+      - /api/v1/management/roles
+      - /api/v1/management/audit-log
+      - /api/v1/management/metrics
+      - /api/v1/management/backups
+    source_files:
+      - src/oauth/oauth-callback-server.js
+    canonical_references:
+      - docs/api-reference/index.md
+    test_references:
+      - tests/integration/management-api.test.js
+feedback:
+  - id: FB-SUCCESS
+    type: SUCCESS
+    message_key: localized success message or operation result
+    source_files:
+      - public/admin/i18n.js
+      - public/admin/locales/en.js
+      - public/admin/locales/de.js
+    test_references:
+      - tests/integration/admin-ui.test.js
+    duration: null
+    blocking: false
+    recovery: null
+  - id: FB-VALIDATION
+    type: VALIDATION_ERROR
+    message_key: localized field or step validation message
+    source_files:
+      - public/admin/wizard.js
+      - public/admin/providers.js
+      - public/admin/credentials.js
+      - public/admin/consumer-grants.js
+    test_references:
+      - tests/integration/credential-creation-flow.test.js
+      - tests/integration/providers-api.test.js
+    duration: null
+    blocking: true
+    recovery: correct input and retry
+  - id: FB-AUTHENTICATION-ERROR
+    type: AUTHENTICATION_ERROR
+    message_key: authentication error/status text
+    source_files:
+      - public/admin/auth.js
+      - public/consumer/consumer.js
+    test_references:
+      - tests/integration/admin-auth.test.js
+      - tests/integration/consumer-ui.test.js
+    duration: null
+    blocking: true
+    recovery: authenticate again
+  - id: FB-AUTHORIZATION-ERROR
+    type: AUTHORIZATION_ERROR
+    message_key: authorization error/status text
+    source_files:
+      - public/admin/auth.js
+      - public/admin/i18n.js
+    test_references:
+      - tests/integration/access-management-api.test.js
+    duration: null
+    blocking: true
+    recovery: use an authorized session
+  - id: FB-NETWORK-ERROR
+    type: NETWORK_ERROR
+    message_key: network failure status
+    source_files:
+      - public/consumer/consumer.js
+      - public/admin/auth.js
+    test_references:
+      - tests/integration/consumer-ui.test.js
+    duration: null
+    blocking: true
+    recovery: retry when service is available
+  - id: FB-SYSTEM-ERROR
+    type: SYSTEM_ERROR
+    message_key: localized API/system error
+    source_files:
+      - public/admin/i18n.js
+      - public/admin/credentials.js
+      - public/admin/credential-transfer.js
+    test_references:
+      - tests/integration/admin-ui.test.js
+    duration: null
+    blocking: true
+    recovery: inspect error and retry
+  - id: FB-LOADING
+    type: LOADING
+    message_key: loading status text
+    source_files:
+      - public/consumer/index.html
+    test_references:
+      - tests/integration/admin-ui.test.js
+      - tests/integration/consumer-ui.test.js
+    duration: null
+    blocking: false
+    recovery: wait for request completion
+audit:
+  scope: Repository UI, UI handlers, UI-reachable backend routes, tests, canonical
+    documentation and read-only live route smoke checks; dynamic repeated
+    controls are represented by their rendering containers and handlers.
+  repository_head: PUBLIC_STAGING_PROJECTION
+  counts:
+    areas: 2
+    pages: 8
+    panels: 7
+    tabs: 0
+    dialogs: 4
+    modals: 5
+    forms: 7
+    buttons: 29
+    links: 12
+    tables: 4
+    messages: 7
+    interactions: 58
+  findings:
+    - id: FIND-UI-001
+      category: UI Coverage
+      status: OBSERVED
+      evidence:
+        - public/admin/*.html and public/consumer/index.html inspected; 8 page
+          nodes represented
+      recommendation: Continue expanding control-level nodes for dynamic table row
+        actions and generated wizard fields in Phase 3 if individual
+        selector-level coverage is required.
+    - id: FIND-TRACE-001
+      category: Missing Traceability
+      status: OPEN
+      evidence:
+        - live_verified is false for page-level interactions because only route
+          smoke checks were performed
+      recommendation: Capture authenticated browser evidence before claiming
+        interaction-level live coverage.
+    - id: FIND-DOC-001
+      category: Documentation Drift
+      status: RESOLVED
+      evidence:
+        - UI handlers and API routes are implemented across public/admin and
+          src/oauth; canonical UI source and generated views are synchronized
+      recommendation: Keep the populated model synchronized when UI or route contracts change.
+    - id: FIND-API-001
+      category: Orphan Capability
+      status: ACCEPTED
+      evidence:
+        - management routes for users
+        - roles
+        - audit-log
+        - metrics and backups have no current UI node and are listed in
+          api_only_paths
+      recommendation: Preserve intentional API-only ownership; do not expose automatically.
+    - id: FIND-SEC-001
+      category: Security Observation
+      status: OBSERVED
+      evidence:
+        - token values are shown only after creation; credential pages state
+          secret values are not displayed; consumer resolution is grant-bound
+      recommendation: Preserve current secret-handling boundaries and include them in
+        future authenticated live evidence.
+    - id: FIND-LIVE-001
+      category: LIVE-EVIDENCE
+      severity: MEDIUM
+      status: BLOCKED
+      observed_behavior: Authenticated live evidence is maintained outside the public repository.
+      expected_behavior: Critical authenticated flows require redacted reproducible evidence
+      evidence:
+        - scripts/ui-live-evidence.mjs
+        - Public live evidence is maintained outside the public repository.
+      affected_ui_nodes:
+        - UI-ADMIN-LOGIN-FORM
+        - UI-CONSUMER-DISCOVERY-SUBMIT
+      affected_interactions:
+        - INT-CONSUMER-DISCOVER
+      affected_capabilities:
+        - CAP-CONSUMER-DISCOVERY
+      user_impact: Live parity remains unproven for authenticated flows
+      security_impact: No credentials or tokens were improvised for testing
+      recommendation: Provision safe expiring test fixtures and a redacted evidence sink
+      required_follow_up: Controlled live-test environment
+      verification_method: npm run ui:test:live
+  non_exposed_capabilities:
+    - capability_id: CAP-MANAGEMENT-INTERNAL
+      classification: API_ONLY_INTENTIONAL
+      reason: Management API surfaces are implemented and tested but no current UI
+        controls invoke them; no defect is inferred.
+  phase_3_recommendations:
+    - Add selector-level nodes for repeated table row actions and generated
+      provider/credential fields if required by the next coverage threshold.
+    - Run authenticated browser evidence for each primary interaction and record
+      durable evidence references.
+    - Review API-only capabilities with the responsible owner before any UI
+      exposure decision.
+    - Add automated model coverage checks that compare discovered route/selector
+      inventories with the YAML source.
