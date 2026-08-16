@@ -4,7 +4,6 @@
 
 *Maintained by Working Curiosity.*
 
-![Sekalum Beta-1 overview](https://github.com/user-attachments/assets/66985fe9-6bae-4261-981e-c3280d666855)
 
 *Promotional overview of the Sekalum Public Beta. The documented feature scope and current limitations below are authoritative.*
 
