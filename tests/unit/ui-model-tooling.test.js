@@ -84,6 +84,9 @@ test('canonical UI model rejects invalid traceability targets', async () => {
   const { model, schema } = await loadModel(root);
   const invalid = structuredClone(model);
   invalid.nodes[0].source_files = ['public/missing-ui-source.js'];
-  invalid.interactions.find((item) => item.verification).verification.evidence = 'test-results/missing-evidence.json';
-  assert.match(validateModel(invalid, schema).join('\n'), /missing source_files target|invalid evidence target/);
+  const interaction = invalid.interactions.find((item) => item.verification);
+  if (interaction) interaction.verification.evidence = 'test-results/missing-evidence.json';
+  const validation = validateModel(invalid, schema).join('\n');
+  assert.match(validation, /missing source_files target/);
+  if (interaction) assert.match(validation, /invalid evidence target/);
 });
