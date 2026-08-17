@@ -1,9 +1,8 @@
-![Sekalum logo](docs/assets/sekalum-logo-transparent.png)
-
 # Sekalum
 
-*Maintained by Working Curiosity.*
+![Sekalum logo](docs/assets/sekalum-logo-transparent.png)
 
+*Maintained by Working Curiosity.*
 
 *Promotional overview of the Sekalum Public Beta. The documented feature scope and current limitations below are authoritative.*
 

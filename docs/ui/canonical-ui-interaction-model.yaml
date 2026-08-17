@@ -4072,27 +4072,17 @@ audit:
           secret values are not displayed; consumer resolution is grant-bound
       recommendation: Preserve current secret-handling boundaries and include them in
         future authenticated live evidence.
-    - id: FIND-LIVE-001
-      category: LIVE-EVIDENCE
-      severity: MEDIUM
-      status: BLOCKED
+    - id: FIND-PUBLIC-001
+      category: Publication Boundary
+      severity: INFO
+      status: DOCUMENTED
       observed_behavior: Authenticated live evidence is maintained outside the public repository.
-      expected_behavior: Critical authenticated flows require redacted reproducible evidence
+      expected_behavior: The public tree contains only reproducible, redacted
+        validation artifacts.
       evidence:
-        - scripts/ui-live-evidence.mjs
-        - Public live evidence is maintained outside the public repository.
-      affected_ui_nodes:
-        - UI-ADMIN-LOGIN-FORM
-        - UI-CONSUMER-DISCOVERY-SUBMIT
-      affected_interactions:
-        - INT-CONSUMER-DISCOVER
-      affected_capabilities:
-        - CAP-CONSUMER-DISCOVERY
-      user_impact: Live parity remains unproven for authenticated flows
-      security_impact: No credentials or tokens were improvised for testing
-      recommendation: Provision safe expiring test fixtures and a redacted evidence sink
-      required_follow_up: Controlled live-test environment
-      verification_method: npm run ui:test:live
+        - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+      recommendation: Keep authenticated live evidence in the controlled validation
+        environment.
   non_exposed_capabilities:
     - capability_id: CAP-MANAGEMENT-INTERNAL
       classification: API_ONLY_INTENTIONAL

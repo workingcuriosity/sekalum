@@ -1,6 +1,6 @@
 ---
 title: Sekalum Project Identity
-version: 1.1.0
+version: 1.2.0
 status: Active
 category: Project
 canonical: true
@@ -21,6 +21,9 @@ change_history:
   - version: 1.1.0
     date: 2026-08-16
     change: Establishes Sekalum as the current product and root package identity while preserving legacy runtime, persistence and API identifiers for compatibility.
+  - version: 1.2.0
+    date: 2026-08-16
+    change: Aligns the active maintainer identity with Working Curiosity and records the current private/public repository and redirect structure.
   - version: 1.0.0
     date: 2026-07-16
     change: Adds required canonical metadata.
@@ -44,6 +47,14 @@ https://github.com/workingcuriosity/sekalum
 GNU Affero General Public License v3.0 only (AGPL-3.0-only)
 
 This document is the canonical source for project identity information.
+
+## Repository structure
+
+| Area | Public canonical source |
+|---|---|
+| Sekalum Core | `workingcuriosity/sekalum` |
+| Sekalum n8n | `workingcuriosity/sekalum-n8n` |
+| Credential HUB history | `luiscyphre404-cmd/credential-hub-becomes-sekalum` |
 
 ## Technical identity compatibility
 

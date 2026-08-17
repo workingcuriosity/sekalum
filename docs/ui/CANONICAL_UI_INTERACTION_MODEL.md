@@ -225,7 +225,7 @@ ui:test:smoke` runs model-bound Playwright checks against a controlled local
 fixture for root routing, protected Admin entry, invalid-login feedback and
 Consumer discovery entry. Browser console and page errors fail the smoke run.
 
-Authenticated live testing is deliberately separate. `npm run ui:test:live`
+Authenticated live testing is deliberately separate. an approved authenticated live-test profile
 returns `SKIPPED_WITH_REASON` until an approved redacted evidence sink and
 safe environment variables are supplied. No token, secret or screenshot is
 stored in the repository. Every future live result must contain environment,
