@@ -23,10 +23,8 @@ Installation-specific values, infrastructure details, environment variable names
 
 Use the following current or planned sources instead of this archive:
 
-- `docs/project/Storage.md` for verified Credential storage.
-- `docs/project/DOCUMENTATION_GOVERNANCE.md` for documentation and publication rules.
-- `docs/project/CONSOLIDATION_PLAN.md` for the remaining documentation work.
-- The future Configuration, Installation, Operations, and Security Guides for verified operational content.
+- The [Data Model Reference](../data-model-reference/index.md) and [Configuration Reference](../configuration-reference/index.md) for current product contracts.
+- The [Installation Guide](../installation-guide/index.md), [Operations Guide](../operations-guide/index.md), and [Security Guide](../security-guide/index.md) for verified operational content.
 
 ## Preservation Note
 

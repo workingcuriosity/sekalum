@@ -4,16 +4,15 @@ version: 1.0.3
 status: Active
 category: Configuration
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Administratoren
   - Betreiber
   - Entwickler
 dependent_documents:
-  - docs/project/Storage.md
   - docs/api-reference/index.md
   - docs/providers/README.md
 change_history:
@@ -98,7 +97,7 @@ GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET
 GOOGLE_REDIRECT_URI=YOUR_GOOGLE_REDIRECT_URI
 ```
 
-The derived redirect URI must match the registration of the respective OAuth provider. Administrators register the deployed public callback URI with the provider, but do not enter it in the Wizard. When `BASE_PATH` is configured, include it in the provider registration, for example `https://credential-hub.example.com/credential-hub/oauth/google/callback`. The X client secret is optional; all other built-in OAuth providers require it. Provider-specific fields and capabilities are defined by provider metadata.
+The derived redirect URI must match the registration of the respective OAuth provider. Administrators register the deployed public callback URI with the provider, but do not enter it in the Wizard. When `BASE_PATH` is configured, include it in the provider registration, for example `https://sekalum.example.com/credential-hub/oauth/google/callback`. The X client secret is optional; all other built-in OAuth providers require it. Provider-specific fields and capabilities are defined by provider metadata.
 
 ## Base path and reverse proxies
 
@@ -116,7 +115,7 @@ PUBLIC_BASE_URL=<YOUR_PUBLIC_ORIGIN>
 
 `PUBLIC_BASE_URL` is optional for direct deployments. When set, it must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The Wizard and OAuth-start route use the same value and report `OAUTH_REDIRECT_URI_MISMATCH` with the actually used, non-secret redirect URI if the displayed and generated values diverge.
 
-For example, set `BASE_PATH=/credential-hub` when the public service is hosted below that prefix; `PUBLIC_BASE_URL` remains the external origin such as `https://credential-hub.example.com`.
+For example, set `BASE_PATH=/credential-hub` when the public service is hosted below that prefix; `PUBLIC_BASE_URL` remains the external origin such as `https://sekalum.example.com`.
 
 With this configuration, the public routes are prefixed consistently:
 

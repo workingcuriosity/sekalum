@@ -1,6 +1,6 @@
 site_name: Sekalum Documentation
 site_description: Open Source Release 1.0 documentation for Sekalum
-site_author: cyphre-san productions
+site_author: Working Curiosity
 
 docs_dir: docs
 site_dir: site
@@ -9,12 +9,10 @@ repo_name: workingcuriosity/sekalum
 repo_url: https://github.com/workingcuriosity/sekalum
 edit_uri: ""
 
-copyright: Copyright &copy; 2026 cyphre-san productions. Licensed under AGPL-3.0-only.
+copyright: Copyright &copy; 2026 Working Curiosity. Licensed under AGPL-3.0-only.
 
 nav:
   - Handbook: index.md
-  - Project History:
-      - Archive overview: history/index.md
   - Quick Start:
       - English: quick-start-guide/index.md
   - Installation Guide:
@@ -34,35 +32,9 @@ nav:
   - Developer Guide:
       - Überblick: developer-guide/index.md
   - Community: https://discord.gg/exTu3Dy2UW
-  - Project Governance:
-      - AI-Assisted Development: project/AI_ASSISTED_DEVELOPMENT.md
-      - Implementation Strategy and UI Quality Gates: project/IMPLEMENTATION_STRATEGY_AND_UI_QUALITY_GATES.md
-      - Canonical UI Interaction Model: ui/CANONICAL_UI_INTERACTION_MODEL.md
-      - Canonical UI Completion Record: ui/CANONICAL_UI_INTERACTION_MODEL_COMPLETION_RECORD.md
-      - Repository Test Isolation: project/TEST_ISOLATION.md
-      - Documentation Governance: project/DOCUMENTATION_GOVERNANCE.md
-  - Architecture Governance:
-      - Governance Foundation: architecture/governance/GOVERNANCE_FOUNDATION.md
-      - Product Intent: architecture/governance/PRODUCT_INTENT.md
-      - Product Invariants: architecture/governance/PRODUCT_INVARIANTS.md
-      - AIPG: architecture/governance/AIPG.md
-      - Traceability Model: architecture/governance/TRACEABILITY_MODEL.md
-      - Terminology Glossary: architecture/glossary/GLOSSARY.md
-  - Architecture:
-      - Gesamtarchitektur: architecture/Gesamtarchitektur.md
-      - Schichtenmodell: architecture/Schichtenmodell.md
-      - C4 Architecture: architecture/C4_ARCHITECTURE.md
-      - Architecture Knowledge Map: architecture/ARCHITECTURE_KNOWLEDGE_MAP.md
-      - Architecture Dependency Matrix: architecture/ARCHITECTURE_DEPENDENCY_MATRIX.md
   - Release Guide:
       - Überblick: release-guide/index.md
       - Changelog: changelog/README.md
-  - ADR Index:
-      - Überblick: adr/ADR-Index.md
-      - ADR-018 Internationalization Strategy: adr/ADR-018-internationalization-strategy.md
-      - ADR-019 Documentation Build Strategy: adr/ADR-019-documentation-build-strategy.md
-      - ADR-020 Credential Consumer API: adr/ADR-020-Credential-Consumer-API.md
-      - ADR-021 Generic CredentialMethod Model: adr/ADR-021-Generic-Credential-Method-Model.md
   - Anhang:
       - Überblick: appendix/index.md
 
@@ -101,10 +73,10 @@ plugins:
       lang: de
   - mermaid2
   - with-pdf:
-      author: cyphre-san productions
+      author: Working Curiosity
       cover_title: Sekalum Documentation
       cover_subtitle: Release 1.0
-      output_path: pdf/credential-hub-documentation.pdf
+      output_path: pdf/sekalum-documentation.pdf
       enabled_if_env: ENABLE_PDF_EXPORT
 
 markdown_extensions:

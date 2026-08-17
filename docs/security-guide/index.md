@@ -4,17 +4,16 @@ version: 1.6.0
 status: Active
 category: Security
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Betreiber
   - Entwickler
   - Auditoren
 dependent_documents:
   - SECURITY.md
-  - docs/project/Storage.md
   - docs/api-reference/index.md
   - docs/configuration-reference/index.md
 change_history:

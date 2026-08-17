@@ -4,10 +4,10 @@ version: 1.0.0
 status: Active
 category: Project
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Users
   - Contributors
@@ -27,11 +27,11 @@ change_history:
 
 ## Copyright
 
-© 2026 cyphre-san productions
+© 2026 Working Curiosity
 
 ## Maintainer
 
-cyphre-san productions
+Working Curiosity
 
 ## Contact
 

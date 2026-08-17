@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const LICENSE_HEADER = `// Copyright (C) 2026 cyphre-san productions
+const LICENSE_HEADER = `// Copyright (C) 2026 Working Curiosity
 //
 // This file is part of Credential HUB.
 //

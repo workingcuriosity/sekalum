@@ -26,7 +26,7 @@ AI-assisted contributions are welcome. They must satisfy the same architecture, 
 - Keep the pull request in Draft until every applicable quality gate, test, browser/deployment check, and canonical Markdown update is complete.
 
 Maintainer:
-cyphre-san productions
+Working Curiosity
 
 Contact:
 luiscyphre404@gmail.com

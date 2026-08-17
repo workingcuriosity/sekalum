@@ -4,10 +4,10 @@ version: 1.2.0
 status: Active
 category: Developer Guide
 canonical: false
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Developers
   - Architects
@@ -15,9 +15,7 @@ dependent_documents:
   - docs/architecture/Gesamtarchitektur.md
   - docs/data-model-reference/index.md
   - docs/api-reference/index.md
-  - docs/project/Storage.md
   - docs/adr/ADR-Index.md
-  - docs/project/PROVIDER_METADATA_GUIDELINE.md
   - docs/architecture/ARCHITECTURE_DEPENDENCY_MATRIX.md
   - docs/adr/ADR-020-Credential-Consumer-API.md
   - docs/adr/ADR-021-Generic-Credential-Method-Model.md
@@ -70,12 +68,12 @@ This guide is the active entry point for development work. It organizes the exis
 | Provider capabilities and provider-specific sources | [Provider Overview](../providers/README.md) |
 | Metadata-driven provider and custom-provider contract | Provider Metadata Guideline |
 | Generic Credential Method architecture | ADR-021 |
-| Architecture decisions | ADR Index |
+| Architecture decisions | Published architecture references |
 | Testing approach | Testing Strategy |
 
 ## Development rules and follow-up work
 
-Project-wide development rules are in Development Rules. Unapproved architecture improvements are classified in the Architecture Backlog Index. Historical architecture reviews and milestone records are evidence and do not replace the sources listed above.
+Project-wide development rules are reflected in the published contributor and developer guidance. Historical architecture reviews and milestone records are evidence and do not replace the current public sources listed above.
 
 ## Consumer Integration Foundation
 
@@ -669,7 +667,7 @@ Any generic HTTP client, including an n8n HTTP Request node, can call the endpoi
 
 ```http
 POST /api/v1/consumer/credentials/credential-123/resolve HTTP/1.1
-Host: credential-hub.example
+Host: sekalum.example
 Authorization: Bearer <consumer-api-token>
 Content-Type: application/json
 

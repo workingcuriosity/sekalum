@@ -5,10 +5,10 @@ status: Active
 category: UI Governance
 canonical: true
 owner: Sekalum
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Maintainers
   - Architecture Governance
@@ -20,7 +20,6 @@ dependent_documents:
   - docs/ui/CANONICAL_UI_INTERACTION_MODEL_COMPLETION_RECORD.md
   - docs/architecture/CRITICAL_USER_FLOWS_AND_STATE_MODELS.md
   - docs/architecture/ARCHITECTURE_KNOWLEDGE_MAP.md
-  - docs/project/IMPLEMENTATION_STRATEGY_AND_UI_QUALITY_GATES.md
   - docs/ui/canonical-ui-interaction-model.yaml
   - docs/ui/canonical-ui-interaction-model.schema.json
   - docs/ui/generated/ui-tree.md
@@ -81,7 +80,7 @@ UI model does not extend it with navigation or implementation-specific UI
 detail, and it does not redefine architecture, API, data-model or security
 rules.
 
-The owner is Sekalum. The maintainer is cyphre-san productions.
+The owner is Sekalum. The maintainer is Working Curiosity.
 Architecture Governance reviews scope and cross-document consistency;
 Documentation Engineering maintains traceability; Test Engineering owns
 validation and test binding; Security Engineering reviews security boundaries

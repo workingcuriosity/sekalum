@@ -10,7 +10,7 @@
 - `deployment/` – installation, operation, backup and restore
 - `infrastructure/` – Docker, ports, domains, reverse proxy and volumes
 - `testing/` – test strategy and architecture checks
-- `history/` – archived milestones, work packages, reviews, planning material and project transitions
+- `changelog/` – public release notes and historical release context
 - `backlog/` – architecture and feature backlog
 - `troubleshooting/` – known issues and operational fixes
 - `inventory/` – infrastructure and software inventory

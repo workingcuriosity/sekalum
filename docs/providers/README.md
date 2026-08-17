@@ -4,10 +4,10 @@ version: 1.1.0
 status: Active
 category: Providers
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Developers
   - Integrators
@@ -108,4 +108,4 @@ Each provider document describes:
 
 - [Configuration Reference](../configuration-reference/index.md)
 - [API Reference](../api-reference/index.md)
-- Documentation Governance
+- [Documentation Platform](../documentation-platform/index.md)

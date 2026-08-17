@@ -14,7 +14,7 @@ Gültig ab: Release 1.1 geplant
 
 Dieses Verzeichnis reserviert die spätere englische Dokumentationsstruktur.
 
-Release 1.0 veröffentlicht keine englischen Inhalte, weil Dashboard, Wizard und Anwendungstexte ebenfalls noch deutsch sind. Die englische Dokumentation wird gemeinsam mit der Produkt-Internationalisierung in Release 1.1 aktiviert.
+Der öffentliche Stand enthält bereits einen englischen Quick Start und geprüfte englische Kernhandbücher. Weitere Übersetzungen werden erst veröffentlicht, wenn sie als reviewed content vorliegen.
 
 ## Regel
 

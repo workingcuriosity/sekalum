@@ -5,10 +5,10 @@ status: Active
 category: Quick Start
 canonical: true
 scope: Release 1.0 international onboarding baseline
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - International users
   - Administrators

@@ -4,10 +4,10 @@ version: 1.4.0
 status: Active
 category: Installation
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Administratoren
   - Betreiber
@@ -234,7 +234,7 @@ BASE_PATH=<YOUR_BASE_PATH>
 PUBLIC_BASE_URL=<YOUR_PUBLIC_ORIGIN>
 ```
 
-For example, set `BASE_PATH=/credential-hub` and set `PUBLIC_BASE_URL` to the external origin such as `https://credential-hub.example.com`.
+For example, set `BASE_PATH=/credential-hub` and set `PUBLIC_BASE_URL` to the external origin such as `https://sekalum.example.com`.
 
 `PUBLIC_BASE_URL` must be the external HTTP(S) origin without a path, query, or fragment. It prevents an internal proxy host or protocol from becoming part of an OAuth redirect URI. The application then serves the Admin UI at `/credential-hub/admin/`, health at `/credential-hub/health`, and the REST and OAuth routes below `/credential-hub/`. Configure every OAuth provider with the exact redirect URI shown in the Wizard; it includes the same prefix.
 
@@ -253,7 +253,7 @@ location /credential-hub/ {
 ### Caddy
 
 ```caddy
-credential-hub.example.com {
+sekalum.example.com {
     reverse_proxy /credential-hub/* localhost:3000
 }
 ```

@@ -63,7 +63,7 @@ function renderFooter() {
   if (!footer) return;
   footer.innerHTML = `
     <div><strong>${t('support.openSource')}</strong><span>AGPL-3.0-only</span></div>
-    <div><strong>cyphre-san productions</strong><span>© 2026 cyphre-san productions</span></div>
+    <div><strong>Working Curiosity</strong><span>© 2026 Working Curiosity</span></div>
     <div><strong>${t('support.title')}</strong><a href="mailto:luiscyphre404@gmail.com">luiscyphre404@gmail.com</a><a href="https://discord.gg/exTu3Dy2UW" ${EXTERNAL_LINK_ATTRIBUTES}>Discord ↗</a></div>
     <div><a href="${applicationPath(PROJECT_LINKS.license)}">LICENSE</a><a href="${applicationPath(PROJECT_LINKS.notice)}">NOTICE</a><a href="${applicationPath(PROJECT_LINKS.thirdPartySoftware)}">${t('support.thirdParty')}</a></div>
     <p>${t('support.securityNotice')} <a href="${applicationPath(PROJECT_LINKS.security)}">SECURITY.md</a></p>`;

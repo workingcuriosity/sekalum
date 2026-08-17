@@ -4,16 +4,15 @@ version: 1.0.0
 status: Active
 category: Release Notes
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Administrators
   - Developers
   - Operators
 dependent_documents:
-  - docs/project/CREDENTIAL_CONNECTION_TEST_STRATEGY.md
   - docs/api-reference/index.md
   - docs/security-guide/index.md
   - docs/user-guide/index.md
@@ -44,4 +43,4 @@ The Release-1.0 standard image includes the active OpenAI HTTP validation path. 
 
 ## Validation
 
-The package is covered by provider, manager, API, Admin UI, base-path, and browser-responsive checks. The final Docker rebuild and deployed browser evidence are recorded separately by PCT-004 release readiness.
+The package is covered by provider, manager, API, Admin UI, base-path, and browser-responsive checks. Deployment evidence is maintained through the repository's public validation scripts and release records.

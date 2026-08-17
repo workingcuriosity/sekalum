@@ -7,16 +7,15 @@ category: Data Model
 canonical: true
 owner: Credential HUB
 approved_by: pending
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Entwickler
   - Architekten
 dependent_documents:
   - docs/architecture/Gesamtarchitektur.md
-  - docs/project/Storage.md
   - docs/api-reference/index.md
   - docs/adr/ADR-020-Credential-Consumer-API.md
   - docs/adr/ADR-021-Generic-Credential-Method-Model.md

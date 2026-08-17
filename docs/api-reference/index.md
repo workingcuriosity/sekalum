@@ -7,10 +7,10 @@ category: API
 canonical: true
 owner: Sekalum
 approved_by: pending
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Entwickler
   - Integratoren
@@ -27,7 +27,6 @@ dependent_documents:
   - docs/architecture/glossary/GLOSSARY.md
   - docs/security-guide/index.md
   - docs/developer-guide/index.md
-  - docs/project/PROVIDER_METADATA_GUIDELINE.md
   - docs/architecture/ARCHITECTURE_DEPENDENCY_MATRIX.md
   - docs/architecture/governance/audits/ADR-020_ISSUE-136_GOVERNANCE_REVIEW_RECORD.md
   - docs/architecture/governance/audits/ADR-020_ISSUE-136_INDEPENDENT_SECURITY_ARCHITECTURE_AUDIT.md

@@ -14,4 +14,4 @@ Questions or concerns:
 luiscyphre404@gmail.com
 
 Maintainer:
-cyphre-san productions
+Working Curiosity

@@ -1,4 +1,4 @@
-// Copyright (C) 2026 cyphre-san productions
+// Copyright (C) 2026 Working Curiosity
 //
 // This file is part of Credential HUB.
 //

@@ -14,7 +14,7 @@ source_of_truth:
     - docs/ui/generated/ui-flow.mmd
 ownership:
   owner: Sekalum
-  maintainer: cyphre-san productions
+  maintainer: Working Curiosity
   architecture_review: Architecture Governance
   documentation_maintainer: Documentation Engineer
   validation_owner: Test Engineer

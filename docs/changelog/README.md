@@ -4,17 +4,16 @@ version: 1.0
 status: Active
 category: Release
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Projektverantwortliche
   - Entwickler
   - Betreiber
 dependent_documents:
   - docs/release-guide/index.md
-  - docs/project/Changelog.md
 change_history:
   - version: 1.0.0
     date: 2026-07-11
@@ -60,4 +59,4 @@ historical evidence.
 ## Verwandte Dokumente
 
 - `docs/release-guide/index.md` beschreibt den Release-Kontext.
-- `docs/project/Changelog.md` remains a historical project summary.
+- Historical release context remains in this public changelog.

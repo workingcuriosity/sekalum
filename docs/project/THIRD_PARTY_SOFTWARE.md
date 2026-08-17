@@ -4,10 +4,10 @@ version: 1.0.0
 status: Active
 category: Project
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Developers
   - Administrators
@@ -132,7 +132,7 @@ The project-level `NOTICE`, [Legal Information](LEGAL.md), and `DISCLAIMER.md` p
 
 ## Repository Identity Check
 
-CP-012A also verifies the public repository identity before release. `package.json`, both root name fields in `package-lock.json`, and the active Docker Compose service and container names use `credential-hub`.
+CP-012A also verifies the public repository identity before release. `package.json` and both root name fields in `package-lock.json` use `sekalum`. The active Docker Compose service and container names remain `credential-hub` as legacy runtime compatibility identifiers.
 
 The identity scan searches for `token-manager`, `Token Manager`, `token_manager`, `tokenmanager`, and `TOKEN_MANAGER`. Remaining matches are intentionally retained only in the following contexts:
 

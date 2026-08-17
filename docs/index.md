@@ -4,10 +4,10 @@ version: 1.2.0
 status: Active
 category: Handbook
 canonical: true
-maintainer: cyphre-san productions
+maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 cyphre-san productions"
+copyright: "© 2026 Working Curiosity"
 target_audience:
   - Administrators
   - Developers
@@ -47,8 +47,7 @@ does not duplicate technical contracts; each topic links to its owning source.
 | Understand the data model | [Data Model Reference](data-model-reference/index.md) |
 | Understand architecture and development | [Developer Guide](developer-guide/index.md) |
 | Review release notes and release context | [Release Guide](release-guide/index.md) |
-| Review architecture decisions | ADR Index |
-| Classify open architecture topics | Architecture Backlog Index |
+| Review architecture and security context | [Architecture](Architecture.md) |
 
 ## Documentation roles
 
@@ -58,8 +57,6 @@ traceable evidence, but do not define current product or operations truth.
 
 ## Governance
 
-Documentation roles, review workflow and neutrality rules are defined in
-Documentation Governance. The
-Implementation Strategy and UI Quality Gates
-apply before implementation. The current project plan is the
-IEP-beta1x.
+Documentation roles and current product identity are defined by the published
+project and architecture documents. Historical planning records remain
+traceable evidence and do not define current product truth.
