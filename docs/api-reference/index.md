@@ -10,7 +10,6 @@ approved_by: pending
 maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 Working Curiosity"
 target_audience:
   - Entwickler
   - Integratoren

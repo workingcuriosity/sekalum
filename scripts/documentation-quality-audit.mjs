@@ -12,7 +12,6 @@ const CANONICAL_FIELDS = [
   'maintainer',
   'contact',
   'license',
-  'copyright',
   'target_audience',
   'change_history'
 ];

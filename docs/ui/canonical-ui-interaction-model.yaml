@@ -1,8 +1,8 @@
-schema_version: 0.2.0
+schema_version: 0.2.1
 model:
   id: CUI-IM
   title: Canonical UI Interaction Model
-  version: 0.2.0
+  version: 0.2.1
   status: ACTIVE
 source_of_truth:
   format: YAML
@@ -469,8 +469,7 @@ nodes:
       - public/admin/api-tokens.js
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: loadApiTokens
     backend: /api/v1/management/api-tokens
@@ -591,8 +590,7 @@ nodes:
       - public/admin/wizard.js
     canonical_references:
       - docs/quick-start-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: renderConsumerGrantPanel
     backend: null
@@ -736,8 +734,7 @@ nodes:
       - public/admin/wizard.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: createCredential
     backend: /api/v1/credentials
@@ -878,8 +875,7 @@ nodes:
       - public/admin/credentials.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: renderCredentials
     backend: /api/v1/credentials
@@ -907,8 +903,7 @@ nodes:
       - public/admin/credentials.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: openDetail
     backend: /api/v1/credentials/:credentialId
@@ -1051,8 +1046,7 @@ nodes:
       - public/admin/consumer-grants.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: submitCreate
     backend: /api/v1/management/consumer-grants
@@ -1092,8 +1086,7 @@ nodes:
       - public/admin/api-tokens.js
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: renderApiTokens
     backend: /api/v1/management/api-tokens
@@ -1129,8 +1122,7 @@ nodes:
       - public/admin/api-tokens.js
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: submitCreateTokenForm
     backend: /api/v1/management/api-tokens
@@ -1358,8 +1350,7 @@ nodes:
       - public/admin/auth.js
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: authenticateAdmin
     backend: /api/v1/dashboard
@@ -1391,8 +1382,7 @@ nodes:
       - public/admin/auth.js
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: authenticateAdmin
     backend: /api/v1/dashboard
@@ -1426,8 +1416,7 @@ nodes:
       - public/admin/wizard.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: goNext
     backend: null
@@ -1461,8 +1450,7 @@ nodes:
       - public/admin/wizard.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: goBack
     backend: null
@@ -1496,8 +1484,7 @@ nodes:
       - public/consumer/consumer.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: loadCredentials
     backend: /api/v1/consumer/credentials
@@ -1531,8 +1518,7 @@ nodes:
       - public/admin/consumer-grants.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: loadGrants
     backend: /api/v1/management/consumer-grants
@@ -1566,8 +1552,7 @@ nodes:
       - public/admin/consumer-grants.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: openCreate
     backend: null
@@ -1603,8 +1588,7 @@ nodes:
       - public/admin/consumer-grants.js
     canonical_references:
       - docs/user-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
     live_verified: false
     handler: submitCreate
     backend: /api/v1/management/consumer-grants
@@ -1640,8 +1624,7 @@ interactions:
     source_files:
       - public/admin/api-tokens.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: load_data
     handler: loadApiTokens
     redirect: /admin/api-tokens.html
@@ -1671,8 +1654,7 @@ interactions:
     source_files:
       - public/admin/api-tokens.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: create_token
     handler: submitCreateTokenForm
     redirect: null
@@ -1698,8 +1680,7 @@ interactions:
     source_files:
       - public/admin/api-tokens.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: fetchTokenDetail
     redirect: null
@@ -1754,8 +1735,7 @@ interactions:
     source_files:
       - public/admin/wizard.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: save_data
     handler: createCredential
     redirect: null
@@ -1809,8 +1789,7 @@ interactions:
     source_files:
       - public/admin/wizard.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: validate_input
     handler: testConnection
     redirect: null
@@ -1837,8 +1816,7 @@ interactions:
       - public/admin/admin-shell.js
       - public/admin/credentials.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: load_data
     handler: loadCredentials
     redirect: /admin/credentials.html
@@ -1864,8 +1842,7 @@ interactions:
     source_files:
       - public/admin/credentials.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: inspect_data
     handler: openDetail
     redirect: null
@@ -2004,8 +1981,7 @@ interactions:
     source_files:
       - public/admin/consumer-grants.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: load_data
     handler: loadGrants
     redirect: /admin/consumer-grants.html
@@ -2030,8 +2006,7 @@ interactions:
       - CAP-GRANT-CREATE
     source_files:
       - public/admin/consumer-grants.js
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: navigate
     handler: openCreate
     redirect: null
@@ -2056,8 +2031,7 @@ interactions:
       - CAP-GRANT-CREATE
     source_files:
       - public/admin/consumer-grants.js
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: change_form_state
     handler: renderCreateSecrets
     redirect: null
@@ -2086,8 +2060,7 @@ interactions:
     source_files:
       - public/admin/consumer-grants.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: save_data
     handler: submitCreate
     redirect: null
@@ -2112,8 +2085,7 @@ interactions:
     source_files:
       - public/admin/consumer-grants.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: inspect_data
     handler: openEdit
     redirect: null
@@ -2142,8 +2114,7 @@ interactions:
     source_files:
       - public/admin/consumer-grants.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: save_data
     handler: submitEdit
     redirect: null
@@ -2169,8 +2140,7 @@ interactions:
     source_files:
       - public/admin/consumer-grants.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: fetchGrantDetail
     redirect: null
@@ -2333,8 +2303,7 @@ interactions:
     source_files:
       - public/admin/wizard.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: navigate
     handler: renderConsumerGrantPanel
     redirect: /consumer/
@@ -2359,8 +2328,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: discover
     redirect: null
@@ -2385,8 +2353,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: load_data
     handler: discover
     redirect: null
@@ -2411,8 +2378,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: discover
     redirect: null
@@ -2437,8 +2403,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: resolve
     redirect: null
@@ -2463,8 +2428,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: resolve
     redirect: null
@@ -2489,8 +2453,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: resolve
     redirect: null
@@ -2515,8 +2478,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: error_feedback
     handler: resolve
     redirect: null
@@ -2544,8 +2506,7 @@ interactions:
     source_files:
       - public/consumer/consumer.js
       - tests/ui/fixture-server.mjs
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: recovery
     handler: discover
     redirect: null
@@ -2628,8 +2589,7 @@ interactions:
       - CAP-ADMIN-AUTH
     source_files:
       - public/admin/auth.js
-    test_ids:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_ids: []
     outcome: change_authentication_state
     handler: authenticateAdmin
     redirect: null
@@ -3174,19 +3134,22 @@ interactions:
 interaction_execution:
   - interaction_id: INT-TOKEN-LIST-OPEN
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-TOKEN-CREATE-FIXTURE
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-TOKEN-DETAIL-NOT-FOUND
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-WIZARD-NEXT
     status: NOT_EXECUTED
     reason: Wizard navigation is covered only as a prerequisite in broader flows
@@ -3195,9 +3158,10 @@ interaction_execution:
       duplicating the existing creation flow
   - interaction_id: INT-WIZARD-CREATE
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-WIZARD-OAUTH
     status: BLOCKED
     reason: OAuth authorization crosses an external provider boundary excluded from
@@ -3208,19 +3172,22 @@ interaction_execution:
     blocking_dependency: Approved controlled OAuth provider environment or replay contract
   - interaction_id: INT-WIZARD-TEST
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CREDENTIAL-LIST-OPEN
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CREDENTIAL-DETAIL
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-PROVIDER-CREATE
     status: NOT_EXECUTED
     reason: No controlled custom-provider mutation scenario is part of the local
@@ -3246,9 +3213,10 @@ interaction_execution:
     required_work: Add a dedicated declarative grant edit verification
   - interaction_id: INT-GRANT-LIST-OPEN
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-GRANT-CREATE-OPEN
     status: NOT_EXECUTED
     reason: Dialog opening is exercised only within the aggregate grant flow
@@ -3261,9 +3229,10 @@ interaction_execution:
     required_work: Add a focused declarative selection-state verification
   - interaction_id: INT-GRANT-CREATE-SAVE
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-GRANT-EDIT-OPEN
     status: NOT_EXECUTED
     reason: Edit opening is exercised only within the aggregate grant flow
@@ -3276,9 +3245,10 @@ interaction_execution:
     required_work: Add an independent declarative grant-save verification
   - interaction_id: INT-GRANT-DETAIL-NOT-FOUND
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-TOKEN-CREATE
     status: NOT_EXECUTED
     reason: The product token creation interaction is represented separately from
@@ -3309,54 +3279,64 @@ interaction_execution:
     required_work: Add a declarative import verification
   - interaction_id: INT-CONSUMER-HANDOFF-SUCCESS
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-HANDOFF-FAILED
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-DISCOVER-EMPTY
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-DISCOVER-ERROR
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-RESOLVE-GRANT-MISSING
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-RESOLVE-TOKEN-INVALID
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-RESOLVE-CREDENTIAL-MISSING
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-RESOLVE-SECRET-DENIED
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-RECOVERY
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-CONSUMER-DISCOVER
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: Public Test Contract coverage exists, but the private browser execution
+      profile is not published.
+    required_fixture: A publication-safe browser fixture for the exact interaction.
+    required_work: Run and publish the exact public browser validation profile.
   - interaction_id: INT-CONSUMER-RESOLVE
     status: NOT_EXECUTED
     reason: Resolve is exercised as a prerequisite in the combined discovery flow
@@ -3365,9 +3345,10 @@ interaction_execution:
     required_work: Add a focused declarative resolve success verification
   - interaction_id: INT-ADMIN-LOGIN
     status: NOT_EXECUTED
-    reason: Public staging excludes private live-evidence artifacts.
-    required_fixture: A publication-safe browser fixture.
-    required_work: Run the public browser validation profile.
+    reason: No reproducible Public Test Contract evidence is mapped to this
+      interaction.
+    required_fixture: An explicitly PUBLIC test that directly exercises this interaction.
+    required_work: Add exact public evidence; do not substitute generic or adjacent coverage.
   - interaction_id: INT-NAVIGATION
     status: NOT_EXECUTED
     reason: Navigation is covered incidentally by feature flows rather than as a
@@ -3495,7 +3476,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: true
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE
     api_routes:
@@ -3504,8 +3485,7 @@ capabilities:
       - public/admin/auth.js
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-ADMIN-NAVIGATION
     name: Admin navigation
     description: Navigate among exposed admin pages
@@ -3593,7 +3573,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: true
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE
     api_routes:
@@ -3604,8 +3584,7 @@ capabilities:
       - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/api-reference/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-CREDENTIAL-CONNECTION-TEST
     name: Credential connection test
     description: Validate entered credential connectivity before creation
@@ -3693,7 +3672,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: true
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE
     api_routes:
@@ -3704,8 +3683,7 @@ capabilities:
       - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/api-reference/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-GRANT-CREATE
     name: Consumer grant creation
     description: Create a synthetic consumer grant with an explicit allowlist of
@@ -3715,7 +3693,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: true
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE
     api_routes:
@@ -3725,8 +3703,7 @@ capabilities:
       - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/api-reference/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-GRANT-EDIT
     name: Consumer grant editing
     description: Edit the granted secret field set for an existing consumer grant
@@ -3735,7 +3712,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: true
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE_CONDITIONALLY
     api_routes:
@@ -3745,8 +3722,7 @@ capabilities:
       - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/api-reference/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-TOKEN-READ
     name: API token list and detail read
     description: Load token metadata and stable token associations without exposing
@@ -3756,7 +3732,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: true
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE
     api_routes:
@@ -3767,8 +3743,7 @@ capabilities:
       - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-TOKEN-CREATE
     name: API token creation
     description: Create an API token and show its redacted one-time value
@@ -3777,7 +3752,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: true
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE
     api_routes:
@@ -3786,8 +3761,7 @@ capabilities:
       - public/admin/api-tokens.js
     canonical_references:
       - docs/security-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-TOKEN-REVOKE
     name: API token revocation
     description: Revoke an API token after confirmation
@@ -3874,7 +3848,7 @@ capabilities:
     documented: true
     ui_reachable: true
     api_reachable: false
-    tested: true
+    tested: false
     live_verified: false
     classification: UI_REACHABLE
     api_routes: []
@@ -3883,8 +3857,7 @@ capabilities:
       - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/quick-start-guide/index.md
-    test_references:
-      - tests/ui/canonical-ui.smoke.spec.mjs
+    test_references: []
   - id: CAP-CONSUMER-RESOLVE
     name: Consumer secret resolution
     description: Resolve granted secret fields for a selected credential

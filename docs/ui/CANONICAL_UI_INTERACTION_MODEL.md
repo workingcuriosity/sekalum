@@ -1,6 +1,6 @@
 ---
 title: Canonical UI Interaction Model
-version: 0.6.0
+version: 0.7.1
 status: Active
 category: UI Governance
 canonical: true
@@ -8,7 +8,6 @@ owner: Sekalum
 maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 Working Curiosity"
 target_audience:
   - Maintainers
   - Architecture Governance
@@ -25,6 +24,9 @@ dependent_documents:
   - docs/ui/generated/ui-tree.md
   - docs/ui/generated/ui-flow.mmd
 change_history:
+  - version: 0.7.1
+    date: 2026-08-17
+    change: "Defines truthful Public Test Contract projection: non-public evidence is removed without fallback mapping, and absent reproducible public evidence is represented as not executed."
   - version: 0.7.0
     date: 2026-08-16
     change: Aligns the current UI model ownership and application identity with Sekalum; no UI route, interaction, API or security contract changes.
@@ -86,6 +88,13 @@ Documentation Engineering maintains traceability; Test Engineering owns
 validation and test binding; Security Engineering reviews security boundaries
 and evidence handling. None of these roles may change the ownership boundary
 or approve a new architecture decision autonomously.
+
+Public projection may retain test references only when the referenced test is
+explicitly part of the Public Test Contract and directly represents the mapped
+model record. Private browser evidence is not public evidence. If no such
+public evidence remains, the public projection keeps the reference list empty
+and uses the existing `NOT_EXECUTED` execution status where applicable; it must
+not substitute a generic or adjacent public test.
 
 ## Source of truth
 

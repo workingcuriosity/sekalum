@@ -3,11 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const LICENSE_HEADER = `// Copyright (C) 2026 Working Curiosity
+const LICENSE_HEADER = `// This file is part of Sekalum.
 //
-// This file is part of Credential HUB.
-//
-// Credential HUB is free software: you can redistribute it and/or modify
+// Sekalum is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License version 3
 // as published by the Free Software Foundation.
 //
@@ -34,7 +32,7 @@ test('important entry points and public framework modules use the standard AGPL 
   }
 });
 
-test('repository metadata identifies Credential HUB as an AGPL project', () => {
+test('repository metadata identifies Sekalum as an AGPL project', () => {
   const packageMetadata = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
   const dockerfile = fs.readFileSync(path.resolve('Dockerfile'), 'utf8');
 
@@ -42,4 +40,22 @@ test('repository metadata identifies Credential HUB as an AGPL project', () => {
   assert.equal(packageMetadata.license, 'AGPL-3.0-only');
   assert.equal(packageMetadata.repository.url, 'https://github.com/workingcuriosity/sekalum.git');
   assert.match(dockerfile, /org\.opencontainers\.image\.licenses="AGPL-3\.0-only"/);
+});
+
+test('current project content does not claim an obsolete or replacement copyright holder', () => {
+  const replacementIdentities = ['Working Curiosity', 'Eduard Baumann', 'Luis Cyphre'];
+  const currentFiles = [
+    'NOTICE',
+    'docs/project/PROJECT_IDENTITY.md',
+    'docs/project/LEGAL.md',
+    ...HEADER_FILES
+  ];
+
+  for (const file of currentFiles) {
+    const content = fs.readFileSync(path.resolve(file), 'utf8');
+    assert.doesNotMatch(content, /cyphre-san productions/i, `${file} contains obsolete attribution`);
+    for (const identity of replacementIdentities) {
+      assert.doesNotMatch(content, new RegExp(`copyright[^\\n]*${identity}`, 'i'), `${file} claims a replacement copyright holder`);
+    }
+  }
 });

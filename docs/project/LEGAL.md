@@ -1,13 +1,12 @@
 ---
 title: Legal
-version: 1.0.0
+version: 1.1.0
 status: Active
 category: Project
 canonical: true
 maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
-copyright: "© 2026 Working Curiosity"
 target_audience:
   - Users
   - Contributors
@@ -18,6 +17,9 @@ dependent_documents:
   - DISCLAIMER.md
   - docs/project/THIRD_PARTY_SOFTWARE.md
 change_history:
+  - version: 1.1.0
+    date: 2026-08-17
+    change: Aligns the current project and maintainer identity without asserting a replacement copyright holder; AGPL-3.0-only remains unchanged.
   - version: 1.0.0
     date: 2026-07-16
     change: Adds required canonical metadata.
@@ -25,9 +27,9 @@ change_history:
 
 # Legal Information
 
-## Copyright
+## Project
 
-© 2026 Working Curiosity
+Sekalum
 
 ## Maintainer
 
@@ -39,7 +41,7 @@ luiscyphre404@gmail.com
 
 ## License
 
-Credential HUB is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only).
+Sekalum is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only).
 
 Authoritative legal documents:
 

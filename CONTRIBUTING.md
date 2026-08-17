@@ -25,6 +25,15 @@ AI-assisted contributions are welcome. They must satisfy the same architecture, 
 - Record whether the work is a Single Package or Multi Package before changing implementation files.
 - Keep the pull request in Draft until every applicable quality gate, test, browser/deployment check, and canonical Markdown update is complete.
 
+## Public Test Contract
+
+Tests are private by default. Public tests describe stable public product,
+API, UI, build or security contracts; internal maintainer tests are not part
+of the public distribution. Adding a test does not publish it automatically.
+Public distribution requires an explicit maintainer-approved classification in
+the canonical Public Test Contract, and every published test remains subject
+to the complete publication security gate.
+
 Maintainer:
 Working Curiosity
 

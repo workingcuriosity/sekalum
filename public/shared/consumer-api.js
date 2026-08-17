@@ -1,8 +1,6 @@
-// Copyright (C) 2026 Working Curiosity
+// This file is part of Sekalum.
 //
-// This file is part of Credential HUB.
-//
-// Credential HUB is free software: you can redistribute it and/or modify
+// Sekalum is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License version 3
 // as published by the Free Software Foundation.
 //

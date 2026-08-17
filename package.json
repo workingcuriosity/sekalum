@@ -4,7 +4,6 @@
   "description": "Sekalum open-source credential lifecycle management platform.",
   "private": true,
   "license": "AGPL-3.0-only",
-  "author": "Working Curiosity",
   "homepage": "https://github.com/workingcuriosity/sekalum#readme",
   "repository": {
     "type": "git",
