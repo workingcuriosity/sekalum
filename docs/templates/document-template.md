@@ -21,7 +21,7 @@ Status: <Draft/Review/Final>
 Audience: <Audience>
 Canonical Source: <Leading source / reference>
 Dependent Documents: <List>
-Author: Credential HUB Project
+Author: Sekalum Project
 Last Updated: <Date>
 Effective from: <Release>
 

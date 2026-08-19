@@ -141,12 +141,12 @@ No token plaintext, Secret value or password is included.
 The Admin entry opens the Credential Wizard. The Wizard is the primary setup
 surface for creating a Credential and preparing Consumer access.
 
-![Real Credential Wizard entry](images/credential-hub-admin-wizard-entry.jpg)
+![Real Credential Wizard entry](images/sekalum-admin-wizard-entry.jpg)
 
 *Real Beta-1 Admin entry: the Wizard is ready for the administrator without
 exposing the saved Management Token.*
 
-![Real Admin Dashboard](images/credential-hub-admin-dashboard.jpg)
+![Real Admin Dashboard](images/sekalum-admin-dashboard.jpg)
 
 *Real Beta-1 Dashboard: Credential status and management entry points are
 visible without displaying Secret values.*
@@ -157,20 +157,20 @@ The Credential list and detail view expose public metadata and lifecycle state;
 Secret values are intentionally absent. Consumer access is then connected to a
 specific Credential through a least-privilege grant.
 
-![Real Credential management list](images/credential-hub-admin-credential-management.jpg)
+![Real Credential management list](images/sekalum-admin-credential-management.jpg)
 
 *Real Beta-1 Credential management: public names, providers, types and status.*
 
-![Real redacted Credential detail](images/credential-hub-admin-credential-detail.jpg)
+![Real redacted Credential detail](images/sekalum-admin-credential-detail.jpg)
 
 *Real Beta-1 Credential detail: identifier, provider, status and metadata only.*
 
-![Real Consumer Grant overview](images/credential-hub-admin-consumer-grants.jpg)
+![Real Consumer Grant overview](images/sekalum-admin-consumer-grants.jpg)
 
 *Real Beta-1 Consumer Grant overview: consumer, Credential, provider and named
 granted fields; Secret values are not shown.*
 
-![Real Consumer Grant permission form](images/credential-hub-admin-grant-form.jpg)
+![Real Consumer Grant permission form](images/sekalum-admin-grant-form.jpg)
 
 *Real Beta-1 Grant form: the administrator selects named Secret fields without
 entering or viewing their values.*
@@ -195,12 +195,12 @@ The API Token form makes the dedicated Consumer token and its
 `credentials:consume` scope an explicit administrative prerequisite. The
 plaintext token is not shown in this documentation capture.
 
-![Real API Token setup form](images/credential-hub-admin-token-form.jpg)
+![Real API Token setup form](images/sekalum-admin-token-form.jpg)
 
 *Real Beta-1 API Token form: token identity, optional expiry and scopes; no
 plaintext token is visible.*
 
-![Real Consumer entry surface](images/credential-hub-consumer-entry.jpg)
+![Real Consumer entry surface](images/sekalum-consumer-entry.jpg)
 
 *Real Beta-1 Consumer entry: the separate Consumer context waits for a
 dedicated Consumer API token and keeps it in page memory only.*

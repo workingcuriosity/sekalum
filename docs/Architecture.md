@@ -17,7 +17,7 @@ Folgen:
 
 ## Grundsatz
 
-Kryptologie ist im Credential HUB ausschliesslich Aufgabe der Storage-Schicht. Fachliche Services, Provider, Commands und REST-Endpunkte duerfen keine eigene Verschluesselungslogik enthalten.
+Kryptologie ist im Sekalum ausschliesslich Aufgabe der Storage-Schicht. Fachliche Services, Provider, Commands und REST-Endpunkte duerfen keine eigene Verschluesselungslogik enthalten.
 
 ## Schichten
 
@@ -51,7 +51,7 @@ Re-Encryption ist ein kontrollierter Wartungsvorgang. Dateien werden nicht autom
 
 ## MS14 / F8.2 - API Token Management
 
-API Tokens dienen der technischen Authentifizierung gegen die Credential HUB REST-API. Sie ersetzen nicht RBAC, sondern liefern den authentifizierten `userId`, der anschliessend wie bisher ueber `AccessManagementService` autorisiert wird.
+API Tokens dienen der technischen Authentifizierung gegen die Sekalum REST-API. Sie ersetzen nicht RBAC, sondern liefern den authentifizierten `userId`, der anschliessend wie bisher ueber `AccessManagementService` autorisiert wird.
 
 ```text
 HTTP Request
@@ -97,4 +97,4 @@ Die Weboberfläche ist ausschließlich eine Administratoroberfläche. Der Browse
 
 Beta 1 besitzt keinen integrierten Initialisierungs- oder Passwortänderungsdialog für den ersten Management Token. Die Bereitstellung beziehungsweise Erzeugung des initialen Management Tokens bleibt damit beim vorhandenen Betriebsmechanismus und wird durch diese UI-Änderung nicht neu definiert. Die Admin-Oberfläche übernimmt nur einen bereits bereitgestellten Token und speichert ihn ausschließlich lokal für die Browser-Sitzung. **Gespeicherten Management Token entfernen** entfernt daher nur diesen lokalen Browserwert; es ändert oder widerruft keinen serverseitigen Token.
 
-Eine vorgeschaltete NGINX Basic Auth kann zusätzlich eingesetzt werden, ist aber nicht Bestandteil des Credential HUB und wird von der Anwendung nicht als Admin-Anmeldung verarbeitet.
+Eine vorgeschaltete NGINX Basic Auth kann zusätzlich eingesetzt werden, ist aber nicht Bestandteil des Sekalum und wird von der Anwendung nicht als Admin-Anmeldung verarbeitet.

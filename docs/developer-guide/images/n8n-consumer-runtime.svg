@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1050" viewBox="0 0 1100 1050" role="img" aria-labelledby="title desc">
   <title id="title">n8n as a generic Consumer Runtime</title>
-  <desc id="desc">An n8n workflow uses an HTTP Request node to call the generic Credential HUB Consumer API for Discovery and Resolve before calling a Target API.</desc>
+  <desc id="desc">An n8n workflow uses an HTTP Request node to call the generic Sekalum Consumer API for Discovery and Resolve before calling a Target API.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker>
     <style>.box{stroke-width:3;rx:18}.label{font:700 29px system-ui,sans-serif;fill:#172033}.small{font:22px system-ui,sans-serif;fill:#334155}.title{font:700 38px system-ui,sans-serif;fill:#111827}.arrow{stroke:#334155;stroke-width:4;marker-end:url(#arrow)}</style>
@@ -15,7 +15,7 @@
   <text x="550" y="365" text-anchor="middle" class="label">HTTP Request Node</text><text x="550" y="402" text-anchor="middle" class="small">Bearer Consumer token</text>
   <line x1="550" y1="430" x2="550" y2="483" class="arrow"/>
   <rect x="140" y="491" width="820" height="112" class="box" fill="#e0f2fe" stroke="#0284c7"/>
-  <text x="550" y="538" text-anchor="middle" class="label">Credential HUB Consumer API</text><text x="550" y="575" text-anchor="middle" class="small">Grant-based authorization boundary</text>
+  <text x="550" y="538" text-anchor="middle" class="label">Sekalum Consumer API</text><text x="550" y="575" text-anchor="middle" class="small">Grant-based authorization boundary</text>
   <line x1="550" y1="603" x2="550" y2="648" class="arrow"/>
   <rect x="140" y="656" width="390" height="112" class="box" fill="#dcfce7" stroke="#16a34a"/>
   <text x="335" y="703" text-anchor="middle" class="label">Discovery</text><text x="335" y="740" text-anchor="middle" class="small">Select public credentialKey</text>

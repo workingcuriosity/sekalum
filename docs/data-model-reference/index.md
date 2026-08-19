@@ -5,7 +5,7 @@ classification: Public
 status: Active
 category: Data Model
 canonical: true
-owner: Credential HUB
+owner: Sekalum
 approved_by: pending
 maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com

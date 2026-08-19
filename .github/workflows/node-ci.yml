@@ -1,4 +1,4 @@
-name: Credential Hub CI
+name: Sekalum CI
 
 on:
   push:

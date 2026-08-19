@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Melde einen reproduzierbaren Fehler im Credential HUB
+about: Melde einen reproduzierbaren Fehler im Sekalum
 title: "[BUG] "
 labels: bug
 assignees: ""

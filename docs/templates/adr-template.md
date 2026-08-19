@@ -19,7 +19,7 @@ change_history: []
 
 Status: Proposed / Accepted / Superseded  
 Datum: <Datum>  
-Entscheider: Credential HUB Projekt  
+Entscheider: Sekalum Projekt
 Betroffene Bereiche: <Komponenten/Dokumente>  
 
 ## Kontext

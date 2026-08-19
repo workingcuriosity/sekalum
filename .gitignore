@@ -1,5 +1,5 @@
 # ==========================================
-# Credential Hub / Token Manager
+# Sekalum
 # ==========================================
 
 # ------------------------------------------
@@ -87,8 +87,8 @@ token-manager@*
 /token-manager/
 
 # Embedded local git repositories / exports
-docs/credential-hub-git-repository/
-**/credential-hub-git-repository/
+docs/sekalum-git-repository/
+**/sekalum-git-repository/
 
 # Legacy update packages
 /MS7_Closure_Documentation/

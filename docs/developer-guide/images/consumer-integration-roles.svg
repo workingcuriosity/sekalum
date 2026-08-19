@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
   <title id="title">Consumer integration roles</title>
-  <desc id="desc">Administrator configures access, Credential HUB enforces the boundary, Consumer Runtime uses the API and Target API receives the operation.</desc>
+  <desc id="desc">Administrator configures access, Sekalum enforces the boundary, Consumer Runtime uses the API and Target API receives the operation.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker>
     <style>.box{stroke-width:3;rx:18}.label{font:700 27px system-ui,sans-serif;fill:#172033}.small{font:21px system-ui,sans-serif;fill:#334155}.title{font:700 38px system-ui,sans-serif;fill:#111827}.arrow{stroke:#334155;stroke-width:4;marker-end:url(#arrow)}.boundary{stroke:#0284c7;stroke-width:4;stroke-dasharray:12 10;fill:#eff6ff;rx:25}</style>
@@ -8,15 +8,15 @@
   <rect width="1200" height="720" fill="#f8fafc"/>
   <text x="600" y="62" text-anchor="middle" class="title">Roles and Responsibility Boundary</text>
   <rect x="35" y="112" width="1130" height="420" class="boundary"/>
-  <text x="600" y="151" text-anchor="middle" class="small">Credential HUB control boundary</text>
+  <text x="600" y="151" text-anchor="middle" class="small">Sekalum control boundary</text>
   <rect x="80" y="210" width="235" height="190" class="box" fill="#ede9fe" stroke="#7c3aed"/>
   <text x="197" y="272" text-anchor="middle" class="label">Administrator</text><text x="197" y="316" text-anchor="middle" class="small">Creates Credentials</text><text x="197" y="347" text-anchor="middle" class="small">Creates tokens</text><text x="197" y="378" text-anchor="middle" class="small">Assigns Grants</text>
   <rect x="350" y="190" width="255" height="230" class="box" fill="#e0f2fe" stroke="#0284c7"/>
-  <text x="477" y="252" text-anchor="middle" class="label">Credential HUB</text><text x="477" y="302" text-anchor="middle" class="small">Authenticates</text><text x="477" y="334" text-anchor="middle" class="small">Authorizes</text><text x="477" y="366" text-anchor="middle" class="small">Discovers</text><text x="477" y="398" text-anchor="middle" class="small">Resolves</text>
+  <text x="477" y="252" text-anchor="middle" class="label">Sekalum</text><text x="477" y="302" text-anchor="middle" class="small">Authenticates</text><text x="477" y="334" text-anchor="middle" class="small">Authorizes</text><text x="477" y="366" text-anchor="middle" class="small">Discovers</text><text x="477" y="398" text-anchor="middle" class="small">Resolves</text>
   <rect x="640" y="210" width="235" height="190" class="box" fill="#dcfce7" stroke="#16a34a"/>
   <text x="757" y="272" text-anchor="middle" class="label">Consumer Runtime</text><text x="757" y="316" text-anchor="middle" class="small">Selects publicly</text><text x="757" y="347" text-anchor="middle" class="small">Requests allowed fields</text><text x="757" y="378" text-anchor="middle" class="small">Disposes values</text>
   <rect x="910" y="210" width="235" height="190" class="box" fill="#f1f5f9" stroke="#475569"/>
   <text x="1027" y="272" text-anchor="middle" class="label">Target API</text><text x="1027" y="316" text-anchor="middle" class="small">Receives the</text><text x="1027" y="347" text-anchor="middle" class="small">immediate operation</text><text x="1027" y="378" text-anchor="middle" class="small">request</text>
   <line x1="315" y1="305" x2="340" y2="305" class="arrow"/><line x1="605" y1="305" x2="630" y2="305" class="arrow"/><line x1="875" y1="305" x2="900" y2="305" class="arrow"/>
-  <text x="600" y="610" text-anchor="middle" class="small">Grants and API authorization are enforced by Credential HUB; runtime handling after delivery belongs to the Consumer.</text>
+  <text x="600" y="610" text-anchor="middle" class="small">Grants and API authorization are enforced by Sekalum; runtime handling after delivery belongs to the Consumer.</text>
 </svg>
