@@ -1,6 +1,6 @@
 # Sekalum
 
-![Sekalum logo](docs/assets/sekalum-logo-transparent.png)
+!Sekalum logo
 
 *Maintained by Working Curiosity.*
 
@@ -91,7 +91,7 @@ only after the token is validated.
 
 The header `x-credential-hub-user` is not a production authentication method.
 It exists only for the repository's `NODE_ENV=test` compatibility tests and
-must not be used for normal operation. See the [API Reference](docs/api-reference/index.md#authorization-and-errors) for the authorization contract.
+must not be used for normal operation. See the API Reference for the authorization contract.
 
 For the complete first-installation sequence from health check through the
 first Consumer Resolve, see the [Installation Guide — Complete First
@@ -150,7 +150,7 @@ Official platform-level n8n templates remain available in [examples/n8n/](exampl
 - [Handbook](docs/index.md)
 - Architecture guide
 - ADR index
-- [Changelog index](docs/changelog/README.md)
+- Changelog index
 
 ## Contributing and security
 

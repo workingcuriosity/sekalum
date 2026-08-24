@@ -39,6 +39,20 @@ test('ProviderRegistry registers and resolves provider definitions', () => {
   assert.equal(registry.count(), 1);
 });
 
+test('ProviderRegistry unregisters only the requested derived projection', () => {
+  const registry = new ProviderRegistry({ logger: createLogger() });
+  const threads = createDefinition({ name: 'threads' });
+  const discord = createDefinition({ name: 'discord' });
+
+  registry.register(threads);
+  registry.register(discord);
+
+  assert.equal(registry.unregister('threads'), threads);
+  assert.equal(registry.has('threads'), false);
+  assert.equal(registry.has('discord'), true);
+  assert.equal(registry.unregister('missing'), null);
+});
+
 test('ProviderRegistry rejects duplicate providers', () => {
   const registry = new ProviderRegistry({ logger: createLogger() });
   const definition = createDefinition();

@@ -255,7 +255,7 @@ Consumer-first onboarding improvements are planned outside Beta 1 under Issue #1
 
    *Actual Beta-1 Resolve result. The resolved value remains masked until an explicit, time-limited reveal action.*
 
-Sekalum enforces authentication, authorization, grants, credential lifecycle, and controlled resolution. Once a value is delivered to the Consumer, the Consumer is responsible for its own storage, logging, display, and transmission controls. For endpoint and field-contract details, see the [API Reference](../api-reference/index.md) and [Security Guide](../security-guide/index.md).
+Sekalum enforces authentication, authorization, grants, credential lifecycle, and controlled resolution. Once a value is delivered to the Consumer, the Consumer is responsible for its own storage, logging, display, and transmission controls. For endpoint and field-contract details, see the API Reference and [Security Guide](../security-guide/index.md).
 
 Developers integrating an external JavaScript or Python service can use the [Node.js Consumer Runtime example](../developer-guide/index.md#nodejs-consumer-runtime-example) or [Python Consumer Runtime example](../developer-guide/index.md#python-consumer-runtime-example) for the same Discovery → `credentialKey` → Resolve sequence without adding a product-specific library. n8n users should follow the [n8n Consumer Runtime guidance](../developer-guide/index.md#n8n-and-other-runtimes); n8n uses the same generic HTTP Consumer API path and has no privileged integration.
 
@@ -272,7 +272,7 @@ Developers integrating an external JavaScript or Python service can use the [Nod
 - [Installation Guide](../installation-guide/index.md)
 - [Configuration Reference](../configuration-reference/index.md)
 - [User Guide](../user-guide/index.md)
-- [API Reference](../api-reference/index.md)
+- API Reference
 - [Security Guide](../security-guide/index.md)
 - [Third-Party Software](../project/THIRD_PARTY_SOFTWARE.md)
 

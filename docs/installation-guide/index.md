@@ -162,8 +162,8 @@ returns Secret values.
 
 The expected result is a successful Resolve response in the protected result
 area. Values are masked by default and must not be copied into logs,
-screenshots or source code. The canonical API contract is in the [API
-Reference](../api-reference/index.md#canonical-consumer-integration-algorithm).
+screenshots or source code. The canonical API contract is in the API
+Reference.
 
 ### 6. First-installation completion criteria
 

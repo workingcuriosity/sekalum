@@ -10,6 +10,10 @@ import { ProviderCapability } from '../models/provider-capability.js';
 import { ProviderResult } from '../models/provider-result.js';
 import { OAuthResult } from '../models/oauth-result.js';
 
+function compareCanonical(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export class ProviderManager {
   constructor({
     providerRegistry,
@@ -43,6 +47,13 @@ getProvider(providerName) {
 getProviderCapabilities(providerName) {
   return this.getProvider(providerName).capabilities;
 }
+
+  listProviderCatalog() {
+    return this.providerRegistry
+      .list()
+      .map((providerName) => this.#providerCatalogRecord(providerName))
+      .sort((left, right) => compareCanonical(left.key, right.key));
+  }
 
   async startOAuth(providerName, options = {}) {
     return this.#execute({
@@ -176,6 +187,20 @@ getProviderCapabilities(providerName) {
 
   return summary;
 }
+
+  #providerCatalogRecord(providerName) {
+    const definition = this.providerRegistry.get(providerName);
+    const capabilities = definition.capabilities?.toArray?.() ?? [];
+
+    return {
+      key: providerName,
+      displayName: definition.displayName ?? providerName,
+      description: definition.description ?? null,
+      category: definition.metadata?.category ?? null,
+      authType: definition.metadata?.authType ?? null,
+      capabilities: [...capabilities].sort(compareCanonical),
+    };
+  }
 
 
   async refreshCredential(credential) {

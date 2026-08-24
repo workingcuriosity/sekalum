@@ -72,6 +72,30 @@ export class ProviderController {
     }
   }
 
+  async disable(req, res) {
+    try {
+      if (!this.customProviderService?.disable) throw new Error('Custom provider lifecycle is not configured');
+      const result = await this.customProviderService.disable(req.params.providerKey, {
+        actorUserId: req.auth?.userId ?? req.headers?.['x-credential-hub-user'] ?? null
+      });
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      this.#sendError(res, error);
+    }
+  }
+
+  async enable(req, res) {
+    try {
+      if (!this.customProviderService?.enable) throw new Error('Custom provider lifecycle is not configured');
+      const result = await this.customProviderService.enable(req.params.providerKey, {
+        actorUserId: req.auth?.userId ?? req.headers?.['x-credential-hub-user'] ?? null
+      });
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      this.#sendError(res, error);
+    }
+  }
+
   #assertProviderManager(operation) {
     if (!this.providerManager?.[operation]) {
       throw new Error(`ProviderController requires ProviderManager.${operation}()`);
@@ -86,7 +110,7 @@ export class ProviderController {
   }
 
   #sendError(res, error) {
-    const statusCode = error.statusCode ?? 500;
+    const statusCode = error.statusCode ?? (error.code === 'NOT_FOUND' ? 404 : 500);
     const code = error.code ?? (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
 
     res.status(statusCode).json({

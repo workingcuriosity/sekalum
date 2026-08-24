@@ -201,3 +201,43 @@ test('CLI providers list includes OpenAI provider', () => {
   assert.equal(openai.displayName, 'OpenAI API Key');
   assert.equal(openai.description, 'OpenAI API-key provider for OpenAI and ChatGPT API credentials');
 });
+
+test('CLI providers catalog returns the exact safe record shape in deterministic order', () => {
+  const result = runProviders(['catalog']);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const response = parseOutput(result);
+  assert.equal(response.success, true);
+  assert.ok(Array.isArray(response.data));
+
+  const keys = response.data.map((provider) => provider.key);
+  assert.deepEqual(keys, [...keys].sort());
+  assert.equal(new Set(keys).size, keys.length);
+
+  for (const provider of response.data) {
+    assert.deepEqual(Object.keys(provider).sort(), [
+      'authType',
+      'capabilities',
+      'category',
+      'description',
+      'displayName',
+      'key'
+    ]);
+    assert.deepEqual(provider.capabilities, [...provider.capabilities].sort());
+    assert.equal('credentialFields' in provider, false);
+    assert.equal('providerConfigurationFields' in provider, false);
+    assert.equal('defaultScopes' in provider, false);
+    assert.equal('oauthTechnical' in provider, false);
+    assert.equal('authorizationEndpoint' in provider, false);
+  }
+});
+
+test('CLI providers catalog rejects positional arguments', () => {
+  const result = runProviders(['catalog', 'unexpected']);
+
+  assert.equal(result.status, 1, result.stdout || result.stderr);
+  const response = parseOutput(result);
+  assert.equal(response.success, false);
+  assert.equal(response.error.code, 'INVALID_ARGUMENT');
+});

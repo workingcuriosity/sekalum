@@ -7,6 +7,7 @@ const SUPPORTED_ACTIONS = [
   'list',
   'get',
   'capabilities',
+  'catalog',
 ];
 
 function usage() {
@@ -58,6 +59,16 @@ try {
     case 'capabilities': {
       const capabilities = await providerManager.getProviderCapabilities(args[0]);
       success(capabilities);
+      break;
+    }
+
+    case 'catalog': {
+      if (args.length > 0) {
+        const error = new Error('The catalog command does not accept positional arguments');
+        error.code = 'INVALID_ARGUMENT';
+        throw error;
+      }
+      success(providerManager.listProviderCatalog());
       break;
     }
 

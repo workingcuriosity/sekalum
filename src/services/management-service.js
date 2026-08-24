@@ -1,7 +1,8 @@
 export class ManagementService {
-  constructor({ credentialManager, providerManager, schedulerService = null, accessManagementService = null, auditLogService = null } = {}) {
+  constructor({ credentialManager, providerManager, customProviderService = null, schedulerService = null, accessManagementService = null, auditLogService = null } = {}) {
     this.credentialManager = credentialManager;
     this.providerManager = providerManager;
+    this.customProviderService = customProviderService;
     this.schedulerService = schedulerService;
     this.accessManagementService = accessManagementService;
     this.auditLogService = auditLogService;
@@ -43,7 +44,29 @@ export class ManagementService {
     this.#assertProviderManager('listProviders');
 
     const providers = await this.providerManager.listProviders();
-    const items = providers.map((provider) => this.#providerItem(provider));
+    const itemsByKey = new Map(providers.map((provider) => {
+      const item = this.#providerItem(provider);
+      return [item.providerKey, item];
+    }));
+
+    if (typeof this.customProviderService?.listManagement === 'function') {
+      for (const lifecycleProvider of await this.customProviderService.listManagement()) {
+        const current = itemsByKey.get(lifecycleProvider.providerKey) ?? {
+          providerKey: lifecycleProvider.providerKey,
+          key: lifecycleProvider.providerKey,
+          displayName: lifecycleProvider.displayName,
+          description: lifecycleProvider.description,
+          capabilities: []
+        };
+        itemsByKey.set(lifecycleProvider.providerKey, {
+          ...current,
+          ...lifecycleProvider,
+          capabilities: current.capabilities ?? []
+        });
+      }
+    }
+
+    const items = [...itemsByKey.values()];
 
     return {
       total: items.length,

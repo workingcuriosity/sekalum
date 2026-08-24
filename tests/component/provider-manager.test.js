@@ -502,3 +502,50 @@ test('ProviderManager serializes declarative credential methods without runtime 
   }]);
   assert.equal('operationAdapters' in provider.providerMethodBindings[0], false);
 });
+
+test('ProviderManager returns a safe deterministically ordered catalog', () => {
+  const logger = createLogger();
+  const definitions = new Map([
+    ['zeta', {
+      displayName: 'Zeta',
+      description: 'Zeta provider',
+      metadata: { category: 'custom', authType: 'api-key' },
+      capabilities: new ProviderCapabilities([ProviderCapability.REFRESH, ProviderCapability.OAUTH]),
+      credentialFields: [{ key: 'secret', secret: true }],
+      oauthTechnical: { authorizationEndpoint: 'must-not-appear' }
+    }],
+    ['alpha', {
+      displayName: 'Alpha',
+      description: 'Alpha provider',
+      metadata: { category: null, authType: 'oauth2' },
+      capabilities: new ProviderCapabilities([ProviderCapability.VALIDATION, ProviderCapability.OAUTH]),
+      credentialFields: [{ key: 'token', secret: true }]
+    }]
+  ]);
+  const providerRegistry = {
+    list() { return [...definitions.keys()]; },
+    get(name) { return definitions.get(name); }
+  };
+  const manager = new ProviderManager({ providerRegistry, logger });
+
+  assert.deepEqual(manager.listProviderCatalog(), [
+    {
+      key: 'alpha',
+      displayName: 'Alpha',
+      description: 'Alpha provider',
+      category: null,
+      authType: 'oauth2',
+      capabilities: ['oauth', 'validation']
+    },
+    {
+      key: 'zeta',
+      displayName: 'Zeta',
+      description: 'Zeta provider',
+      category: 'custom',
+      authType: 'api-key',
+      capabilities: ['oauth', 'refresh']
+    }
+  ]);
+  assert.equal('credentialFields' in manager.listProviderCatalog()[0], false);
+  assert.equal('oauthTechnical' in manager.listProviderCatalog()[0], false);
+});

@@ -33,14 +33,14 @@ states or an unverified release flow.
 
 | Thema | Fuehrende Quelle |
 |---|---|
-| Current and future release notes | [Changelog](../changelog/README.md) |
+| Current and future release notes | Changelog |
 | Projektfortschritt | Projektstatus |
 | Geplante Arbeit | Roadmap |
 | Architekturentscheidungen | ADR Index |
 | Betriebspruefungen | [Operations Guide](../operations-guide/index.md) |
 | Security boundaries and messages | [Security Guide](../security-guide/index.md) |
 | Testvorgehen | Testing Strategy |
-| Credential connection-test capability and limitation | [MS15 Credential Connection Tests](../changelog/MS15_Credential_Connection_Tests.md) |
+| Credential connection-test capability and limitation | MS15 Credential Connection Tests |
 
 Historical changelog and milestone documents remain evidence of completed work.
 New release notes are maintained exclusively in the canonical `docs/changelog/`

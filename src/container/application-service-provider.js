@@ -235,7 +235,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
     container.singleton(TOKENS.CUSTOM_PROVIDER_SERVICE, (c) => {
       return new CustomProviderService({
         store: c.resolve(TOKENS.CUSTOM_PROVIDER_DEFINITION_STORE),
-        providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY)
+        providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY),
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
       });
     });
 
@@ -365,6 +366,7 @@ export class ApplicationServiceProvider extends ServiceProvider {
       return new ManagementService({
         credentialManager: c.resolve(TOKENS.CREDENTIAL_MANAGER),
         providerManager: c.resolve(TOKENS.PROVIDER_MANAGER),
+        customProviderService: c.resolve(TOKENS.CUSTOM_PROVIDER_SERVICE),
         schedulerService: c.resolve(TOKENS.SCHEDULER),
         accessManagementService: c.resolve(TOKENS.ACCESS_MANAGEMENT_SERVICE),
         auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
