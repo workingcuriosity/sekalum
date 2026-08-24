@@ -1,6 +1,9 @@
 ---
 title: Canonical UI Interaction Model
-version: 0.7.1
+document_id: DOC-UI-CANONICAL-UI-INTERACTION-MODEL
+classification: PUBLIC
+language: en
+version: 0.7.3
 status: Active
 category: UI Governance
 canonical: true
@@ -24,6 +27,12 @@ dependent_documents:
   - docs/ui/generated/ui-tree.md
   - docs/ui/generated/ui-flow.mmd
 change_history:
+  - version: 0.7.3
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 0.7.2
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 0.7.1
     date: 2026-08-17
     change: "Defines truthful Public Test Contract projection: non-public evidence is removed without fallback mapping, and absent reproducible public evidence is represented as not executed."

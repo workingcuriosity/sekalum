@@ -1,3 +1,5 @@
+import { safeErrorMessage } from '../../utils/safe-diagnostics.js';
+
 export class OpenAIConnectionService {
   constructor({ client }) {
     if (!client) {
@@ -37,7 +39,7 @@ export class OpenAIConnectionService {
         status: 'down',
         provider: 'openai',
         checkedAt: new Date().toISOString(),
-        message: error.message
+        message: safeErrorMessage(error, 'OpenAI health check failed')
       };
     }
   }

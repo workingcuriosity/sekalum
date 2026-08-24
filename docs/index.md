@@ -1,9 +1,13 @@
 ---
 title: Sekalum Handbook
-version: 1.2.0
+document_id: DOC-HANDBOOK
+classification: PUBLIC
+language: en
+version: 1.2.2
 status: Active
 category: Handbook
 canonical: true
+owner: Sekalum
 maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
@@ -20,6 +24,15 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/release-guide/index.md
 change_history:
+  - version: 1.2.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.2.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
+  - version: 1.3.0
+    date: 2026-08-24
+    change: Removes private governance and historical navigation from the public handbook and keeps the current English public documentation map.
   - version: 1.2.0
     date: 2026-08-09
     change: Completes the repository-wide English documentation disposition and identifies retained German material as Legacy Documentation or archive evidence.
@@ -46,16 +59,10 @@ does not duplicate technical contracts; each topic links to its owning source.
 | Understand the data model | Data Model Reference |
 | Understand architecture and development | [Developer Guide](developer-guide/index.md) |
 | Review release notes and release context | [Release Guide](release-guide/index.md) |
-| Review architecture and security context | [Architecture](Architecture.md) |
+| Review architecture | [Architecture Overview](Architecture.md) |
 
 ## Documentation roles
 
-The linked sources are authoritative for their stated topics. Historical
-milestone, review, German Legacy Documentation and archive records remain
-traceable evidence, but do not define current product or operations truth.
-
-## Governance
-
-Documentation roles and current product identity are defined by the published
-project and architecture documents. Historical planning records remain
-traceable evidence and do not define current product truth.
+The linked sources describe current public product behavior. Historical,
+private and governance-control records are retained only in the private
+canonical repository and are not part of this projection.

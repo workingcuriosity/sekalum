@@ -453,7 +453,12 @@ test('Consumer REST API resolves explicitly granted secret fields for multiple p
     assert.equal((await openAiResponse.json()).data.secrets.apiKey, 'consumer-openai-secret');
 
     const audit = await setupResult.auditLogService.list();
-    assert.equal(audit.filter((entry) => entry.action === 'consumer-credential.resolve').length, 2);
+    const resolveAudit = audit.filter((entry) => entry.action === 'consumer-credential.resolve');
+    assert.equal(resolveAudit.length, 2);
+    assert.equal(resolveAudit.every((entry) => entry.actorType === 'consumer'), true);
+    assert.equal(resolveAudit.every((entry) => entry.userId === null), true);
+    assert.equal(resolveAudit.every((entry) => entry.consumerId === token.apiToken.id), true);
+    assert.equal(resolveAudit.every((entry) => entry.apiTokenId === token.apiToken.id), true);
     const serializedAudit = JSON.stringify(audit);
     assert.doesNotMatch(serializedAudit, /consumer-(integration|refresh|openai)-secret/);
     assert.doesNotMatch(serializedAudit, /accessToken|apiKey/);
@@ -475,6 +480,51 @@ test('Consumer REST API resolves with the public credentialKey', async () => {
     assert.equal(body.data.credentialKey, 'threads-public-key');
     assert.equal(body.data.credentialId, undefined);
     assert.deepEqual(body.data.secrets, { accessToken: 'consumer-integration-secret' });
+  } finally {
+    server.close();
+  }
+});
+
+test('Consumer Resolve isolates same-provider credentials across sequential, iterative and concurrent reuse', async () => {
+  const setupResult = await setup();
+  const secondCredential = new Credential({
+    credentialId: 'threads-credential-2',
+    credentialKey: 'threads-public-key-2',
+    providerKey: 'threads',
+    credentialMethodKey: 'oauth2',
+    lifecycleState: 'active',
+    secrets: [{ name: 'accessToken', value: 'consumer-second-secret' }, { name: 'refreshToken', value: 'consumer-second-refresh' }]
+  });
+  setupResult.credentials.set(secondCredential.credentialId, secondCredential);
+  const token = await setupResult.apiTokenService.createToken({ name: 'Consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: secondCredential.credentialId, providerKey: 'threads', secretNames: ['accessToken'] });
+  const { server, baseUrl } = await listen(setupResult.server.app);
+
+  try {
+    const expected = new Map([
+      ['threads-public-key', 'consumer-integration-secret'],
+      ['threads-public-key-2', 'consumer-second-secret']
+    ]);
+    for (let iteration = 0; iteration < 3; iteration += 1) {
+      for (const [credentialKey, secret] of expected) {
+        const response = await resolve(baseUrl, credentialKey, { authorization: `Bearer ${token.token}` }, ['accessToken']);
+        assert.equal(response.status, 200);
+        assert.deepEqual((await response.json()).data.secrets, { accessToken: secret });
+      }
+    }
+
+    const concurrent = await Promise.all([...expected.keys()].flatMap((credentialKey) =>
+      Array.from({ length: 4 }, () => resolve(baseUrl, credentialKey, { authorization: `Bearer ${token.token}` }, ['accessToken']))
+    ));
+    for (const response of concurrent) {
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.data.secrets.accessToken, expected.get(body.data.credentialKey));
+    }
+
+    const audit = JSON.stringify(await setupResult.auditLogService.list());
+    assert.doesNotMatch(audit, /consumer-(integration|second|refresh)-secret/);
   } finally {
     server.close();
   }

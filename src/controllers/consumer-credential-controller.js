@@ -29,6 +29,7 @@ export class ConsumerCredentialController {
     try {
       const data = await this.consumerCredentialService.resolve({
         consumerId: req.auth.consumerId,
+        apiTokenId: req.auth.apiToken?.id ?? null,
         credentialKey: req.params.credentialKey,
         secretNames: req.body?.secretNames
       });

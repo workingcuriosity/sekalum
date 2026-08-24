@@ -61,6 +61,17 @@ test('TokenLifecycleService refresh preserves credential identity while updating
   assert.equal(refreshedAgain.accessToken, 'second-access-token');
 });
 
+test('TokenLifecycleService refresh preserves the current refresh token when the provider omits it', async () => {
+  const existingToken = createTokenRecord();
+  const { service, saved } = createService({ existingToken });
+
+  const refreshed = await service.refresh(existingToken, createOAuthResult({ refreshToken: null }));
+
+  assert.equal(refreshed.accessToken, 'new-access-token');
+  assert.equal(refreshed.refreshToken, 'old-refresh-token');
+  assert.equal(saved[0].refreshToken, 'old-refresh-token');
+});
+
 test('TokenLifecycleService re-import preserves an existing credential identity', async () => {
   const existingToken = createTokenRecord();
   const { service, saved, backups } = createService({ existingToken });

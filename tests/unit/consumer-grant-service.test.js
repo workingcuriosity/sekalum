@@ -78,6 +78,7 @@ test('ConsumerGrantService rejects unknown consumers, credential/provider mismat
     service.createGrant({ ...base, secretNames: ['refreshToken', 'unknown'] }),
     (error) => error.code === 'CONSUMER_GRANT_SECRET_INVALID' && error.statusCode === 400
   );
+  assert.deepEqual(await service.listGrants(), [], 'failed bindings are never persisted');
 });
 
 test('ConsumerGrantService lists filtered grants and updates fields after revalidation', async () => {
@@ -97,4 +98,11 @@ test('ConsumerGrantService lists filtered grants and updates fields after revali
     service.updateGrant('missing-grant', { secretNames: ['accessToken'] }),
     (error) => error.code === 'NOT_FOUND' && error.statusCode === 404
   );
+
+  await assert.rejects(
+    service.updateGrant(created.grantId, { providerKey: 'openai' }),
+    (error) => error.code === 'CONSUMER_GRANT_PROVIDER_MISMATCH' && error.statusCode === 400
+  );
+  const preserved = await service.findGrant({ consumerId: 'consumer-1', credentialId: 'credential-1', providerKey: 'threads' });
+  assert.deepEqual(preserved.secretNames, ['refreshToken'], 'failed updates preserve the authorized binding');
 });

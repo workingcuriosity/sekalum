@@ -1,6 +1,9 @@
 ---
 title: Configuration Reference
-version: 1.0.3
+document_id: DOC-CONFIGURATION-REFERENCE-INDEX
+classification: PUBLIC
+language: en
+version: 1.0.5
 status: Active
 category: Configuration
 canonical: true
@@ -15,6 +18,12 @@ dependent_documents:
   - docs/api-reference/index.md
   - docs/providers/README.md
 change_history:
+  - version: 1.0.5
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.0.4
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.0.3
     date: 2026-07-13
     change: Classifies OAuth redirect URIs as system-managed values derived from request origin, BASE_PATH, and provider metadata.

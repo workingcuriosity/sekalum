@@ -25,11 +25,17 @@ const deleteMessage = document.getElementById('credential-delete-message');
 const deleteError = document.getElementById('credential-delete-error');
 const deleteConfirm = document.getElementById('credential-delete-confirm');
 const deleteCancel = document.getElementById('credential-delete-cancel');
+const revokePanel = document.getElementById('credential-revoke-panel');
+const revokeMessage = document.getElementById('credential-revoke-message');
+const revokeError = document.getElementById('credential-revoke-error');
+const revokeConfirm = document.getElementById('credential-revoke-confirm');
+const revokeCancel = document.getElementById('credential-revoke-cancel');
 
 let credentials = [];
 let providerCapabilities = new Map();
 let editState = null;
 let deleteState = null;
+let revokeState = null;
 let lastTrigger = null;
 
 refreshButton.addEventListener('click', () => loadCredentials());
@@ -43,19 +49,24 @@ tableBody.addEventListener('click', (event) => {
   if (button.dataset.action === 'edit') openEdit(credential);
   if (button.dataset.action === 'validate') validateCredential(credential, button);
   if (button.dataset.action === 'delete') openDelete(credential);
+  if (button.dataset.action === 'revoke') openRevoke(credential);
 });
 document.getElementById('credential-edit-close').addEventListener('click', closeEdit);
 document.getElementById('credential-edit-cancel').addEventListener('click', closeEdit);
 document.getElementById('credential-detail-close').addEventListener('click', closeDetail);
 document.getElementById('credential-delete-close').addEventListener('click', closeDelete);
+document.getElementById('credential-revoke-close').addEventListener('click', closeRevoke);
 deleteCancel.addEventListener('click', closeDelete);
 editForm.addEventListener('submit', submitEdit);
 deleteConfirm.addEventListener('click', confirmDelete);
+revokeCancel.addEventListener('click', closeRevoke);
+revokeConfirm.addEventListener('click', confirmRevoke);
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   if (!detailPanel.classList.contains('hidden')) closeDetail();
   if (!editSubmit.disabled) closeEdit();
   if (!deleteConfirm.disabled) closeDelete();
+  if (!revokeConfirm.disabled) closeRevoke();
 });
 onLanguageChange(() => renderCredentials(credentials));
 loadCredentials().then(() => {
@@ -114,7 +125,11 @@ function renderCredentials(items) {
     row.append(textCell(formatDate(credential.updatedAt ?? credential.createdAt)));
     const actions = document.createElement('td');
     if (canValidate(credential)) actions.append(actionButton('validate', credential, t('credentials.validate'), 'secondary'));
-    actions.append(actionButton('view', credential, t('credentials.details'), 'secondary'), actionButton('edit', credential, t('credentials.edit'), 'secondary'), actionButton('delete', credential, t('credentials.delete'), 'danger'));
+    actions.append(actionButton('view', credential, t('credentials.details'), 'secondary'), actionButton('edit', credential, t('credentials.edit'), 'secondary'));
+    if ((credential.supportedActions ?? []).includes('revoke') && credential.status !== 'revoked') {
+      actions.append(actionButton('revoke', credential, t('credentials.revoke'), 'danger'));
+    }
+    actions.append(actionButton('delete', credential, t('credentials.delete'), 'danger'));
     row.append(actions); tableBody.append(row);
   }
 }
@@ -328,6 +343,22 @@ function openDelete(credential) {
   deleteMessage.textContent = t('credentials.deleteMessage', { name: displayName(credential), provider: credential.providerName ?? credential.providerKey ?? t('common.unknown') });
   deletePanel.classList.remove('hidden'); deleteCancel.focus();
 }
+function openRevoke(credential) {
+  hideMessages(); hideError(revokeError); revokeState = credential;
+  revokeMessage.textContent = t('credentials.revokeMessage', { name: displayName(credential), provider: credential.providerName ?? credential.providerKey ?? t('common.unknown') });
+  revokePanel.classList.remove('hidden'); revokeCancel.focus();
+}
+async function confirmRevoke() {
+  if (!revokeState) return;
+  hideError(revokeError); setRevokeSubmitting(true);
+  try {
+    await request(`/api/v1/credentials/${encodeURIComponent(revokeState.credentialId)}/revoke`, { method: 'POST' });
+    closeRevoke();
+    if (await loadCredentials({ preserveMessages: true })) showSuccess(t('credentials.revokeSuccess'));
+  } catch (error) {
+    showError(revokeError, credentialError(error, 'revoke'));
+  } finally { setRevokeSubmitting(false); }
+}
 async function confirmDelete() {
   if (!deleteState) return;
   hideError(deleteError); setDeleteSubmitting(true);
@@ -342,13 +373,15 @@ async function confirmDelete() {
 function closeEdit() { editPanel.classList.add('hidden'); editState = null; lastTrigger?.focus(); }
 function closeDetail() { detailPanel.classList.add('hidden'); detailMeta.replaceChildren(); detailFields.replaceChildren(); lastTrigger?.focus(); }
 function closeDelete() { deletePanel.classList.add('hidden'); deleteState = null; lastTrigger?.focus(); }
+function closeRevoke() { revokePanel.classList.add('hidden'); revokeState = null; lastTrigger?.focus(); }
 function setEditSubmitting(value) { editSubmit.disabled = value; editSubmit.textContent = value ? t('credentials.saving') : t('credentials.save'); }
 function setDeleteSubmitting(value) { deleteConfirm.disabled = value; deleteCancel.disabled = value; deleteConfirm.textContent = value ? t('credentials.deleting') : t('credentials.confirmDelete'); }
+function setRevokeSubmitting(value) { revokeConfirm.disabled = value; revokeCancel.disabled = value; revokeConfirm.textContent = value ? t('credentials.revoking') : t('credentials.confirmRevoke'); }
 
 async function request(path, options = {}) {
   return adminApi.request(path, options);
 }
-function credentialError(error, operation) { if (error?.code === 'NOT_FOUND') return t('credentials.notFound'); return operation === 'delete' ? t('credentials.deleteFailed') : operation === 'update' ? t('credentials.updateFailed') : t('credentials.loadFailed'); }
+function credentialError(error, operation) { if (error?.code === 'NOT_FOUND') return t('credentials.notFound'); return operation === 'delete' ? t('credentials.deleteFailed') : operation === 'revoke' ? t('credentials.revokeFailed') : operation === 'update' ? t('credentials.updateFailed') : t('credentials.loadFailed'); }
 function setStatus(value) { statusBadge.textContent = value; }
 function hideMessages() { errorBox.classList.add('hidden'); successBox.classList.add('hidden'); }
 function hideError(element) { element.classList.add('hidden'); }

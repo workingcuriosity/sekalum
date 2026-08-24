@@ -8,6 +8,7 @@
 
 import { bootstrap } from '../bootstrap.js';
 import { TOKENS } from '../container/tokens.js';
+import { safeError } from '../utils/safe-diagnostics.js';
 
 const provider = process.argv[2];
 const account = process.argv[3] ?? null;
@@ -27,7 +28,7 @@ const result = await command.execute({
 });
 
 if (!result.success) {
-  console.error(result.error?.message ?? 'OAuth start failed');
+  console.error(safeError(result.error, { fallbackMessage: 'OAuth start failed' }).message);
   process.exit(1);
 }
 

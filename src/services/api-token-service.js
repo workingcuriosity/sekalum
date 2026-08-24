@@ -80,6 +80,7 @@ export class ApiTokenService {
 
     await this.store.save(apiToken);
     await this.#recordAudit('api-token.created', {
+      actorType: this.#actorTypeForUser(createdBy),
       userId: createdBy,
       targetId: apiToken.id,
       details: this.#auditDetails(apiToken, { ownerUserId: apiToken.userId })
@@ -100,17 +101,24 @@ export class ApiTokenService {
     return (await this.store.load(tokenId)).toPublicJSON();
   }
 
-  async revokeToken(tokenId, { revokedAt = this.clock() } = {}) {
+  async revokeToken(tokenId, { revokedAt = this.clock(), revokedBy = null } = {}) {
     const apiToken = await this.store.load(tokenId);
 
     if (apiToken.revokedAt) {
+      await this.#recordAudit('api-token.revoke.noop', {
+        actorType: this.#actorTypeForUser(revokedBy),
+        userId: revokedBy ?? 'system',
+        targetId: apiToken.id,
+        details: this.#auditDetails(apiToken, { reason: 'already-revoked' })
+      });
       return apiToken.toPublicJSON();
     }
 
     const revoked = apiToken.withRevokedAt(revokedAt);
     await this.store.save(revoked);
     await this.#recordAudit('api-token.revoked', {
-      userId: revoked.userId,
+      actorType: this.#actorTypeForUser(revokedBy),
+      userId: revokedBy ?? 'system',
       targetId: revoked.id,
       details: this.#auditDetails(revoked)
     });
@@ -120,6 +128,7 @@ export class ApiTokenService {
   async authenticate(plaintextToken, { updateLastUsed = true } = {}) {
     if (typeof plaintextToken !== 'string' || !plaintextToken.startsWith(TOKEN_PREFIX)) {
       await this.#recordAudit('api-token.invalid', {
+        actorType: 'service',
         result: 'failure',
         details: { reason: 'invalid-format' }
       });
@@ -133,6 +142,7 @@ export class ApiTokenService {
 
     if (!apiToken) {
       await this.#recordAudit('api-token.invalid', {
+        actorType: 'service',
         result: 'failure',
         details: { reason: 'not-found', tokenPrefix }
       });
@@ -141,7 +151,9 @@ export class ApiTokenService {
 
     if (apiToken.revokedAt) {
       await this.#recordAudit('api-token.invalid', {
-        userId: apiToken.userId,
+        actorType: 'api-token',
+        userId: null,
+        apiTokenId: apiToken.id,
         targetId: apiToken.id,
         result: 'failure',
         details: this.#auditDetails(apiToken, { reason: 'revoked' })
@@ -151,7 +163,9 @@ export class ApiTokenService {
 
     if (apiToken.isExpired(this.clock())) {
       await this.#recordAudit('api-token.expired', {
-        userId: apiToken.userId,
+        actorType: 'api-token',
+        userId: null,
+        apiTokenId: apiToken.id,
         targetId: apiToken.id,
         result: 'failure',
         details: this.#auditDetails(apiToken, { reason: 'expired' })
@@ -164,7 +178,9 @@ export class ApiTokenService {
       : apiToken;
 
     await this.#recordAudit('api-token.used', {
-      userId: authenticatedToken.userId,
+      actorType: 'api-token',
+      userId: null,
+      apiTokenId: authenticatedToken.id,
       targetId: authenticatedToken.id,
       details: this.#auditDetails(authenticatedToken)
     });
@@ -185,17 +201,24 @@ export class ApiTokenService {
   }
 
 
-  async #recordAudit(action, { userId = 'system', targetId = null, result = 'success', details = null } = {}) {
+  async #recordAudit(action, { actorType = null, userId = 'system', consumerId = null, apiTokenId = null, targetId = null, result = 'success', details = null } = {}) {
     if (!this.auditLogService?.record) return;
 
     await this.auditLogService.record({
+      actorType: actorType ?? this.#actorTypeForUser(userId),
       userId,
+      consumerId,
+      apiTokenId,
       action,
       targetType: 'api-token',
       targetId,
       result,
       details
     });
+  }
+
+  #actorTypeForUser(userId) {
+    return userId && userId !== 'system' ? 'user' : 'service';
   }
 
   #auditDetails(apiToken, extraDetails = {}) {

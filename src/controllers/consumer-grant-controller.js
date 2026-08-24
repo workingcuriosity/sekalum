@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class ConsumerGrantController {
   constructor({ consumerGrantService }) {
     if (!consumerGrantService?.createGrant || !consumerGrantService?.listGrants || !consumerGrantService?.updateGrant) {
@@ -11,9 +13,10 @@ export class ConsumerGrantController {
       const grant = await this.consumerGrantService.createGrant(req.body ?? {}, { actorUserId: req.auth.userId });
       res.status(201).json({ success: true, meta: { apiVersion: 'v1' }, data: grant.toJSON() });
     } catch (error) {
-      res.status(error.statusCode ?? 400).json({
+      const safe = safeError(error, { fallbackMessage: 'Invalid consumer grant' });
+      res.status(safe.statusCode ?? 400).json({
         success: false,
-        error: { code: error.code ?? 'BAD_REQUEST', message: error.message ?? 'Invalid consumer grant' }
+        error: { code: safe.code ?? 'BAD_REQUEST', message: safe.message }
       });
     }
   }
@@ -41,9 +44,10 @@ export class ConsumerGrantController {
   }
 
   #sendError(res, error) {
-    res.status(error.statusCode ?? 400).json({
+    const safe = safeError(error, { fallbackMessage: 'Invalid consumer grant' });
+    res.status(safe.statusCode ?? 400).json({
       success: false,
-      error: { code: error.code ?? 'BAD_REQUEST', message: error.message ?? 'Invalid consumer grant' }
+      error: { code: safe.code ?? 'BAD_REQUEST', message: safe.message }
     });
   }
 }

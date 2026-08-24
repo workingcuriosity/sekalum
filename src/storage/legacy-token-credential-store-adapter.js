@@ -13,7 +13,9 @@ export class LegacyTokenCredentialStoreAdapter {
 
   async load(credentialId) {
     try {
-      const tokenRecord = await this.tokenStore.load(credentialId);
+      const tokenRecord = typeof this.tokenStore.loadById === 'function'
+        ? await this.tokenStore.loadById(credentialId)
+        : await this.tokenStore.load(credentialId);
       return this.#tokenRecordToCredential(tokenRecord);
     } catch (error) {
       if (error?.code === 'ENOENT') {
@@ -32,16 +34,61 @@ export class LegacyTokenCredentialStoreAdapter {
   }
 
   async delete(credentialId) {
+    if (typeof this.tokenStore.loadById === 'function') {
+      try {
+        const tokenRecord = await this.tokenStore.loadById(credentialId);
+        return this.tokenStore.delete(tokenRecord.providerId);
+      } catch (error) {
+        if (error?.code !== 'NOT_FOUND') throw error;
+      }
+    }
     return this.tokenStore.delete(credentialId);
   }
 
   async exists(credentialId) {
+    if (typeof this.tokenStore.loadById === 'function') {
+      try {
+        await this.tokenStore.loadById(credentialId);
+        return true;
+      } catch (error) {
+        if (error?.code !== 'NOT_FOUND') throw error;
+        return false;
+      }
+    }
     return this.tokenStore.exists(credentialId);
   }
 
   async list() {
     const tokenRecords = await this.tokenStore.list();
     return tokenRecords.map((tokenRecord) => this.#tokenRecordToCredential(tokenRecord));
+  }
+
+  async listMetadata() {
+    const tokenRecords = await this.tokenStore.list();
+    return tokenRecords.map((tokenRecord) => this.#tokenRecordToCredential(tokenRecord).toMetadataJSON());
+  }
+
+  async loadMetadata(credentialId) {
+    const credential = await this.load(credentialId);
+    return credential.toMetadataJSON();
+  }
+
+  async loadByExternalReference(providerKey, externalReference) {
+    const matches = (await this.tokenStore.list()).filter((token) => (
+      token.provider === providerKey && token.accountId === externalReference
+    ));
+    if (matches.length === 0) {
+      const error = new Error(`Credential '${providerKey}:${externalReference}' not found`);
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+    if (matches.length > 1) {
+      const error = new Error(`External Credential reference '${providerKey}:${externalReference}' is ambiguous`);
+      error.code = 'CREDENTIAL_IDENTITY_AMBIGUOUS';
+      error.details = { providerKey, externalReference, credentialIds: matches.map((token) => token.id) };
+      throw error;
+    }
+    return this.#tokenRecordToCredential(matches[0]);
   }
 
   async listLegacyTokens() {
@@ -62,7 +109,7 @@ export class LegacyTokenCredentialStoreAdapter {
     }
 
     return Credential.from({
-      credentialId: token.providerId,
+      credentialId: token.id,
       credentialKey: token.credentialKey,
       providerKey: token.provider,
       credentialMethodKey: 'oauth2',
@@ -73,10 +120,13 @@ export class LegacyTokenCredentialStoreAdapter {
         accountName: token.accountName,
         expiresAt: token.expiresAt,
         scopes: token.scopes,
-        legacyProviderId: token.providerId,
-        legacyTokenMetadata: token.metadata,
-        lastRefreshAt: token.lastRefreshAt,
-        lastHealthCheckAt: token.lastHealthCheckAt
+        custom: {
+          legacyProviderId: token.providerId,
+          legacyTokenMetadata: token.metadata,
+          accountName: token.accountName,
+          lastRefreshAt: token.lastRefreshAt,
+          lastHealthCheckAt: token.lastHealthCheckAt
+        }
       },
       createdAt: token.createdAt,
       updatedAt: token.updatedAt,
@@ -94,10 +144,9 @@ export class LegacyTokenCredentialStoreAdapter {
     }
 
     const externalReference = credential.externalReference ?? credential.credentialId;
-    const providerId = credential.credentialId.includes(':')
-      ? credential.credentialId
-      : `${credential.providerKey}:${externalReference}`;
+    const providerId = `${credential.providerKey}:${externalReference}`;
     const metadata = credential.metadata.toJSON();
+    const custom = metadata.custom ?? {};
 
     return new TokenRecord({
       id: credential.credentialId,
@@ -105,16 +154,16 @@ export class LegacyTokenCredentialStoreAdapter {
       providerId,
       provider: credential.providerKey,
       accountId: externalReference,
-      accountName: metadata.accountName ?? null,
+      accountName: custom.accountName ?? null,
       accessToken,
       refreshToken: this.#findSecretValue(credential, 'refreshToken'),
       expiresAt: metadata.expiresAt ?? null,
       scopes: metadata.scopes ?? [],
-      metadata: metadata.legacyTokenMetadata ?? metadata,
+      metadata: custom.legacyTokenMetadata ?? metadata,
       createdAt: credential.createdAt,
       updatedAt: credential.updatedAt,
-      lastRefreshAt: metadata.lastRefreshAt ?? null,
-      lastHealthCheckAt: metadata.lastHealthCheckAt ?? null,
+      lastRefreshAt: custom.lastRefreshAt ?? null,
+      lastHealthCheckAt: custom.lastHealthCheckAt ?? null,
       version: credential.version
     });
   }

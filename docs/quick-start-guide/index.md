@@ -1,6 +1,9 @@
 ---
 title: Quick Start Guide
-version: 1.0.6
+document_id: DOC-QUICK-START-GUIDE-INDEX
+classification: PUBLIC
+language: en
+version: 1.0.8
 status: Active
 category: Quick Start
 canonical: true
@@ -20,6 +23,12 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/project/THIRD_PARTY_SOFTWARE.md
 change_history:
+  - version: 1.0.8
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.0.7
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.0.5
     date: 2026-08-02
     change: Adds the post-setup Consumer interface handoff and clarifies the separate Consumer context.

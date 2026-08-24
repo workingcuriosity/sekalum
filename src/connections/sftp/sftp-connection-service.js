@@ -1,3 +1,5 @@
+import { safeErrorMessage } from '../../utils/safe-diagnostics.js';
+
 export class SftpConnectionService {
   constructor({ client }) {
     if (!client) {
@@ -39,7 +41,7 @@ export class SftpConnectionService {
         status: 'down',
         protocol: 'sftp',
         checkedAt: new Date().toISOString(),
-        message: error.message
+        message: safeErrorMessage(error, 'SFTP health check failed')
       };
     }
   }

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 import { Credential } from '../models/credential.js';
+import { safeError } from '../utils/safe-diagnostics.js';
 
 const TRANSFER_FORMAT = 'credential-hub-credential-transfer';
 const SCHEMA_VERSION = 1;
@@ -73,7 +74,7 @@ export class CredentialTransferService {
         targetId: null,
         result: 'failure',
         context,
-        details: { error: error.message ?? 'Credential export failed' }
+        details: { error: safeError(error, { fallbackMessage: 'Credential export failed' }) }
       });
       throw error;
     }
@@ -110,7 +111,7 @@ export class CredentialTransferService {
         targetId: null,
         result: 'failure',
         context,
-        details: { error: error.message ?? 'Credential import preview failed' }
+        details: { error: safeError(error, { fallbackMessage: 'Credential import preview failed' }) }
       });
       throw error;
     }
@@ -202,7 +203,7 @@ export class CredentialTransferService {
         targetId: null,
         result: 'failure',
         context,
-        details: { error: error.message ?? 'Credential import failed', conflictStrategy: strategy }
+        details: { error: safeError(error, { fallbackMessage: 'Credential import failed' }), conflictStrategy: strategy }
       });
       throw error;
     }
@@ -234,7 +235,7 @@ export class CredentialTransferService {
         targetId: null,
         result: 'failure',
         context,
-        details: { error: error.message ?? 'Credential CSV import preview failed' }
+        details: { error: safeError(error, { fallbackMessage: 'Credential CSV import preview failed' }) }
       });
       throw error;
     }
@@ -264,7 +265,7 @@ export class CredentialTransferService {
         targetId: null,
         result: 'failure',
         context,
-        details: { error: error.message ?? 'Credential CSV import failed', conflictStrategy: options.conflictStrategy ?? 'skip' }
+        details: { error: safeError(error, { fallbackMessage: 'Credential CSV import failed' }), conflictStrategy: options.conflictStrategy ?? 'skip' }
       });
       throw error;
     }

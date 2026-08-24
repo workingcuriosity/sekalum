@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class ApiTokenController {
   constructor({ apiTokenService }) {
     if (!apiTokenService?.createToken || !apiTokenService?.listTokens) {
@@ -43,7 +45,9 @@ export class ApiTokenController {
 
   async revoke(req, res) {
     try {
-      const data = await this.apiTokenService.revokeToken(req.params.tokenId);
+      const data = await this.apiTokenService.revokeToken(req.params.tokenId, {
+        revokedBy: this.#userIdFromRequest(req)
+      });
       this.#sendSuccess(res, data);
     } catch (error) {
       this.#sendError(res, error);
@@ -63,14 +67,15 @@ export class ApiTokenController {
   }
 
   #sendError(res, error) {
-    const statusCode = error.statusCode ?? 500;
-    const code = error.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
+    const safe = safeError(error);
+    const statusCode = safe.statusCode ?? 500;
+    const code = safe.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
 
     res.status(statusCode).json({
       success: false,
       error: {
         code,
-        message: error.message ?? 'Unexpected error'
+        message: safe.message
       }
     });
   }

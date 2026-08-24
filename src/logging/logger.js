@@ -1,3 +1,5 @@
+import { safeErrorMessage, sanitizeDiagnostic } from '../utils/safe-diagnostics.js';
+
 export class Logger {
   info(message, context = null) {
     this.#write('INFO', message, context);
@@ -17,12 +19,14 @@ export class Logger {
 
   #write(level, message, context) {
     const timestamp = new Date().toISOString();
+    const safeMessage = typeof message === 'string' ? safeErrorMessage(message, '') : sanitizeDiagnostic(message);
+    const safeContext = context === null || context === undefined ? null : sanitizeDiagnostic(context);
 
-    if (context) {
-      console.log(`[${timestamp}] [${level}] ${message}`, context);
+    if (safeContext) {
+      console.log(`[${timestamp}] [${level}] ${safeMessage}`, safeContext);
       return;
     }
 
-    console.log(`[${timestamp}] [${level}] ${message}`);
+    console.log(`[${timestamp}] [${level}] ${safeMessage}`);
   }
 }

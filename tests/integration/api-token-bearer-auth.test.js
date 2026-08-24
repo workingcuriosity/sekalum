@@ -233,6 +233,14 @@ test('REST API manages API tokens through RBAC protected endpoints', async () =>
     assert.equal(revokeResponse.status, 200);
     assert.equal(revokeBody.data.id, tokenId);
     assert.equal(revokeBody.data.status, 'revoked');
+
+    const explicitRevokeResponse = await fetch(`${baseUrl}/api/v1/management/api-tokens/${tokenId}/revoke`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${management.token}` }
+    });
+    const explicitRevokeBody = await explicitRevokeResponse.json();
+    assert.equal(explicitRevokeResponse.status, 200);
+    assert.equal(explicitRevokeBody.data.status, 'revoked');
   } finally {
     server.close();
   }

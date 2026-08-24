@@ -1,3 +1,5 @@
+import { safeError, safeErrorMessage, sanitizeDiagnostic } from '../utils/safe-diagnostics.js';
+
 export class CredentialController {
   constructor({ credentialManager, providerManager = null, credentialTransferService = null }) {
     this.credentialManager = credentialManager;
@@ -7,10 +9,11 @@ export class CredentialController {
 
   async list(req, res) {
     try {
-      this.#assertCredentialManager('listCredentials');
+      this.#assertCredentialManager('listCredentialMetadata', 'listCredentials');
 
       const { limit, offset, page, pageSize } = this.#paginationFrom(req.query);
-      const credentials = await this.credentialManager.listCredentials(this.#listOptionsFrom(req.query));
+      const list = this.credentialManager.listCredentialMetadata ?? this.credentialManager.listCredentials;
+      const credentials = await list.call(this.credentialManager, this.#listOptionsFrom(req.query));
       const pagedCredentials = credentials.slice(offset, offset + limit);
 
       res.status(200).json({
@@ -182,9 +185,10 @@ export class CredentialController {
 
   async get(req, res) {
     try {
-      this.#assertCredentialManager('getCredential');
+      this.#assertCredentialManager('getCredentialMetadata', 'getCredential');
 
-      const credential = await this.credentialManager.getCredential(req.params.credentialId);
+      const load = this.credentialManager.getCredentialMetadata ?? this.credentialManager.getCredential;
+      const credential = await load.call(this.credentialManager, req.params.credentialId);
 
       if (!credential) {
         throw this.#notFound('Credential not found');
@@ -224,7 +228,7 @@ export class CredentialController {
     try {
       this.#assertCredentialManager('deleteCredential');
 
-      await this.credentialManager.deleteCredential(req.params.credentialId);
+      await this.credentialManager.deleteCredential(req.params.credentialId, this.#contextFromRequest(req));
 
       res.status(204).send();
     } catch (error) {
@@ -282,7 +286,7 @@ export class CredentialController {
         throw this.#notFound('Credential not found');
       }
 
-      const result = await this.credentialManager[actionName](credential);
+      const result = await this.credentialManager[actionName](credential, this.#contextFromRequest(req));
 
       if (!result?.success) {
         const message = result?.error?.message ?? `Credential lifecycle action '${actionName}' failed`;
@@ -343,8 +347,9 @@ export class CredentialController {
     return parsed;
   }
 
-  #assertCredentialManager(operation) {
-    if (!this.credentialManager?.[operation]) {
+  #assertCredentialManager(...operations) {
+    if (!operations.some((operation) => typeof this.credentialManager?.[operation] === 'function')) {
+      const operation = operations[operations.length - 1];
       throw new Error(`CredentialController requires CredentialManager.${operation}()`);
     }
   }
@@ -381,7 +386,7 @@ export class CredentialController {
     if (error.statusCode) return error;
 
     if (['UNSUPPORTED_SORT_FIELD', 'UNSUPPORTED_SORT_ORDER'].includes(error.code)) {
-      return this.#badRequest(error.message);
+      return this.#badRequest(safeErrorMessage(error));
     }
 
     return error;
@@ -391,7 +396,7 @@ export class CredentialController {
     if (error.statusCode) return error;
 
     if (['UNSUPPORTED_BULK_ACTION', 'INVALID_BULK_CREDENTIAL_IDS'].includes(error.code)) {
-      return this.#badRequest(error.message);
+      return this.#badRequest(safeErrorMessage(error));
     }
 
     return error;
@@ -399,7 +404,7 @@ export class CredentialController {
 
 
   #normalizeInputError(error) {
-    const message = error.message ?? '';
+    const message = safeErrorMessage(error, '');
 
     if (error.statusCode) return error;
 
@@ -439,15 +444,15 @@ export class CredentialController {
 
   #normalizeTransferError(error) {
     if (error.statusCode) return error;
-    if (error.code === 'BAD_REQUEST') return this.#badRequest(error.message);
-    if (error.code === 'NOT_FOUND') return this.#notFound(error.message ?? 'Credential not found');
+    if (error.code === 'BAD_REQUEST') return this.#badRequest(safeErrorMessage(error));
+    if (error.code === 'NOT_FOUND') return this.#notFound(safeErrorMessage(error, 'Credential not found'));
     return error;
   }
 
   #normalizeNotFoundError(error) {
     if (error.statusCode) return error;
 
-    const message = error.message ?? '';
+    const message = safeErrorMessage(error, '');
 
     if (message.includes('not found') || message.includes('not exist') || message.includes('unknown')) {
       return this.#notFound('Credential not found');
@@ -457,19 +462,23 @@ export class CredentialController {
   }
 
   #sendError(res, error) {
-    const statusCode = error.statusCode ?? 500;
-    const code = error.code ?? (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
+    const safe = safeError(error);
+    const statusCode = safe.statusCode ?? 500;
+    const code = safe.code ?? (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
+    const messageKey = safe.messageKey ?? error.messageKey ?? 'errors.unexpected';
 
+    const diagnosticClassification = safe.classification ?? error.classification;
     res.status(statusCode).json({
       success: false,
       code,
-      messageKey: error.messageKey ?? 'errors.unexpected',
-      message: error.message ?? 'Unexpected error',
+      messageKey,
+      message: safe.message,
       error: {
         code,
-        messageKey: error.messageKey ?? 'errors.unexpected',
-        message: error.message ?? 'Unexpected error',
-        details: error.details ?? undefined
+        messageKey,
+        message: safe.message,
+        ...(diagnosticClassification ? { classification: diagnosticClassification } : {}),
+        details: safe.details ?? (error.details ? sanitizeDiagnostic(error.details) : undefined)
       }
     });
   }
@@ -649,7 +658,7 @@ export class CredentialController {
         lastRefreshAt: data.lastRefreshAt ?? null,
         healthStatus: data.healthStatus ?? null
       },
-      secretInventory: this.#secretInventory(raw.secrets),
+      secretInventory: this.#secretInventory(raw.secretInventory ?? raw.secrets),
       display: {
         name: metadata.displayName ?? data.externalReference ?? data.credentialId,
         description: metadata.description ?? null,
@@ -699,8 +708,10 @@ export class CredentialController {
       name: secret.name,
       type: secret.type ?? null,
       required: secret.required ?? null,
-      hasValue: secret.value !== undefined && secret.value !== null && secret.value !== '',
-      valueMasked: secret.value !== undefined && secret.value !== null && secret.value !== '' ? '********' : null
+      hasValue: secret.hasValue ?? (secret.value !== undefined && secret.value !== null && secret.value !== ''),
+      valueMasked: (secret.hasValue ?? (secret.value !== undefined && secret.value !== null && secret.value !== ''))
+        ? '********'
+        : null
     }));
   }
 
@@ -768,7 +779,7 @@ export class CredentialController {
   }
 
   #inferCredentialType(data) {
-    const secretNames = (data.secrets ?? []).map((secret) => secret.name);
+    const secretNames = data.secretNames ?? (data.secrets ?? []).map((secret) => secret.name);
 
     if (secretNames.includes('apiKey')) return 'api-key';
     if (secretNames.includes('host') || secretNames.includes('password') || secretNames.includes('privateKey')) return 'connection';

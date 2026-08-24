@@ -117,6 +117,42 @@ test('DashboardService rejects invalid expiring window', async () => {
   );
 });
 
+test('DashboardService summarizes secret-free Resolve usage and repeated runtime failures', async () => {
+  const service = new DashboardService({
+    credentialManager: {
+      async listCredentials() {
+        return [{ credentialId: 'credential-1', providerKey: 'threads', lifecycleState: 'active', metadata: { displayName: 'Threads' } }];
+      }
+    },
+    providerManager: { listProviders() { return [{ key: 'threads', capabilities: ['oauth', 'refresh'] }]; } },
+    auditLogService: {
+      async list() {
+        return [
+          { entryId: 'resolve-1', timestamp: '2026-08-01T10:00:00.000Z', action: 'consumer-credential.resolve', targetType: 'credential', targetId: 'credential-1', result: 'success', consumerId: 'consumer-a', details: { secret: 'must-not-project' } },
+          { entryId: 'resolve-2', timestamp: '2026-08-02T10:00:00.000Z', action: 'consumer-credential.resolve', targetType: 'credential', targetId: 'credential-1', result: 'failure', consumerId: 'consumer-a', details: { reason: 'GRANT_MISSING', secret: 'must-not-project' } },
+          { entryId: 'resolve-3', timestamp: '2026-08-03T10:00:00.000Z', action: 'consumer-credential.resolve', targetType: 'credential', targetId: 'credential-1', result: 'failure', consumerId: 'consumer-b', details: { reason: 'CREDENTIAL_NOT_CONSUMABLE', secret: 'must-not-project' } },
+          { entryId: 'refresh-1', timestamp: '2026-08-04T10:00:00.000Z', action: 'credential-rotation.failed', targetType: 'credential', targetId: 'credential-1', result: 'failure', details: { error: 'must-not-project' } }
+        ];
+      }
+    }
+  });
+
+  const dashboard = await service.getDashboard();
+  const item = dashboard.integrationHealth.items[0];
+
+  assert.equal(dashboard.observability.totalResolveCount, 3);
+  assert.equal(dashboard.observability.totalResolveSuccesses, 1);
+  assert.equal(dashboard.observability.totalResolveFailures, 2);
+  assert.equal(dashboard.observability.authorizationFailures, 2);
+  assert.equal(item.usage.resolveCount, 3);
+  assert.equal(item.usage.lastUsedAt, '2026-08-03T10:00:00.000Z');
+  assert.equal(item.usage.consumers.length, 2);
+  assert.equal(item.runtimeHealth.status, 'degraded');
+  assert.equal(item.runtimeHealth.failureCount, 3);
+  assert.equal(item.runtimeHealth.repeatedFailureThreshold, 2);
+  assert.doesNotMatch(JSON.stringify(dashboard), /must-not-project/);
+});
+
 test('DashboardService returns partial dashboard data when a section fails', async () => {
   const service = new DashboardService({
     credentialManager: {

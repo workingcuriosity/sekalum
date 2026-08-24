@@ -3,6 +3,7 @@ import { Credential } from '../models/credential.js';
 import { LifecycleState } from '../models/lifecycle-state.js';
 import { OAuthResult } from '../models/oauth-result.js';
 import { ConnectionTargetPolicy } from '../services/connection-target-policy.js';
+import { safeError } from '../utils/safe-diagnostics.js';
 
 export class CredentialManager {
   constructor({
@@ -13,6 +14,7 @@ export class CredentialManager {
     logger = null,
     secretVersioningService = null,
     credentialHistoryService = null,
+    auditLogService = null,
     connectionTargetPolicy = null
   } = {}) {
     this.credentialStore = credentialStore;
@@ -22,6 +24,7 @@ export class CredentialManager {
     this.logger = logger;
     this.secretVersioningService = secretVersioningService;
     this.credentialHistoryService = credentialHistoryService;
+    this.auditLogService = auditLogService;
     this.connectionTargetPolicy = connectionTargetPolicy ?? new ConnectionTargetPolicy({
       allowPrivateNetworks: String(config?.get?.('CONNECTION_TEST_ALLOW_PRIVATE_NETWORKS', 'false')).toLowerCase() === 'true'
     });
@@ -195,16 +198,10 @@ export class CredentialManager {
 
     this.#assertStore('importCredential');
 
-    let existing = null;
-    try {
-      existing = await this.credentialStore.load(oauthResult.providerId);
-    } catch (error) {
-      if (error?.code !== 'NOT_FOUND') throw error;
-    }
+    const existing = await this.#findOAuthCredential(oauthResult);
 
     const credential = Credential.from({
       ...(existing?.toJSON?.() ?? {}),
-      credentialId: existing?.credentialId ?? oauthResult.providerId,
       ...(existing ? { credentialKey: existing.credentialKey } : {}),
       providerKey: oauthResult.provider,
       credentialMethodKey: existing?.credentialMethodKey ?? 'oauth2',
@@ -285,10 +282,33 @@ export class CredentialManager {
     return this.credentialStore.load(credentialId);
   }
 
+  async getCredentialMetadata(credentialId) {
+    this.#assertStore('getCredentialMetadata');
+    if (typeof this.credentialStore.loadMetadata === 'function') {
+      return this.credentialStore.loadMetadata(credentialId);
+    }
+    const credential = await this.credentialStore.load(credentialId);
+    return this.#toMetadata(credential);
+  }
+
   async listCredentials(options = {}) {
     this.#assertStore('listCredentials');
 
     const credentials = await this.credentialStore.list();
+
+    if (!options || Object.keys(options).length === 0) {
+      return credentials;
+    }
+
+    return this.#queryCredentials(credentials, options);
+  }
+
+  async listCredentialMetadata(options = {}) {
+    this.#assertStore('listCredentialMetadata');
+
+    const credentials = typeof this.credentialStore.listMetadata === 'function'
+      ? await this.credentialStore.listMetadata()
+      : (await this.credentialStore.list()).map((credential) => this.#toMetadata(credential));
 
     if (!options || Object.keys(options).length === 0) {
       return credentials;
@@ -362,13 +382,20 @@ export class CredentialManager {
   }
 
   #inferCredentialType(value) {
-    const secretNames = (value?.secrets ?? []).map((secret) => secret.name);
+    const secretNames = value?.secretNames ?? (value?.secrets ?? []).map((secret) => secret.name);
 
     if (secretNames.includes('apiKey')) return 'api-key';
     if (secretNames.includes('host') || secretNames.includes('password') || secretNames.includes('privateKey')) return 'connection';
     if (secretNames.includes('accessToken') || secretNames.includes('refreshToken')) return 'oauth';
 
     return value?.metadata?.custom?.credentialType ?? 'unknown';
+  }
+
+  #toMetadata(credential) {
+    if (typeof credential?.toMetadataJSON === 'function') return credential.toMetadataJSON();
+    if (!credential || typeof credential !== 'object') return credential;
+    const { secrets: _secrets, ...metadata } = credential;
+    return metadata;
   }
 
   #sortValue(value, field) {
@@ -662,7 +689,7 @@ export class CredentialManager {
     return this.secretVersioningService.rollbackCredentialSecrets(credentialId, version, context);
   }
 
-  async deleteCredential(credentialId) {
+  async deleteCredential(credentialId, context = {}) {
     this.#assertStore('deleteCredential');
 
     if (!credentialId) {
@@ -675,14 +702,14 @@ export class CredentialManager {
       throw new Error(`CredentialManager.deleteCredential() could not find credential '${credentialId}'`);
     }
 
-    return this.delete(credential);
+    return this.delete(credential, context);
   }
 
-  async delete(credentialOrId) {
+  async delete(credentialOrId, context = {}) {
     const credential = await this.#resolveCredential(credentialOrId);
 
     if (this.providerManager?.revokeCredential && credential.lifecycleState !== LifecycleState.REVOKED) {
-      await this.revoke(credential);
+      await this.revoke(credential, context);
     }
 
     const deletedCredential = credential.withLifecycleState(LifecycleState.DELETED);
@@ -691,6 +718,10 @@ export class CredentialManager {
     if (this.credentialStore?.delete) {
       await this.credentialStore.delete(deletedCredential.credentialId);
     }
+
+    await this.#recordLifecycleAudit('credential.deleted', deletedCredential, context, {
+      previousState: credential.lifecycleState
+    });
 
     return deletedCredential;
   }
@@ -761,7 +792,7 @@ export class CredentialManager {
     }
   }
 
-  async refresh(credentialOrId) {
+  async refresh(credentialOrId, context = {}) {
     const credential = await this.#resolveCredential(credentialOrId);
     const result = await this.#executeProviderAction('refreshCredential', credential);
 
@@ -779,6 +810,10 @@ export class CredentialManager {
 
     await this.#saveIfAvailable(refreshedCredential);
     await this.#recordSecretVersion(refreshedCredential, { reason: 'refresh' });
+    await this.#recordLifecycleAudit('credential.rotated', refreshedCredential, context, {
+      previousVersion: credential.version,
+      version: refreshedCredential.version
+    });
 
     return ProviderResult.success({
       credential: refreshedCredential,
@@ -808,14 +843,25 @@ export class CredentialManager {
     return result.data?.credential ?? result.data;
   }
 
-  async revoke(credentialOrId) {
+  async revoke(credentialOrId, context = {}) {
     const credential = await this.#resolveCredential(credentialOrId);
+
+    if (credential.lifecycleState === LifecycleState.REVOKED) {
+      await this.#recordLifecycleAudit('credential.revoke.noop', credential, context, {
+        reason: 'already-revoked'
+      });
+      return ProviderResult.success({ credential, provider: null, idempotent: true });
+    }
+
     const result = await this.#executeProviderAction('revokeCredential', credential);
 
     if (!result.success) return result;
 
     const revokedCredential = credential.withLifecycleState(LifecycleState.REVOKED);
     await this.#saveIfAvailable(revokedCredential);
+    await this.#recordLifecycleAudit('credential.revoked', revokedCredential, context, {
+      previousState: credential.lifecycleState
+    });
 
     return ProviderResult.success({
       credential: revokedCredential,
@@ -1090,12 +1136,13 @@ export class CredentialManager {
           data: result
         });
       } catch (error) {
+        const safe = safeError(error, { fallbackMessage: 'Bulk credential action failed' });
         results.push({
           credentialId,
           success: false,
           error: {
-            code: error.code ?? 'BULK_ACTION_FAILED',
-            message: error.message ?? 'Bulk credential action failed'
+            code: safe.code ?? 'BULK_ACTION_FAILED',
+            message: safe.message
           }
         });
       }
@@ -1162,7 +1209,8 @@ export class CredentialManager {
     return {
       ...credential,
       provider: credential.providerKey,
-      providerId: credential.credentialId,
+      providerId: metadata.custom?.legacyProviderId
+        ?? (credential.externalReference ? `${credential.providerKey}:${credential.externalReference}` : credential.credentialId),
       accountId: credential.externalReference,
       accountName: metadata.custom?.accountName ?? null,
       accessToken: secrets.get('accessToken') ?? null,
@@ -1172,6 +1220,28 @@ export class CredentialManager {
       metadata,
       providerConfiguration: metadata.providerConfiguration ?? null
     };
+  }
+
+  async #findOAuthCredential(oauthResult) {
+    if (typeof this.credentialStore.loadByExternalReference === 'function') {
+      try {
+        return await this.credentialStore.loadByExternalReference(oauthResult.provider, oauthResult.accountId);
+      } catch (error) {
+        if (error?.code !== 'NOT_FOUND') throw error;
+        return null;
+      }
+    }
+
+    if (typeof this.credentialStore.list !== 'function') return null;
+    const matches = (await this.credentialStore.list()).filter((credential) => (
+      credential.providerKey === oauthResult.provider && credential.externalReference === oauthResult.accountId
+    ));
+    if (matches.length > 1) {
+      const error = new Error(`External Credential reference '${oauthResult.provider}:${oauthResult.accountId}' is ambiguous`);
+      error.code = 'CREDENTIAL_IDENTITY_AMBIGUOUS';
+      throw error;
+    }
+    return matches[0] ?? null;
   }
 
   async #resolveCredential(credentialOrId) {
@@ -1207,6 +1277,24 @@ export class CredentialManager {
     if (this.credentialStore?.save) {
       await this.credentialStore.save(credential);
     }
+  }
+
+  async #recordLifecycleAudit(action, credential, context = {}, details = {}) {
+    if (!this.auditLogService?.record) return;
+
+    await this.auditLogService.record({
+      userId: context.userId ?? 'system',
+      roleKey: context.roleKey,
+      action,
+      targetType: 'credential',
+      targetId: credential.credentialId,
+      result: 'success',
+      details: {
+        providerKey: credential.providerKey,
+        lifecycleState: credential.lifecycleState,
+        ...details
+      }
+    });
   }
 
 
@@ -1259,7 +1347,7 @@ export class CredentialManager {
       secrets: [...currentSecrets.values()],
       metadata: {
         ...currentMetadata,
-        ...(oauthResult.expiresAt ? { expiresAt: oauthResult.expiresAt } : {}),
+        ...(Object.hasOwn(oauthResult, 'expiresAt') ? { expiresAt: oauthResult.expiresAt } : {}),
         ...(oauthResult.scopes?.length ? { scopes: oauthResult.scopes } : {}),
         custom: {
           ...currentMetadata.custom,

@@ -131,6 +131,14 @@ export class ConsumerGrantService {
   }
 
   async #loadCredential(credentialId) {
+    if (this.credentialStore?.loadMetadata) {
+      try {
+        return await this.credentialStore.loadMetadata(credentialId);
+      } catch (error) {
+        if (error?.code === 'NOT_FOUND') throw this.#notFound(`Credential '${credentialId}' not found`, 'CREDENTIAL_NOT_FOUND');
+        throw error;
+      }
+    }
     if (!this.credentialStore?.load) return null;
     try {
       return await this.credentialStore.load(credentialId);

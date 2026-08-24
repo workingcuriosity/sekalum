@@ -1,5 +1,6 @@
 import { bootstrap } from '../bootstrap.js';
 import { TOKENS } from '../container/tokens.js';
+import { safeError } from '../utils/safe-diagnostics.js';
 
 const [, , action, ...args] = process.argv;
 
@@ -24,11 +25,12 @@ function success(data) {
 }
 
 function failure(error) {
+  const safe = safeError(error, { fallbackMessage: 'Provider CLI command failed' });
   console.error(JSON.stringify({
     success: false,
     error: {
-      code: error.code ?? 'CLI_ERROR',
-      message: error.message,
+      code: safe.code ?? 'CLI_ERROR',
+      message: safe.message,
     },
   }, null, 2));
 }

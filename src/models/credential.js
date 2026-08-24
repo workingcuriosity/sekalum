@@ -75,6 +75,30 @@ export class Credential {
     };
   }
 
+  // Metadata projections are the default boundary for list, status, discovery
+  // and presentation paths. Secret values are intentionally not included.
+  toMetadataJSON() {
+    return {
+      credentialId: this.credentialId,
+      credentialKey: this.credentialKey,
+      providerKey: this.providerKey,
+      credentialMethodKey: this.credentialMethodKey,
+      externalReference: this.externalReference,
+      lifecycleState: this.lifecycleState,
+      metadata: this.metadata.toJSON(),
+      secretNames: this.secrets.map((secret) => secret.name),
+      secretInventory: this.secrets.map((secret) => ({
+        name: secret.name,
+        type: secret.type ?? null,
+        required: secret.required ?? null,
+        hasValue: secret.value !== undefined && secret.value !== null && secret.value !== ''
+      })),
+      createdAt: this.createdAt.toISOString(),
+      updatedAt: this.updatedAt.toISOString(),
+      version: this.version
+    };
+  }
+
   static from(data) {
     if (data instanceof Credential) return data;
     return new Credential(data);

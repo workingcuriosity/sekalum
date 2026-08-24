@@ -1,9 +1,13 @@
 ---
 title: Third-Party Software
-version: 1.0.0
+document_id: DOC-THIRD-PARTY-SOFTWARE
+classification: PUBLIC
+language: en
+version: 1.1.2
 status: Active
 category: Project
 canonical: true
+owner: Sekalum
 maintainer: Working Curiosity
 contact: luiscyphre404@gmail.com
 license: AGPL-3.0-only
@@ -18,6 +22,15 @@ dependent_documents:
   - package.json
   - package-lock.json
 change_history:
+  - version: 1.1.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.1.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
+  - version: 1.1.0
+    date: 2026-08-24
+    change: Confirms the English public dependency inventory and current private-to-public ownership.
   - version: 1.0.0
     date: 2026-07-12
     change: CP-012A records the resolved production dependency set from package-lock.json and installed package metadata.

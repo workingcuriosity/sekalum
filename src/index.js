@@ -7,6 +7,7 @@
 // See the LICENSE file for details.
 
 import { bootstrap } from './bootstrap.js';
+import { safeError } from './utils/safe-diagnostics.js';
 
 let app = null;
 let stopping = false;
@@ -24,7 +25,7 @@ async function stop(signal) {
     }
     process.exit(0);
   } catch (error) {
-    console.error(`Application failed to stop after ${signal}:`, error);
+    console.error(`Application failed to stop after ${signal}:`, safeError(error));
     process.exit(1);
   }
 }
@@ -41,6 +42,6 @@ try {
   app = await bootstrap();
   await app.start();
 } catch (error) {
-  console.error('Application failed to start:', error);
+  console.error('Application failed to start:', safeError(error));
   process.exit(1);
 }

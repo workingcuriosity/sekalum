@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import { ConsumerCredentialService } from '../../src/services/consumer-credential-service.js';
 import { Credential } from '../../src/models/credential.js';
 
-function setup({ lifecycleState = 'active', grantNames = ['apiKey', 'secondaryKey'], credentialMethodKey = 'api-key', credentialManager = null, runtimePublicProjectionService = null, findGrantResult = undefined } = {}) {
+function setup({ lifecycleState = 'active', grantNames = ['apiKey', 'secondaryKey'], credentialMethodKey = 'api-key', credentialManager = null, runtimePublicProjectionService = null, findGrantResult = undefined, expiresAt = null } = {}) {
   const secretValue = 'consumer-test-secret';
   const credential = new Credential({
     credentialId: 'credential-1', providerKey: 'example', credentialMethodKey, lifecycleState,
-    secrets: [{ name: 'apiKey', value: secretValue }, { name: 'secondaryKey', value: 'second-secret' }]
+    secrets: [{ name: 'apiKey', value: secretValue }, { name: 'secondaryKey', value: 'second-secret' }],
+    metadata: { expiresAt }
   });
   const audit = [];
   const findGrantCalls = [];
@@ -39,13 +40,17 @@ function setup({ lifecycleState = 'active', grantNames = ['apiKey', 'secondaryKe
 
 test('consumer resolves only explicitly requested and granted secret fields', async () => {
   const { service, audit, secretValue } = setup();
-  const result = await service.resolve({ consumerId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] });
+  const result = await service.resolve({ consumerId: 'consumer-a', apiTokenId: 'token-a', credentialKey: 'credential-1', secretNames: ['apiKey'] });
   assert.deepEqual(result.secrets, { apiKey: secretValue });
   assert.equal(result.providerKey, 'example');
   assert.equal(result.credentialMethodKey, undefined);
   assert.equal(result.credentialKey, 'credential-1');
   assert.deepEqual(Object.keys(result).sort(), ['credentialKey', 'lifecycleState', 'providerKey', 'secrets']);
   assert.equal(audit[0].result, 'success');
+  assert.equal(audit[0].actorType, 'consumer');
+  assert.equal(audit[0].userId, null);
+  assert.equal(audit[0].consumerId, 'consumer-a');
+  assert.equal(audit[0].apiTokenId, 'token-a');
   assert.equal(JSON.stringify(audit[0]).includes(secretValue), false);
 });
 
@@ -154,4 +159,14 @@ test('consumer discovery fails closed for an inactive credential', async () => {
   });
 
   assert.deepEqual((await service.discover({ consumerId: 'consumer-a' })).credentials, []);
+});
+
+test('consumer discovery and resolve reject an expired access credential', async () => {
+  const { service } = setup({ expiresAt: new Date(Date.now() - 1_000).toISOString() });
+
+  assert.deepEqual((await service.discover({ consumerId: 'consumer-a' })).credentials, []);
+  await assert.rejects(
+    () => service.resolve({ consumerId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] }),
+    { code: 'CREDENTIAL_NOT_CONSUMABLE' }
+  );
 });

@@ -3,6 +3,7 @@ import { ProviderCapabilities } from '../models/provider-capabilities.js';
 import { CredentialMethod } from '../models/credential-method.js';
 import { ProviderMethodBinding } from '../models/provider-method-binding.js';
 import { DeclarativeCustomProvider } from '../providers/custom/declarative-custom-provider.js';
+import { safeError, safeErrorMessage } from '../utils/safe-diagnostics.js';
 
 const PROVIDER_KEY = /^[a-z][a-z0-9-]{1,62}$/;
 const ROOT_KEYS = new Set(['key', 'displayName', 'category', 'description', 'enabled', 'credentialMethods', 'providerMethodBindings', 'credentialFields']);
@@ -135,7 +136,7 @@ export class CustomProviderService {
       };
     } catch (error) {
       if (error.code === 'PROVIDER_DEFINITION_INVALID') throw error;
-      throw this.#invalid(error.message);
+      throw this.#invalid(safeErrorMessage(error));
     }
   }
 
@@ -288,7 +289,7 @@ export class CustomProviderService {
       targetType: 'provider',
       targetId: key,
       result,
-      details: error ? { message: error.message } : { enabled: action === 'enable' }
+      details: error ? { error: safeError(error) } : { enabled: action === 'enable' }
     });
   }
 

@@ -1,6 +1,9 @@
 ---
 title: Developer Guide
-version: 1.2.0
+document_id: DOC-DEVELOPER-GUIDE-INDEX
+classification: PUBLIC
+language: en
+version: 1.2.2
 status: Active
 category: Developer Guide
 canonical: false
@@ -20,6 +23,12 @@ dependent_documents:
   - docs/adr/ADR-021-Generic-Credential-Method-Model.md
   - docs/security-guide/index.md
 change_history:
+  - version: 1.2.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.2.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.2.0
     date: 2026-08-02
     change: Adds the Consumer Integration Foundation with roles, architecture orientation, lifecycle terminology and n8n classification for Beta-1 integrators.
@@ -64,7 +73,7 @@ This guide is the active entry point for development work. It organizes the exis
 | HTTP routes, authentication and permissions | API Reference |
 | Persistence, encryption and storage boundaries | Storage Developer Guide |
 | Runtime and provider configuration | [Configuration Reference](../configuration-reference/index.md) |
-| Provider capabilities and provider-specific sources | Provider Overview |
+| Provider capabilities and provider-specific sources | [Provider Overview](../providers/README.md) |
 | Metadata-driven provider and custom-provider contract | Provider Metadata Guideline |
 | Generic Credential Method architecture | ADR-021 |
 | Architecture decisions | Published architecture references |
@@ -707,7 +716,7 @@ AI may assist implementation, documentation, tests, review preparation, refactor
 
 The official [Sekalum Discord community](https://discord.gg/exTu3Dy2UW) supports technical questions, development discussion, community questions, and feature ideas. GitHub remains authoritative for Issues, Pull Requests, release tracking, and project planning. Security vulnerabilities must follow the [Security Guide](../security-guide/index.md) and must not be posted to Discord.
 
-## Abgrenzung
+## Boundaries
 
 This guide defines neither API payloads nor data-model or storage contracts.
 Changes to those boundaries are documented in the relevant canonical

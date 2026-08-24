@@ -1,6 +1,9 @@
 ---
 title: Sekalum Project Identity
-version: 1.3.0
+document_id: DOC-PROJECT-PROJECT-IDENTITY
+classification: PUBLIC
+language: en
+version: 1.3.2
 status: Active
 category: Project
 canonical: true
@@ -17,6 +20,12 @@ dependent_documents:
   - DISCLAIMER.md
   - docs/project/LEGAL.md
 change_history:
+  - version: 1.3.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.3.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.3.0
     date: 2026-08-17
     change: Removes obsolete legal attribution and retains Working Curiosity solely as the project and maintainer identity under AGPL-3.0-only.
