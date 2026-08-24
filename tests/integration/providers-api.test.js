@@ -36,6 +36,7 @@ function createServer() {
       oauthTechnical: { authorizationEndpoint: 'https://threads.net/oauth/authorize' }
     }]
   ]);
+  const customDefinitions = new Map();
 
   const providerManager = {
       listProviders() {
@@ -62,7 +63,7 @@ function createServer() {
         error.statusCode = 409;
         throw error;
       }
-      providers.set(input.key, {
+      const summary = {
         key: input.key,
         displayName: input.displayName,
         description: input.description ?? null,
@@ -76,8 +77,45 @@ function createServer() {
         defaultScopes: [],
         oauthSecurity: null,
         oauthTechnical: null
-      });
+      };
+      customDefinitions.set(input.key, { ...summary, enabled: true });
+      providers.set(input.key, summary);
       return { key: input.key };
+    },
+    async listManagement() {
+      return [...customDefinitions.values()].map(({ key, displayName, description, category, enabled }) => ({
+        providerKey: key,
+        key,
+        customProvider: true,
+        enabled,
+        displayName,
+        description,
+        category
+      }));
+    },
+    async disable(providerKey) {
+      const definition = customDefinitions.get(providerKey);
+      if (!definition) {
+        const error = new Error(`Built-in provider '${providerKey}' cannot be changed`);
+        error.code = 'BUILTIN_PROVIDER_IMMUTABLE';
+        error.statusCode = 400;
+        throw error;
+      }
+      definition.enabled = false;
+      providers.delete(providerKey);
+      return { providerKey, enabled: false, customProvider: true, displayName: definition.displayName, description: definition.description, category: definition.category };
+    },
+    async enable(providerKey) {
+      const definition = customDefinitions.get(providerKey);
+      if (!definition) {
+        const error = new Error(`Built-in provider '${providerKey}' cannot be changed`);
+        error.code = 'BUILTIN_PROVIDER_IMMUTABLE';
+        error.statusCode = 400;
+        throw error;
+      }
+      definition.enabled = true;
+      providers.set(providerKey, { ...definition });
+      return { providerKey, enabled: true, customProvider: true, displayName: definition.displayName, description: definition.description, category: definition.category };
     }
   };
 
@@ -283,6 +321,54 @@ test('HTTP providers create endpoint rejects provider configuration and duplicat
     });
     assert.equal(duplicate.status, 409);
     assert.equal((await duplicate.json()).error.code, 'PROVIDER_ALREADY_EXISTS');
+  } finally {
+    server.close();
+  }
+});
+
+test('HTTP provider lifecycle routes require the bounded action and preserve management visibility', async () => {
+  const httpServer = createServer();
+  const { server, baseUrl } = await listen(httpServer.app);
+  const input = {
+    key: 'acme-service', displayName: 'Acme Service', category: 'CRM', description: 'Declarative provider',
+    credentialMethods: [{ key: 'api-key', displayName: 'API key', credentialFields: [{ key: 'apiKey', label: 'API key', type: 'api-key', secret: true }], operationCapabilities: [] }],
+    providerMethodBindings: [{ methodKey: 'api-key', displayName: 'Acme API key' }],
+    credentialFields: [{ key: 'apiKey', label: 'API key', type: 'api-key', secret: true }]
+  };
+
+  try {
+    await fetch(`${baseUrl}/api/v1/providers`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-credential-hub-user': 'admin' }, body: JSON.stringify(input)
+    });
+
+    const disabled = await fetch(`${baseUrl}/api/v1/providers/acme-service/disable`, {
+      method: 'POST', headers: { 'x-credential-hub-user': 'admin' }
+    });
+    assert.equal(disabled.status, 200);
+    assert.deepEqual((await disabled.json()).data, {
+      providerKey: 'acme-service', enabled: false, customProvider: true,
+      displayName: 'Acme Service', description: 'Declarative provider', category: 'CRM'
+    });
+
+    const runtimeLookup = await fetch(`${baseUrl}/api/v1/providers/acme-service`);
+    assert.equal(runtimeLookup.status, 404);
+
+    const management = await fetch(`${baseUrl}/api/v1/management/providers`);
+    const managementBody = await management.json();
+    assert.equal(management.status, 200);
+    assert.equal(managementBody.data.items.find((item) => item.providerKey === 'acme-service').enabled, false);
+
+    const enabled = await fetch(`${baseUrl}/api/v1/providers/acme-service/enable`, {
+      method: 'POST', headers: { 'x-credential-hub-user': 'admin' }
+    });
+    assert.equal(enabled.status, 200);
+    assert.equal((await enabled.json()).data.enabled, true);
+
+    const builtIn = await fetch(`${baseUrl}/api/v1/providers/threads/disable`, {
+      method: 'POST', headers: { 'x-credential-hub-user': 'admin' }
+    });
+    assert.equal(builtIn.status, 400);
+    assert.equal((await builtIn.json()).error.code, 'BUILTIN_PROVIDER_IMMUTABLE');
   } finally {
     server.close();
   }

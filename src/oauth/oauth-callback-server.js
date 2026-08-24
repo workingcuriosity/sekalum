@@ -32,7 +32,14 @@ import { BackupRestoreService } from '../services/backup-restore-service.js';
 import { MetricsService } from '../services/metrics-service.js';
 import { ApiTokenService } from '../services/api-token-service.js';
 import { CredentialTransferService } from '../services/credential-transfer-service.js';
-import { normalizeBasePath, normalizePublicBaseUrl, withBasePath } from '../config/base-path.js';
+import {
+  assertNoConflictingTrustedProxySignals,
+  isInternalPublicOrigin,
+  normalizeBasePath,
+  normalizePublicBaseUrl,
+  normalizeTrustedProxy,
+  withBasePath
+} from '../config/base-path.js';
 import { PROJECT_LINKS } from '../../public/admin/project-links.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -95,6 +102,7 @@ export class OAuthCallbackServer {
     this.managementService = managementService ?? new ManagementService({
       credentialManager,
       providerManager,
+      customProviderService,
       schedulerService,
       accessManagementService: this.accessManagementService,
       auditLogService: this.auditLogService
@@ -137,12 +145,21 @@ export class OAuthCallbackServer {
     this.config = config;
     this.logger = logger;
     this.basePath = normalizeBasePath(config.get('BASE_PATH', '/'));
+    this.trustedProxy = normalizeTrustedProxy(config.get('TRUSTED_PROXY', null));
     const configuredPublicBaseUrl = config.get('PUBLIC_BASE_URL', null);
     this.publicBaseUrl = typeof configuredPublicBaseUrl === 'string'
       ? normalizePublicBaseUrl(configuredPublicBaseUrl)
       : null;
+    const nodeEnv = config.get('NODE_ENV', 'development');
+    if (nodeEnv === 'production' && !this.publicBaseUrl) {
+      throw new Error('PUBLIC_BASE_URL is required in production');
+    }
+    if (nodeEnv === 'production' && this.publicBaseUrl && isInternalPublicOrigin(this.publicBaseUrl)) {
+      throw new Error('PUBLIC_BASE_URL must not use an internal host in production');
+    }
     this.oauthWizardIntents = new Map();
     this.app = express();
+    this.app.set('trust proxy', this.trustedProxy);
     this.routes = express.Router();
     this.app.use(express.json({ limit: '1mb' }));
     this.routes.use('/admin', express.static(path.join(PUBLIC_DIR, 'admin')));
@@ -579,6 +596,14 @@ export class OAuthCallbackServer {
       await this.providerController.create(req, res);
     }));
 
+    this.routes.post('/api/v1/providers/:providerKey/disable', this.#authorized('providers:manage', async (req, res) => {
+      await this.providerController.disable(req, res);
+    }));
+
+    this.routes.post('/api/v1/providers/:providerKey/enable', this.#authorized('providers:manage', async (req, res) => {
+      await this.providerController.enable(req, res);
+    }));
+
     this.routes.get('/api/v1/providers/:providerKey', this.#authorized('providers:read', async (req, res) => {
       await this.providerController.get(req, res);
     }));
@@ -815,12 +840,13 @@ const language=(navigator.language||'en').toLowerCase().startsWith('de')?'de':'e
   }
 
   #publicOrigin(req) {
+    assertNoConflictingTrustedProxySignals(req, this.trustedProxy);
     return this.publicBaseUrl ?? this.#requestOrigin(req);
   }
 
   #requestOrigin(req) {
     const origin = req.get('origin');
-    const requestHost = req.get('host');
+    const requestHost = req.host ?? req.get('host');
     if (origin) {
       try {
         const parsed = new URL(origin);
@@ -829,6 +855,14 @@ const language=(navigator.language||'en').toLowerCase().startsWith('de')?'de':'e
         }
       } catch {}
     }
-    return `${req.protocol}://${requestHost}`;
+    try {
+      const requestOrigin = new URL(`${req.protocol}://${requestHost}`);
+      if (!['http:', 'https:'].includes(requestOrigin.protocol) || requestOrigin.username || requestOrigin.password) {
+        throw new Error('REQUEST_ORIGIN_INVALID');
+      }
+      return requestOrigin.origin;
+    } catch {
+      throw new Error('REQUEST_ORIGIN_INVALID');
+    }
   }
 }

@@ -60,11 +60,11 @@ This guide is the active entry point for development work. It organizes the exis
 | Topic | Leading source |
 |---|---|
 | Overall architecture and component roles | Overall Architecture |
-| Domain objects, lifecycle and legacy boundary | [Data Model Reference](../data-model-reference/index.md) |
-| HTTP routes, authentication and permissions | [API Reference](../api-reference/index.md) |
+| Domain objects, lifecycle and legacy boundary | Data Model Reference |
+| HTTP routes, authentication and permissions | API Reference |
 | Persistence, encryption and storage boundaries | Storage Developer Guide |
 | Runtime and provider configuration | [Configuration Reference](../configuration-reference/index.md) |
-| Provider capabilities and provider-specific sources | [Provider Overview](../providers/README.md) |
+| Provider capabilities and provider-specific sources | Provider Overview |
 | Metadata-driven provider and custom-provider contract | Provider Metadata Guideline |
 | Generic Credential Method architecture | ADR-021 |
 | Architecture decisions | Published architecture references |
@@ -156,7 +156,7 @@ An integration follows this sequence:
    discards them as far as the runtime permits.
 
 The complete HTTP contract, response shapes, error handling and selection rules
-are defined by the [API Reference](../api-reference/index.md#canonical-consumer-integration-algorithm).
+are defined by the API Reference.
 The [Quick Start Guide](../quick-start-guide/index.md#using-the-consumer-interface-advanced-integration-flow)
 shows the corresponding Beta-1 interface flow.
 
@@ -241,7 +241,7 @@ The response contains only the selected public key, lifecycle state and the
 requested, authorized field values. The Consumer must validate the response
 shape and must not broaden the field list or retry with a Management token
 after an error. The exact response and error envelope remain defined by the
-[API Reference](../api-reference/index.md#resolve-a-credential).
+API Reference.
 
 #### 4. Use and dispose of the result
 
@@ -652,7 +652,7 @@ Do not extend this path with provider-configuration fields, OAuth settings, adap
 
 ## Consumer API integration
 
-Runtime consumers use the isolated Consumer API rather than the Management API. They authenticate with an active Bearer API token that has the `credentials:consume` scope and whose owner has the same permission. The consumer identity is the API-token ID; before runtime use, an administrator provisions an explicit grant through `POST /api/v1/management/consumer-grants` with `consumerId`, `credentialId`, `providerKey`, and the permitted `secretNames`. The grant must allow the target Credential, provider, and each requested secret field. Only active Credentials and fields marked secret by the selected CredentialMethod can be resolved. The Consumer route remains method-agnostic and returns no CredentialMethod identifier or other internal method metadata. See the [API Reference](../api-reference/index.md) for the response and error contract and ADR-020 for the architecture decision.
+Runtime consumers use the isolated Consumer API rather than the Management API. They authenticate with an active Bearer API token that has the `credentials:consume` scope and whose owner has the same permission. The consumer identity is the API-token ID; before runtime use, an administrator provisions an explicit grant through `POST /api/v1/management/consumer-grants` with `consumerId`, `credentialId`, `providerKey`, and the permitted `secretNames`. The grant must allow the target Credential, provider, and each requested secret field. Only active Credentials and fields marked secret by the selected CredentialMethod can be resolved. The Consumer route remains method-agnostic and returns no CredentialMethod identifier or other internal method metadata. See the API Reference for the response and error contract and ADR-020 for the architecture decision.
 
 When Discovery provides an optional Runtime-Public projection, use only the
 values explicitly classified for the selected Credential and authenticated
@@ -677,7 +677,7 @@ Read the returned value only in the executing workflow step. Do not place the to
 
 ### Canonical Consumer Integration Algorithm
 
-The [API Reference](../api-reference/index.md#canonical-consumer-integration-algorithm)
+The API Reference
 is the normative source for the platform-independent Beta-1 Consumer
 integration sequence and its selection, transient-use and disposal rules. The
 Developer Guide provides implementation orientation only; it does not define

@@ -52,9 +52,9 @@ This guide describes the current Sekalum user workflows. It is for
 administrators and authorized users who manage Credentials, authorize
 Providers, configure Consumer access, transfer Credentials or create
 technical API access. It describes the Admin UI at `/admin/`; exact HTTP
-contracts, permissions and error behavior are defined by the [API
-Reference](../api-reference/index.md), while Provider prerequisites are
-listed in the [Provider overview](../providers/README.md).
+contracts, permissions and error behavior are defined by the API
+Reference, while Provider prerequisites are
+listed in the Provider overview.
 
 ## Access and permissions
 
@@ -62,7 +62,7 @@ When authorization is enabled, `/api/v1` first authenticates the identity and
 then evaluates its RBAC permissions. Reading Credentials requires
 `credentials:read`; creating, changing, deleting, validating, refreshing,
 revoking, importing and exporting require `credentials:manage`. The complete
-mapping is defined in the [API Reference](../api-reference/index.md#authorization-and-errors).
+mapping is defined in the API Reference.
 
 ### Bootstrap and the First Administrator
 

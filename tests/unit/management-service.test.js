@@ -76,6 +76,36 @@ test('ManagementService aggregates management status', async () => {
   assert.equal(status.scheduler.runCount, 4);
 });
 
+test('ManagementService keeps disabled custom providers visible with lifecycle metadata', async () => {
+  const service = new ManagementService({
+    credentialManager: { async listCredentials() { return []; } },
+    providerManager: {
+      listProviders() {
+        return [{ key: 'threads', displayName: 'Threads', capabilities: ['oauth'] }];
+      }
+    },
+    customProviderService: {
+      async listManagement() {
+        return [{
+          providerKey: 'acme-service',
+          key: 'acme-service',
+          customProvider: true,
+          enabled: false,
+          displayName: 'Acme Service',
+          description: 'Declarative provider',
+          category: 'CRM'
+        }];
+      }
+    }
+  });
+
+  const result = await service.getProviders();
+  assert.deepEqual(result.items, [
+    { providerKey: 'threads', key: 'threads', displayName: 'Threads', description: null, capabilities: ['oauth'] },
+    { providerKey: 'acme-service', key: 'acme-service', customProvider: true, enabled: false, displayName: 'Acme Service', description: 'Declarative provider', category: 'CRM', capabilities: [] }
+  ]);
+});
+
 test('ManagementService delegates credential operations to CredentialManager', async () => {
   const calls = [];
   const service = new ManagementService({

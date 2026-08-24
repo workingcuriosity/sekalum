@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { normalizeBasePath, normalizePublicBaseUrl, withBasePath } from '../../src/config/base-path.js';
+import { normalizeBasePath, normalizePublicBaseUrl, normalizeTrustedProxy, withBasePath } from '../../src/config/base-path.js';
 import { applicationPath, detectedBasePath } from '../../public/admin/base-path.js';
 
 test('normalizes the root base path and trimmed subpaths', () => {
@@ -32,6 +32,14 @@ test('rejects unsafe public base URLs', () => {
   for (const value of ['hub.example.test', 'ftp://hub.example.test', 'https://user:secret@hub.example.test', 'https://hub.example.test/path', 'https://hub.example.test/?debug=1']) {
     assert.throws(() => normalizePublicBaseUrl(value), /PUBLIC_BASE_URL/);
   }
+});
+
+test('normalizes an explicit trusted proxy boundary and rejects unsafe values', () => {
+  assert.equal(normalizeTrustedProxy('loopback'), 'loopback');
+  assert.deepEqual(normalizeTrustedProxy('127.0.0.1, 10.0.0.0/8'), ['127.0.0.1', '10.0.0.0/8']);
+  assert.equal(normalizeTrustedProxy(undefined), false);
+  assert.throws(() => normalizeTrustedProxy('proxy.example.test'), /TRUSTED_PROXY/);
+  assert.throws(() => normalizeTrustedProxy('127.0.0.1/33'), /TRUSTED_PROXY/);
 });
 
 test('derives the browser application prefix from root and prefixed admin routes', () => {

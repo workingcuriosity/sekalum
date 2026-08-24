@@ -5,7 +5,7 @@ import { ProviderMethodBinding } from '../models/provider-method-binding.js';
 import { DeclarativeCustomProvider } from '../providers/custom/declarative-custom-provider.js';
 
 const PROVIDER_KEY = /^[a-z][a-z0-9-]{1,62}$/;
-const ROOT_KEYS = new Set(['key', 'displayName', 'category', 'description', 'credentialMethods', 'providerMethodBindings', 'credentialFields']);
+const ROOT_KEYS = new Set(['key', 'displayName', 'category', 'description', 'enabled', 'credentialMethods', 'providerMethodBindings', 'credentialFields']);
 const FORBIDDEN_KEYS = new Set(['providerConfigurationFields', 'oauth', 'oauthSecurity', 'oauthTechnical', 'runtimeOperations', 'provider', 'apiClient', 'hooks', 'scripts', 'code', 'secrets', 'secretValues']);
 const METHOD_KEYS = new Set(['key', 'displayName', 'description', 'credentialFields']);
 const BINDING_KEYS = new Set(['methodKey', 'displayName', 'description']);
@@ -13,13 +13,19 @@ const FIELD_KEYS = new Set(['key', 'label', 'type', 'required', 'secret', 'descr
 
 /** Creates data-only providers. They intentionally have no executable operations or OAuth support. */
 export class CustomProviderService {
-  constructor({ store, providerRegistry }) {
+  constructor({ store, providerRegistry, auditLogService = null }) {
     this.store = store;
     this.providerRegistry = providerRegistry;
+    this.auditLogService = auditLogService;
+    this.transitionLocks = new Map();
   }
 
   async hydrate() {
-    for (const definition of await this.store.list()) this.#register(definition);
+    for (const storedDefinition of await this.store.list()) {
+      const definition = this.#storedDefinition(storedDefinition);
+      this.#assertNoBuiltInConflict(definition.key);
+      if (definition.enabled) this.#register(definition);
+    }
   }
 
   async create(input) {
@@ -122,6 +128,7 @@ export class CustomProviderService {
         displayName: input.displayName.trim(),
         category: input.category.trim(),
         description: input.description?.trim() ?? null,
+        enabled: input.enabled ?? true,
         credentialFields: fields,
         credentialMethods: methods.map((method) => method.toJSON()),
         providerMethodBindings: bindings.map((binding) => binding.toJSON())
@@ -130,6 +137,187 @@ export class CustomProviderService {
       if (error.code === 'PROVIDER_DEFINITION_INVALID') throw error;
       throw this.#invalid(error.message);
     }
+  }
+
+  async listManagement() {
+    const definitions = await this.store.list();
+    return definitions
+      .map((storedDefinition) => this.#storedDefinition(storedDefinition))
+      .map((definition) => ({
+        providerKey: definition.key,
+        key: definition.key,
+        customProvider: true,
+        enabled: definition.enabled,
+        displayName: definition.displayName,
+        description: definition.description ?? null,
+        category: definition.category ?? null
+      }))
+      .sort((left, right) => left.providerKey.localeCompare(right.providerKey));
+  }
+
+  async disable(key, options = {}) {
+    return this.#withTransitionLock(key, () => this.#disable(key, options));
+  }
+
+  async enable(key, options = {}) {
+    return this.#withTransitionLock(key, () => this.#enable(key, options));
+  }
+
+  async #disable(key, options) {
+    const definition = await this.#loadCustomDefinition(key);
+    if (!definition.enabled) return this.#lifecycleResult(definition);
+    if (!this.providerRegistry.has(key)) {
+      throw this.#consistencyError(`Enabled custom provider '${key}' is missing from the runtime registry`);
+    }
+
+    await this.store.update(key, (current) => ({ ...current, enabled: false }));
+
+    try {
+      const removed = this.providerRegistry.unregister(key);
+      if (!removed || this.providerRegistry.has(key)) {
+        throw this.#consistencyError(`Provider '${key}' could not be removed from the runtime registry`);
+      }
+      await this.#auditLifecycle('disable', key, options.actorUserId, 'success');
+      return this.#lifecycleResult({ ...definition, enabled: false });
+    } catch (error) {
+      await this.#compensateEnable(definition, key, error);
+      await this.#tryAuditLifecycle('disable', key, options.actorUserId, 'failure', error);
+      throw error;
+    }
+  }
+
+  async #enable(key, options) {
+    const definition = await this.#loadCustomDefinition(key);
+    if (definition.enabled) return this.#lifecycleResult(definition);
+    this.#assertNoBuiltInConflict(key);
+    this.#register(definition);
+
+    try {
+      await this.store.update(key, (current) => ({ ...current, enabled: true }));
+      if (!this.providerRegistry.has(key)) {
+        throw this.#consistencyError(`Enabled custom provider '${key}' is missing from the runtime registry`);
+      }
+      await this.#auditLifecycle('enable', key, options.actorUserId, 'success');
+      return this.#lifecycleResult({ ...definition, enabled: true });
+    } catch (error) {
+      await this.#compensateDisable(definition, key, error);
+      await this.#tryAuditLifecycle('enable', key, options.actorUserId, 'failure', error);
+      throw error;
+    }
+  }
+
+  async #loadCustomDefinition(key) {
+    const stored = await this.store.get(key);
+    if (!stored) {
+      if (this.providerRegistry.has(key)) {
+        const error = new Error(`Built-in provider '${key}' cannot be changed through the custom-provider lifecycle`);
+        error.code = 'BUILTIN_PROVIDER_IMMUTABLE';
+        error.statusCode = 400;
+        throw error;
+      }
+      const error = new Error(`Provider '${key}' not found`);
+      error.code = 'NOT_FOUND';
+      error.statusCode = 404;
+      throw error;
+    }
+    const definition = this.#storedDefinition(stored);
+    this.#assertNoBuiltInConflict(key);
+    return definition;
+  }
+
+  #storedDefinition(definition) {
+    if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
+      throw this.#invalid('Persisted custom provider definition must be an object');
+    }
+    if (definition.enabled !== undefined && typeof definition.enabled !== 'boolean') {
+      throw this.#invalid(`Persisted custom provider '${definition.key ?? 'unknown'}' has invalid enabled state`);
+    }
+    return { ...structuredClone(definition), enabled: definition.enabled ?? true };
+  }
+
+  #assertNoBuiltInConflict(key) {
+    if (!this.providerRegistry.has(key)) return;
+    const registered = this.providerRegistry.get(key);
+    if (registered.metadata?.customProvider !== true) {
+      const error = new Error(`Custom provider '${key}' conflicts with a built-in provider`);
+      error.code = 'BUILTIN_PROVIDER_IMMUTABLE';
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  #withTransitionLock(key, action) {
+    const previous = this.transitionLocks.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => {}).then(action);
+    const settled = current.then(() => undefined, () => undefined);
+    this.transitionLocks.set(key, settled);
+    settled.then(() => {
+      if (this.transitionLocks.get(key) === settled) this.transitionLocks.delete(key);
+    });
+    return current;
+  }
+
+  async #compensateEnable(definition, key, originalError) {
+    try {
+      await this.store.update(key, (current) => ({ ...current, enabled: true }));
+      if (!this.providerRegistry.has(key)) this.#register(definition);
+      if (!this.providerRegistry.has(key)) throw new Error('Provider registry compensation did not restore the projection');
+    } catch (rollbackError) {
+      throw this.#consistencyError(`Disable transition for '${key}' failed and compensation failed`, originalError, rollbackError);
+    }
+  }
+
+  async #compensateDisable(definition, key, originalError) {
+    try {
+      if (this.providerRegistry.has(key)) this.providerRegistry.unregister(key);
+      await this.store.update(key, (current) => ({ ...current, enabled: false }));
+      const stored = this.#storedDefinition(await this.store.get(key));
+      if (stored.enabled || this.providerRegistry.has(key)) throw new Error('Provider lifecycle compensation did not restore the disabled state');
+    } catch (rollbackError) {
+      throw this.#consistencyError(`Enable transition for '${key}' failed and compensation failed`, originalError, rollbackError);
+    }
+  }
+
+  async #auditLifecycle(action, key, actorUserId, result, error = null) {
+    if (!this.auditLogService?.record) {
+      throw new Error('Custom provider lifecycle audit is not configured');
+    }
+    await this.auditLogService.record({
+      userId: actorUserId ?? null,
+      action: `provider.lifecycle.${action}`,
+      targetType: 'provider',
+      targetId: key,
+      result,
+      details: error ? { message: error.message } : { enabled: action === 'enable' }
+    });
+  }
+
+  async #tryAuditLifecycle(action, key, actorUserId, result, error) {
+    try {
+      await this.#auditLifecycle(action, key, actorUserId, result, error);
+    } catch {
+      // The transition has already failed; audit persistence cannot turn it into success.
+    }
+  }
+
+  #lifecycleResult(definition) {
+    return {
+      providerKey: definition.key,
+      enabled: definition.enabled,
+      customProvider: true,
+      displayName: definition.displayName,
+      description: definition.description ?? null,
+      category: definition.category ?? null
+    };
+  }
+
+  #consistencyError(message, originalError = null, rollbackError = null) {
+    const error = new Error(message);
+    error.code = 'PROVIDER_LIFECYCLE_CONSISTENCY_FAILURE';
+    error.statusCode = 500;
+    if (originalError) error.cause = originalError;
+    if (rollbackError) error.rollbackError = rollbackError;
+    return error;
   }
 
   #register(definition) {

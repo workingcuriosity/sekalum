@@ -106,3 +106,6 @@ site/
 .pdf-cache/
 docs/pdf/
 docs/**/*.pdf
+
+# Gov3 Orchestrator runtime outputs are generated locally and are not Candidate code.
+/outputs/gov3-orchestrator/*.json

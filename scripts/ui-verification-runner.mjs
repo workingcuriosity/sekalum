@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { loadModel } from './ui-model-tools.mjs';
 
 function run(script) {
   return new Promise((resolve) => {
@@ -10,7 +11,12 @@ function run(script) {
 
 const failures = [];
 try {
-  for (const script of ['ui:test:seed', 'ui:test:smoke', 'ui:verification:report']) {
+  const { model } = await loadModel(process.cwd());
+  const hasExecutableProfile = model.interactions.some((interaction) => interaction.verification);
+  const scripts = ['ui:test:seed'];
+  if (hasExecutableProfile) scripts.push('ui:test:smoke');
+  scripts.push('ui:verification:report');
+  for (const script of scripts) {
     if (await run(script) !== 0) failures.push(script);
   }
 } finally {

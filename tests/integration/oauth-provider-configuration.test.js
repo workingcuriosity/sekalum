@@ -134,6 +134,120 @@ test('OAuth start uses a validated public base URL behind a reverse proxy', asyn
   }
 });
 
+test('OAuth start derives the public origin from trusted proxy signals', async () => {
+  const httpServer = new OAuthCallbackServer({
+    providerManager: {
+      async startOAuth(_provider, options) {
+        assert.equal(options.providerConfiguration.redirectUri, 'https://public.example.test/oauth/x/callback');
+        return { success: true, data: { authorizationUrl: `https://example.com/authorize?redirect_uri=${encodeURIComponent(options.providerConfiguration.redirectUri)}` } };
+      }
+    },
+    importTokenCommand: {},
+    credentialManager: { async listCredentials() { return []; } },
+    config: {
+      get(key, fallback) {
+        if (key === 'TRUSTED_PROXY') return 'loopback';
+        return fallback;
+      }
+    },
+    logger: { success() {}, info() {}, error() {} }
+  });
+  const { server, baseUrl } = await listen(httpServer.app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/providers/x/oauth/start`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-host': 'public.example.test',
+        'x-forwarded-proto': 'https'
+      },
+      body: JSON.stringify({ providerConfiguration: { clientId: 'x-client' } })
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.data.redirectUri, 'https://public.example.test/oauth/x/callback');
+  } finally {
+    server.close();
+  }
+});
+
+test('OAuth start ignores forwarded origin signals from an untrusted source', async () => {
+  const httpServer = new OAuthCallbackServer({
+    providerManager: {
+      async startOAuth(_provider, options) {
+        assert.match(options.providerConfiguration.redirectUri, /^http:\/\/127\.0\.0\.1:\d+\/oauth\/x\/callback$/);
+        return { success: true, data: { authorizationUrl: `https://example.com/authorize?redirect_uri=${encodeURIComponent(options.providerConfiguration.redirectUri)}` } };
+      }
+    },
+    importTokenCommand: {},
+    credentialManager: { async listCredentials() { return []; } },
+    config: { get(_key, fallback) { return fallback; } },
+    logger: { success() {}, info() {}, error() {} }
+  });
+  const { server, baseUrl } = await listen(httpServer.app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/providers/x/oauth/start`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-host': 'attacker.example.test',
+        'x-forwarded-proto': 'https'
+      },
+      body: JSON.stringify({ providerConfiguration: { clientId: 'x-client' } })
+    });
+    assert.equal(response.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
+test('OAuth start rejects conflicting trusted proxy signals without leaking details', async () => {
+  const httpServer = new OAuthCallbackServer({
+    providerManager: { async startOAuth() { throw new Error('must not be called'); } },
+    importTokenCommand: {},
+    credentialManager: { async listCredentials() { return []; } },
+    config: { get(key, fallback) { return key === 'TRUSTED_PROXY' ? 'loopback' : fallback; } },
+    logger: { success() {}, info() {}, error() {} }
+  });
+  const { server, baseUrl } = await listen(httpServer.app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/providers/x/oauth/start`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-host': 'public.example.test, attacker.example.test',
+        'x-forwarded-proto': 'https'
+      },
+      body: JSON.stringify({ providerConfiguration: { clientId: 'x-client' } })
+    });
+    const body = await response.json();
+    assert.equal(response.status, 500);
+    assert.equal(JSON.stringify(body).includes('public.example.test'), false);
+    assert.equal(JSON.stringify(body).includes('attacker.example.test'), false);
+  } finally {
+    server.close();
+  }
+});
+
+test('OAuth production configuration rejects missing and internal public origins', () => {
+  const config = (publicBaseUrl) => ({ get(key, fallback) {
+    if (key === 'NODE_ENV') return 'production';
+    if (key === 'PUBLIC_BASE_URL') return publicBaseUrl;
+    return fallback;
+  } });
+  const options = {
+    providerManager: {},
+    importTokenCommand: {},
+    credentialManager: { async listCredentials() { return []; } },
+    logger: { success() {}, info() {}, error() {} }
+  };
+  assert.throws(() => new OAuthCallbackServer({ ...options, config: config(null) }), /PUBLIC_BASE_URL is required/);
+  assert.throws(() => new OAuthCallbackServer({ ...options, config: config('https://container:3000') }), /internal host/);
+});
+
 test('OAuth start rejects and cleans up a redirect URI mismatch', async () => {
   const calls = [];
   const httpServer = createServer({

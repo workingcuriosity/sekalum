@@ -41,9 +41,9 @@ does not duplicate technical contracts; each topic links to its owning source.
 | Use Sekalum | [User Guide](user-guide/index.md) |
 | Operate Sekalum | [Operations Guide](operations-guide/index.md) |
 | Understand security and access boundaries | [Security Guide](security-guide/index.md) |
-| Integrate the REST API | [API Reference](api-reference/index.md) |
+| Integrate the REST API | API Reference |
 | Look up configuration | [Configuration Reference](configuration-reference/index.md) |
-| Understand the data model | [Data Model Reference](data-model-reference/index.md) |
+| Understand the data model | Data Model Reference |
 | Understand architecture and development | [Developer Guide](developer-guide/index.md) |
 | Review release notes and release context | [Release Guide](release-guide/index.md) |
 | Review architecture and security context | [Architecture](Architecture.md) |

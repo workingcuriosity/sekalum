@@ -6,4 +6,4 @@
 { "status": "UP" }
 ```
 
-The canonical route reference is [API Reference](../api-reference/index.md).
+The canonical route reference is API Reference.

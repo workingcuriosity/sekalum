@@ -57,7 +57,7 @@ sources for token use and authorization behavior.
 
 ## Health and monitoring
 
-`GET /health` returns application liveness when `BASE_PATH` is `/`. With a configured base path, monitor `GET <BASE_PATH>/health`, for example `GET /credential-hub/health`. The authenticated management and metrics routes are defined in the [API Reference](../api-reference/index.md). Scheduler status and provider health checks require the corresponding API permissions.
+`GET /health` returns application liveness when `BASE_PATH` is `/`. With a configured base path, monitor `GET <BASE_PATH>/health`, for example `GET /credential-hub/health`. The authenticated management and metrics routes are defined in the API Reference. Scheduler status and provider health checks require the corresponding API permissions.
 
 When operating behind a reverse proxy, verify that the public Admin UI, health endpoint, REST API, and OAuth callback retain the same `BASE_PATH`. A 404 response for an unprefixed route is expected when a non-root base path is configured. A proxy that strips the prefix is a deployment error.
 

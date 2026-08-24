@@ -186,7 +186,6 @@ export const TEST_CLASSIFICATION_SUITES = Object.freeze([
     reason: 'Internal validation fixtures and evidence mechanics are outside the public product contract.',
     files: [
       'tests/component/validation-fixture-service-provider.test.js',
-      'tests/ui/canonical-ui.smoke.spec.mjs',
       'tests/unit/ui-test-infrastructure.test.js'
     ]
   },

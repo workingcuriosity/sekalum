@@ -1623,7 +1623,6 @@ interactions:
       - CAP-TOKEN-READ
     source_files:
       - public/admin/api-tokens.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: load_data
     handler: loadApiTokens
@@ -1653,7 +1652,6 @@ interactions:
       - CAP-TOKEN-CREATE
     source_files:
       - public/admin/api-tokens.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: create_token
     handler: submitCreateTokenForm
@@ -1679,7 +1677,6 @@ interactions:
       - CAP-TOKEN-READ
     source_files:
       - public/admin/api-tokens.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: fetchTokenDetail
@@ -1734,7 +1731,6 @@ interactions:
       - CAP-CREDENTIAL-CREATE
     source_files:
       - public/admin/wizard.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: save_data
     handler: createCredential
@@ -1788,7 +1784,6 @@ interactions:
       - CAP-CREDENTIAL-CONNECTION-TEST
     source_files:
       - public/admin/wizard.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: validate_input
     handler: testConnection
@@ -1815,7 +1810,6 @@ interactions:
     source_files:
       - public/admin/admin-shell.js
       - public/admin/credentials.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: load_data
     handler: loadCredentials
@@ -1841,7 +1835,6 @@ interactions:
       - CAP-CREDENTIAL-READ
     source_files:
       - public/admin/credentials.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: inspect_data
     handler: openDetail
@@ -1980,7 +1973,6 @@ interactions:
       - CAP-GRANT-READ
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: load_data
     handler: loadGrants
@@ -2059,7 +2051,6 @@ interactions:
       - CAP-GRANT-CREATE
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: save_data
     handler: submitCreate
@@ -2084,7 +2075,6 @@ interactions:
       - CAP-GRANT-READ
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: inspect_data
     handler: openEdit
@@ -2113,7 +2103,6 @@ interactions:
       - CAP-GRANT-EDIT
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: save_data
     handler: submitEdit
@@ -2139,7 +2128,6 @@ interactions:
       - CAP-GRANT-READ
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: fetchGrantDetail
@@ -2302,7 +2290,6 @@ interactions:
       - CAP-CONSUMER-HANDOFF
     source_files:
       - public/admin/wizard.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: navigate
     handler: renderConsumerGrantPanel
@@ -2327,7 +2314,6 @@ interactions:
       - CAP-CONSUMER-HANDOFF
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: discover
@@ -2352,7 +2338,6 @@ interactions:
       - CAP-CONSUMER-DISCOVERY
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: load_data
     handler: discover
@@ -2377,7 +2362,6 @@ interactions:
       - CAP-CONSUMER-DISCOVERY
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: discover
@@ -2402,7 +2386,6 @@ interactions:
       - CAP-CONSUMER-RESOLVE
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: resolve
@@ -2427,7 +2410,6 @@ interactions:
       - CAP-CONSUMER-RESOLVE
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: resolve
@@ -2452,7 +2434,6 @@ interactions:
       - CAP-CONSUMER-RESOLVE
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: resolve
@@ -2477,7 +2458,6 @@ interactions:
       - CAP-CONSUMER-RESOLVE
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: error_feedback
     handler: resolve
@@ -2505,7 +2485,6 @@ interactions:
       - CAP-CONSUMER-RESOLVE
     source_files:
       - public/consumer/consumer.js
-      - tests/ui/fixture-server.mjs
     test_ids: []
     outcome: recovery
     handler: discover
@@ -3521,7 +3500,7 @@ capabilities:
       - public/admin/wizard.js
       - src/oauth/oauth-callback-server.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/credential-creation-flow.test.js
   - id: CAP-PROVIDER-CREATE
@@ -3541,7 +3520,7 @@ capabilities:
       - public/admin/providers.js
       - src/oauth/oauth-callback-server.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/providers-api.test.js
   - id: CAP-CREDENTIAL-CREATE
@@ -3561,7 +3540,7 @@ capabilities:
       - public/admin/wizard.js
       - src/oauth/oauth-callback-server.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/credential-creation-flow.test.js
   - id: CAP-CREDENTIAL-READ
@@ -3581,9 +3560,8 @@ capabilities:
       - /api/v1/credentials/:credentialId
     source_files:
       - public/admin/credentials.js
-      - tests/ui/fixture-server.mjs
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references: []
   - id: CAP-CREDENTIAL-CONNECTION-TEST
     name: Credential connection test
@@ -3601,7 +3579,7 @@ capabilities:
     source_files:
       - public/admin/wizard.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/credential-creation-flow.test.js
   - id: CAP-CREDENTIAL-EDIT
@@ -3620,7 +3598,7 @@ capabilities:
     source_files:
       - public/admin/credentials.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/admin-ui.test.js
   - id: CAP-CREDENTIAL-DELETE
@@ -3639,7 +3617,7 @@ capabilities:
     source_files:
       - public/admin/credentials.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/admin-ui.test.js
   - id: CAP-OAUTH-ONBOARDING
@@ -3660,7 +3638,7 @@ capabilities:
       - public/admin/wizard.js
       - src/oauth/oauth-callback-server.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/oauth-http-login.test.js
   - id: CAP-GRANT-READ
@@ -3680,9 +3658,8 @@ capabilities:
       - /api/v1/management/consumer-grants/:grantId
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references: []
   - id: CAP-GRANT-CREATE
     name: Consumer grant creation
@@ -3700,9 +3677,8 @@ capabilities:
       - /api/v1/management/consumer-grants
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references: []
   - id: CAP-GRANT-EDIT
     name: Consumer grant editing
@@ -3719,9 +3695,8 @@ capabilities:
       - /api/v1/management/consumer-grants/:grantId
     source_files:
       - public/admin/consumer-grants.js
-      - tests/ui/fixture-server.mjs
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references: []
   - id: CAP-TOKEN-READ
     name: API token list and detail read
@@ -3740,7 +3715,6 @@ capabilities:
       - /api/v1/management/api-tokens/:tokenId
     source_files:
       - public/admin/api-tokens.js
-      - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/security-guide/index.md
     test_references: []
@@ -3836,7 +3810,7 @@ capabilities:
     source_files:
       - public/consumer/consumer.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/consumer-ui.test.js
   - id: CAP-CONSUMER-HANDOFF
@@ -3854,7 +3828,6 @@ capabilities:
     api_routes: []
     source_files:
       - public/admin/wizard.js
-      - tests/ui/fixture-server.mjs
     canonical_references:
       - docs/quick-start-guide/index.md
     test_references: []
@@ -3874,7 +3847,7 @@ capabilities:
     source_files:
       - public/consumer/consumer.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/consumer-ui.test.js
   - id: CAP-MANAGEMENT-INTERNAL
@@ -3897,7 +3870,7 @@ capabilities:
     source_files:
       - src/oauth/oauth-callback-server.js
     canonical_references:
-      - docs/api-reference/index.md
+      - docs/api/REST_API.md
     test_references:
       - tests/integration/management-api.test.js
 feedback:

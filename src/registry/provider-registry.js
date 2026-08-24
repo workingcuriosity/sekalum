@@ -98,6 +98,14 @@ export class ProviderRegistry {
     return this.providers.has(name);
   }
 
+  unregister(name) {
+    const provider = this.providers.get(name);
+    if (!provider) return null;
+    this.providers.delete(name);
+    this.logger.info(`Provider unregistered: ${name}`);
+    return provider;
+  }
+
   list() {
     return Array.from(this.providers.keys());
   }
