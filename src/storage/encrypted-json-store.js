@@ -9,11 +9,22 @@ const AUTH_TAG_LENGTH = 16;
 const ENCODING = 'base64';
 
 export class EncryptedJsonStoreError extends Error {
-  constructor(code, message, { cause = undefined, details = {} } = {}) {
+  constructor(code, message, { cause = undefined, details = {}, classification = null } = {}) {
     super(message, { cause });
     this.name = 'EncryptedJsonStoreError';
     this.code = code;
+    this.classification = classification ?? EncryptedJsonStoreError.classificationFor(code);
     this.details = details;
+  }
+
+  static classificationFor(code) {
+    if (code === 'ENCRYPTED_JSON_MISSING_KEY_VERSION') {
+      return 'ENCRYPTION_KEY_MISMATCH';
+    }
+    if (['ENCRYPTED_JSON_INVALID_KEY_LENGTH', 'ENCRYPTED_JSON_KEYS_INVALID_JSON', 'ENCRYPTED_JSON_KEYS_INVALID_STRUCTURE', 'ENCRYPTED_JSON_KEYS_INVALID_KEY'].includes(code)) {
+      return 'ENCRYPTION_KEY_CONFIGURATION_INVALID';
+    }
+    return 'ENCRYPTED_PAYLOAD_UNREADABLE';
   }
 }
 

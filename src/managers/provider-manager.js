@@ -682,7 +682,8 @@ getProviderCapabilities(providerName) {
         error: {
           name: result.error?.name ?? 'ProviderError',
           code: result.error?.code ?? 'PROVIDER_OPERATION_FAILED',
-          statusCode: result.error?.statusCode ?? null
+          statusCode: result.error?.statusCode ?? null,
+          ...(result.error?.classification ? { classification: result.error.classification } : {})
         }
       }
     );

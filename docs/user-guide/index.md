@@ -1,6 +1,9 @@
 ---
 title: User Guide
-version: 1.8.0
+document_id: DOC-USER-GUIDE-INDEX
+classification: PUBLIC
+language: en
+version: 1.8.2
 status: Active
 category: User Guide
 canonical: true
@@ -15,6 +18,12 @@ dependent_documents:
   - docs/data-model-reference/index.md
   - docs/security-guide/index.md
 change_history:
+  - version: 1.8.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.8.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.8.0
     date: 2026-08-09
     change: Migrates the active User Guide to English as the sole canonical documentation language and synchronizes the Beta-1 lifecycle, Integration Health and Consumer flow.
@@ -54,7 +63,7 @@ Providers, configure Consumer access, transfer Credentials or create
 technical API access. It describes the Admin UI at `/admin/`; exact HTTP
 contracts, permissions and error behavior are defined by the API
 Reference, while Provider prerequisites are
-listed in the Provider overview.
+listed in the [Provider overview](../providers/README.md).
 
 ## Access and permissions
 

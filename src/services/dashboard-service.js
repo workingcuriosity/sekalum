@@ -9,7 +9,8 @@ export class DashboardService {
     credentialPolicyService = null,
     credentialRotationService = null,
     credentialHistoryService = null,
-    lifecycleNotificationService = null
+    lifecycleNotificationService = null,
+    auditLogService = null
   } = {}) {
     this.credentialManager = credentialManager;
     this.providerManager = providerManager;
@@ -19,6 +20,7 @@ export class DashboardService {
     this.credentialRotationService = credentialRotationService;
     this.credentialHistoryService = credentialHistoryService;
     this.lifecycleNotificationService = lifecycleNotificationService;
+    this.auditLogService = auditLogService;
   }
 
   async getDashboard(options = {}) {
@@ -27,8 +29,9 @@ export class DashboardService {
   const expiringUntil = new Date(now.getTime() + expiringWindowDays * 24 * 60 * 60 * 1000);
 
   const credentialResult = await this.#safeSection('credentials', async () => {
-    this.#assertCredentialManager('listCredentials');
-    const credentials = await this.credentialManager.listCredentials();
+    this.#assertCredentialManager('listCredentialMetadata', 'listCredentials');
+    const list = this.credentialManager.listCredentialMetadata ?? this.credentialManager.listCredentials;
+    const credentials = await list.call(this.credentialManager);
     return credentials.map((credential) => this.#toJSON(credential));
   });
 
@@ -47,11 +50,15 @@ export class DashboardService {
     credentials: credentialResult.data ?? [],
     referenceDate: now
   }));
+  const observabilityResult = await this.#safeSection('observability', async () => this.#observabilitySummary({
+    credentials: credentialResult.data ?? [],
+    referenceDate: now
+  }));
 
   const normalizedCredentials = credentialResult.data ?? [];
   const normalizedProviders = providerResult.data ?? [];
   const normalizedGrants = grantResult.data ?? [];
-  const serviceErrors = [credentialResult.error, providerResult.error, schedulerResult.error, grantResult.error, lifecycleResult.error].filter(Boolean);
+  const serviceErrors = [credentialResult.error, providerResult.error, schedulerResult.error, grantResult.error, lifecycleResult.error, observabilityResult.error].filter(Boolean);
 
   return {
     generatedAt: now.toISOString(),
@@ -67,6 +74,9 @@ export class DashboardService {
     lifecycle: lifecycleResult.error
       ? this.#unavailableLifecycleSummary()
       : lifecycleResult.data,
+    observability: observabilityResult.error
+      ? this.#unavailableObservabilitySummary()
+      : observabilityResult.data,
     integrationHealth: credentialResult.error || providerResult.error || grantResult.error
       ? this.#unavailableIntegrationHealthSummary()
       : this.#integrationHealth({
@@ -74,7 +84,8 @@ export class DashboardService {
         providers: normalizedProviders,
         grants: normalizedGrants,
         history: lifecycleResult.data?.history ?? null,
-        rotation: lifecycleResult.data?.rotation ?? null
+        rotation: lifecycleResult.data?.rotation ?? null,
+        observability: observabilityResult.data ?? null
       }),
     warnings: this.#warnings({
       credentials: normalizedCredentials,
@@ -85,16 +96,17 @@ export class DashboardService {
   };
 }
 
- #integrationHealth({ credentials, providers, grants, history, rotation }) {
+ #integrationHealth({ credentials, providers, grants, history, rotation, observability }) {
   const providerByKey = new Map(providers.map((provider) => [provider.providerKey, provider]));
   const grantsByCredential = this.#countBy(grants, (grant) => grant.credentialId);
   const historyByCredential = new Map((history?.items ?? []).map((item) => [item.credentialId, item]));
-  const rotationCandidates = new Set((rotation?.candidates ?? []).map((item) => item.credentialId));
+    const rotationCandidates = new Set((rotation?.candidates ?? []).map((item) => item.credentialId));
   const items = credentials.map((credential) => {
     const provider = providerByKey.get(credential.providerKey);
     const capabilities = new Set(provider?.capabilities ?? []);
     const grantCount = grantsByCredential[credential.credentialId] ?? 0;
     const historyItem = historyByCredential.get(credential.credentialId);
+    const observabilityItem = (observability?.items ?? []).find((item) => item.credentialId === credential.credentialId);
     const expiresAt = this.#expiresAt(credential);
     const expired = this.#isExpired(credential);
     const expiring = Boolean(expiresAt && !expired && expiresAt.getTime() <= Date.now() + 14 * 24 * 60 * 60 * 1000);
@@ -129,7 +141,9 @@ export class DashboardService {
       oauth: { status: oauthStatus },
       token: { status: tokenStatus, expiresAt: expiresAt?.toISOString?.() ?? null },
       refresh: { status: refreshStatus },
-      resolve: { status: resolveStatus }
+      resolve: { status: resolveStatus },
+      usage: observabilityItem?.usage ?? this.#unavailableUsageSummary(credential.credentialId),
+      runtimeHealth: observabilityItem?.runtimeHealth ?? this.#unavailableRuntimeHealthSummary()
     };
   });
 
@@ -210,6 +224,102 @@ async #policyDashboard(credentials, referenceDate) {
     credentialsWithWarnings: evaluations.filter((evaluation) => (evaluation.warnings ?? []).length > 0).map((evaluation) => evaluation.credentialId),
     credentialsWithViolations: evaluations.filter((evaluation) => (evaluation.violations ?? []).length > 0).map((evaluation) => evaluation.credentialId)
   };
+}
+
+async #observabilitySummary({ credentials, referenceDate }) {
+  if (!this.auditLogService?.list) {
+    return this.#unavailableObservabilitySummary();
+  }
+
+  const entries = await this.auditLogService.list();
+  const credentialIds = new Set(credentials.map((credential) => credential.credentialId).filter(Boolean));
+  const resolveEntries = entries.filter((entry) => entry.action === 'consumer-credential.resolve' && credentialIds.has(entry.targetId));
+  const refreshEntries = entries.filter((entry) => credentialIds.has(entry.targetId) && [
+    'credential-rotation.failed',
+    'provider-rotation.failed'
+  ].includes(entry.action));
+  const items = credentials.filter((credential) => credential.credentialId).map((credential) => {
+    const credentialId = credential.credentialId;
+    const usageEntries = resolveEntries.filter((entry) => entry.targetId === credentialId);
+    const credentialRefreshFailures = refreshEntries.filter((entry) => entry.targetId === credentialId);
+    const consumers = new Map();
+
+    for (const entry of usageEntries) {
+      const consumerId = entry.consumerId ?? null;
+      const current = consumers.get(consumerId) ?? { consumerId, resolveCount: 0, successCount: 0, failureCount: 0, lastUsedAt: null };
+      current.resolveCount += 1;
+      if (entry.result === 'success') current.successCount += 1;
+      if (entry.result === 'failure') current.failureCount += 1;
+      current.lastUsedAt = this.#latestTimestamp(current.lastUsedAt, entry.timestamp);
+      consumers.set(consumerId, current);
+    }
+
+    const failureTimeline = [...usageEntries.filter((entry) => entry.result === 'failure'), ...credentialRefreshFailures]
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+      .map((entry) => ({ timestamp: entry.timestamp, action: entry.action, result: entry.result }));
+    const resolveSuccesses = usageEntries.filter((entry) => entry.result === 'success').length;
+    const resolveFailures = usageEntries.filter((entry) => entry.result === 'failure').length;
+    const refreshFailures = credentialRefreshFailures.length;
+    const failureCount = resolveFailures + refreshFailures;
+
+    return {
+      credentialId,
+      usage: {
+        resolveCount: usageEntries.length,
+        resolveSuccesses,
+        resolveFailures,
+        lastUsedAt: usageEntries.reduce((latest, entry) => this.#latestTimestamp(latest, entry.timestamp), null),
+        consumers: [...consumers.values()].sort((left, right) => String(left.consumerId).localeCompare(String(right.consumerId)))
+      },
+      runtimeHealth: {
+        status: failureCount >= 2 ? 'degraded' : failureCount === 1 ? 'warning' : 'healthy',
+        failureCount,
+        resolveFailures,
+        refreshFailures,
+        lastFailureAt: failureTimeline[0]?.timestamp ?? null,
+        repeatedFailureThreshold: 2,
+        failureTimeline
+      }
+    };
+  });
+
+  const authenticationFailures = entries.filter((entry) => ['api-token.invalid', 'api-token.expired'].includes(entry.action) && entry.result === 'failure').length;
+  const authorizationFailures = resolveEntries.filter((entry) => entry.result === 'failure' && [
+    'GRANT_MISSING', 'SECRET_NOT_GRANTED', 'CONSUMER_ACCESS_DENIED', 'CREDENTIAL_NOT_CONSUMABLE'
+  ].includes(entry.details?.reason)).length;
+  return {
+    generatedAt: referenceDate.toISOString(),
+    status: items.some((item) => item.runtimeHealth.status === 'degraded') ? 'degraded' : 'ok',
+    totalResolveCount: resolveEntries.length,
+    totalResolveSuccesses: resolveEntries.filter((entry) => entry.result === 'success').length,
+    totalResolveFailures: resolveEntries.filter((entry) => entry.result === 'failure').length,
+    authenticationFailures,
+    authorizationFailures,
+    totalRefreshFailures: refreshEntries.length,
+    items
+  };
+}
+
+#latestTimestamp(left, right) {
+  if (!left) return right ?? null;
+  if (!right) return left;
+  return left >= right ? left : right;
+}
+
+#unavailableObservabilitySummary() {
+  return {
+    status: 'unavailable', generatedAt: null, totalResolveCount: 0, totalResolveSuccesses: 0,
+    totalResolveFailures: 0, authenticationFailures: 0, authorizationFailures: 0,
+    totalRefreshFailures: 0, items: []
+  };
+}
+
+#unavailableUsageSummary(credentialId = null) {
+  return { credentialId, resolveCount: 0, resolveSuccesses: 0, resolveFailures: 0, lastUsedAt: null, consumers: [] };
+}
+
+#unavailableRuntimeHealthSummary() {
+  return { status: 'unknown', failureCount: 0, resolveFailures: 0, refreshFailures: 0, lastFailureAt: null, repeatedFailureThreshold: 2, failureTimeline: [] };
 }
 
 async #rotationDashboard(referenceDate) {
@@ -399,7 +509,7 @@ async #safeSection(section, operation) {
       data: null,
       error: {
         section,
-        message: error.message ?? 'Unexpected error'
+        message: safeErrorMessage(error)
       }
     };
   }
@@ -647,9 +757,9 @@ async #safeSection(section, operation) {
     return parsed;
   }
 
-  #assertCredentialManager(operation) {
-    if (!this.credentialManager?.[operation]) {
-      throw new Error(`DashboardService requires CredentialManager.${operation}()`);
+  #assertCredentialManager(...operations) {
+    if (!operations.some((operation) => typeof this.credentialManager?.[operation] === 'function')) {
+      throw new Error(`DashboardService requires CredentialManager.${operations[operations.length - 1]}()`);
     }
   }
 
@@ -686,3 +796,4 @@ async #safeSection(section, operation) {
     };
   }
 }
+import { safeErrorMessage } from '../utils/safe-diagnostics.js';

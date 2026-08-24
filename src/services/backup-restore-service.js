@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 const BACKUP_SCHEMA_VERSION = 1;
 
 export class BackupRestoreService {
@@ -95,7 +97,7 @@ export class BackupRestoreService {
         targetId: normalizedBackupId,
         result: 'failure',
         actorUserId: options.actorUserId,
-        details: { message: error.message }
+        details: { error: safeError(error) }
       });
       throw error;
     }

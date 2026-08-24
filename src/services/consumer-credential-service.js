@@ -17,6 +17,10 @@ export class ConsumerCredentialService {
 
   async discover({ consumerId }) {
     const grants = await this.consumerGrantService.listGrants({ consumerId });
+    const metadataList = typeof this.credentialStore.listMetadata === 'function'
+      ? await this.credentialStore.listMetadata()
+      : null;
+    const metadataById = new Map((metadataList ?? []).map((credential) => [credential.credentialId, credential]));
     const seen = new Set();
     const credentials = [];
 
@@ -25,12 +29,15 @@ export class ConsumerCredentialService {
 
       let credential;
       try {
-        credential = await this.credentialStore.load(grant.credentialId);
+        credential = metadataById.size > 0
+          ? metadataById.get(grant.credentialId)
+          : await this.credentialStore.load(grant.credentialId);
       } catch (error) {
         if (error?.code === 'NOT_FOUND') continue;
         throw error;
       }
       if (!credential || credential.lifecycleState !== LifecycleState.ACTIVE || credential.providerKey !== grant.providerKey) continue;
+      if (this.#isExpired(credential)) continue;
       if (!await this.#hasValidGrant({ consumerId, grant, credential })) continue;
       if (seen.has(credential.credentialId)) continue;
       seen.add(credential.credentialId);
@@ -45,7 +52,7 @@ export class ConsumerCredentialService {
     };
   }
 
-  async resolve({ consumerId, credentialKey, secretNames }) {
+  async resolve({ consumerId, apiTokenId = null, credentialKey, secretNames }) {
     let credential = null;
     let providerKey = null;
     try {
@@ -66,6 +73,9 @@ export class ConsumerCredentialService {
       }
 
       credential = await this.#refreshIfDue(credential);
+      if (this.#isExpired(credential)) {
+        throw this.#diagnosticError(ResolveDiagnosticCode.CREDENTIAL_NOT_CONSUMABLE);
+      }
 
       const contract = this.#secretContract(providerKey, credential.credentialMethodKey, requestedNames);
       const values = new Map(credential.secrets.map((secret) => [secret.name, secret.value]));
@@ -74,7 +84,7 @@ export class ConsumerCredentialService {
       }
 
       const secrets = Object.fromEntries(requestedNames.map((name) => [name, values.get(name)]));
-      await this.#audit({ consumerId, credentialId: credential.credentialId, providerKey, result: 'success', reason: 'resolved', secretFieldCount: contract.length });
+      await this.#audit({ consumerId, apiTokenId, credentialId: credential.credentialId, providerKey, result: 'success', reason: 'resolved', secretFieldCount: contract.length });
       return {
         credentialKey,
         providerKey,
@@ -82,7 +92,7 @@ export class ConsumerCredentialService {
         secrets
       };
     } catch (error) {
-      await this.#audit({ consumerId, credentialId: credential?.credentialId ?? this.#safeId(credentialKey), providerKey, result: 'failure', reason: error.code ?? 'INTERNAL_ERROR', secretFieldCount: 0 });
+      await this.#audit({ consumerId, apiTokenId, credentialId: credential?.credentialId ?? this.#safeId(credentialKey), providerKey, result: 'failure', reason: error.code ?? 'INTERNAL_ERROR', secretFieldCount: 0 });
       throw error;
     }
   }
@@ -113,6 +123,13 @@ export class ConsumerCredentialService {
       throw this.#diagnosticError(ResolveDiagnosticCode.INVALID_SECRET_REQUEST);
     }
     return names;
+  }
+
+  #isExpired(credential) {
+    const value = credential?.metadata?.expiresAt ?? credential?.expiresAt ?? null;
+    if (!value) return false;
+    const expiresAt = new Date(value);
+    return !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now();
   }
 
   async #discoveryProjection(credential) {
@@ -214,7 +231,16 @@ export class ConsumerCredentialService {
       throw this.#diagnosticError(ResolveDiagnosticCode.CREDENTIAL_NOT_FOUND);
     }
 
-    if (this.credentialStore.list) {
+    if (typeof this.credentialStore.loadByCredentialKey === 'function') {
+      try {
+        return await this.credentialStore.loadByCredentialKey(credentialKey);
+      } catch (error) {
+        if (error?.code !== 'NOT_FOUND') throw error;
+      }
+    } else if (typeof this.credentialStore.listMetadata === 'function') {
+      const metadata = (await this.credentialStore.listMetadata()).find((entry) => entry.credentialKey === credentialKey);
+      if (metadata) return this.credentialStore.load(metadata.credentialId);
+    } else if (this.credentialStore.list) {
       const credential = (await this.credentialStore.list()).find((entry) => entry.credentialKey === credentialKey);
       if (credential) return credential;
     }
@@ -243,10 +269,11 @@ export class ConsumerCredentialService {
     return names;
   }
 
-  async #audit({ consumerId, credentialId, providerKey, result, reason, secretFieldCount }) {
+  async #audit({ consumerId, apiTokenId = null, credentialId, providerKey, result, reason, secretFieldCount }) {
     if (!this.auditLogService?.record) return;
     await this.auditLogService.record({
-      userId: consumerId ?? 'system', action: 'consumer-credential.resolve', targetType: 'credential', targetId: credentialId ?? null, result,
+      actorType: 'consumer', userId: null, consumerId: consumerId ?? null, apiTokenId: apiTokenId ?? null,
+      action: 'consumer-credential.resolve', targetType: 'credential', targetId: credentialId ?? null, result,
       details: { consumerId: consumerId ?? null, providerKey: providerKey ?? null, reason, secretFieldCount }
     });
   }

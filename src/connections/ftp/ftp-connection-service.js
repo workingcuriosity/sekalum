@@ -1,3 +1,5 @@
+import { safeErrorMessage } from '../../utils/safe-diagnostics.js';
+
 export class FtpConnectionService {
   constructor({ client }) {
     if (!client) {
@@ -39,7 +41,7 @@ export class FtpConnectionService {
         status: 'down',
         protocol: 'ftp',
         checkedAt: new Date().toISOString(),
-        message: error.message
+        message: safeErrorMessage(error, 'FTP health check failed')
       };
     }
   }

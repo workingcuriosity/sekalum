@@ -31,11 +31,27 @@ test('CredentialStore loads legacy TokenRecord as Credential', async () => {
   const credential = await store.load('threads:main');
 
   assert.equal(credential instanceof Credential, true);
-  assert.equal(credential.credentialId, 'threads:main');
+  assert.equal(credential.credentialId, tokenRecord.id);
+  assert.notEqual(credential.credentialId, tokenRecord.providerId);
   assert.equal(credential.credentialKey, tokenRecord.credentialKey);
   assert.equal(credential.providerKey, 'threads');
   assert.equal(credential.externalReference, 'main');
   assert.equal(credential.secrets.length, 2);
+});
+
+test('LegacyTokenCredentialStoreAdapter resolves OAuth credentials by exact external reference without changing identity', async () => {
+  const tokenRecord = createTokenRecord({ id: 'canonical-token-id' });
+  const store = new CredentialStore({
+    tokenStore: {
+      async list() { return [tokenRecord]; }
+    }
+  });
+
+  const credential = await store.loadByExternalReference('threads', 'main');
+
+  assert.equal(credential.credentialId, 'canonical-token-id');
+  assert.equal(credential.externalReference, 'main');
+  assert.equal(credential.metadata.toJSON().custom.legacyProviderId, 'threads:main');
 });
 
 test('CredentialStore saves Credential through legacy TokenStore', async () => {

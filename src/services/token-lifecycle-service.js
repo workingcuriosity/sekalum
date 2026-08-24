@@ -50,7 +50,7 @@ export class TokenLifecycleService {
       accountName: oauthResult.accountName ?? existingToken.accountName,
 
       accessToken: oauthResult.accessToken,
-      refreshToken: oauthResult.refreshToken,
+      refreshToken: oauthResult.refreshToken ?? existingToken.refreshToken,
 
       expiresAt: oauthResult.expiresAt,
       scopes: oauthResult.scopes,

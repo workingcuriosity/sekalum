@@ -39,7 +39,7 @@ function createServer() {
   const auditLogService = new AuditLogService();
   const accessManagementService = new AccessManagementService({ auditLogService });
 
-  return new OAuthCallbackServer({
+  const server = new OAuthCallbackServer({
     providerManager: { listProviders() { return []; } },
     importTokenCommand: {},
     credentialManager: { async listCredentials() { return []; } },
@@ -49,6 +49,8 @@ function createServer() {
     config: { get() { return 0; } },
     logger: { success() {}, error() {}, info() {} }
   });
+  server.__testAccessManagementService = accessManagementService;
+  return server;
 }
 
 function createBootstrapServer() {
@@ -207,6 +209,79 @@ test('HTTP management users endpoint enforces role permissions after bootstrap',
 
     const unauthenticatedResponse = await fetch(`${baseUrl}/api/v1/management/users`);
     assert.equal(unauthenticatedResponse.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test('credential-sensitive route matrix denies unauthenticated and under-permissioned callers', async () => {
+  const httpServer = createServer();
+  await httpServer.__testAccessManagementService.replaceUsers([
+    { userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' },
+    { userId: 'viewer-1', displayName: 'Viewer', roleKey: 'viewer' }
+  ], { skipAudit: true });
+  const { server, baseUrl } = await listen(httpServer.app);
+
+  const matrix = [
+    ['POST', '/api/v1/management/consumer-grants'],
+    ['POST', '/api/v1/management/consumer-grants/diagnose'],
+    ['GET', '/api/v1/management/consumer-grants'],
+    ['PUT', '/api/v1/management/consumer-grants/grant-1'],
+    ['POST', '/api/v1/management/scheduler/start'],
+    ['POST', '/api/v1/management/scheduler/stop'],
+    ['POST', '/api/v1/management/scheduler/run-once'],
+    ['POST', '/api/v1/management/users'],
+    ['PUT', '/api/v1/management/users/user-1'],
+    ['DELETE', '/api/v1/management/users/user-1'],
+    ['GET', '/api/v1/management/audit-log'],
+    ['GET', '/api/v1/management/audit-log/entry-1'],
+    ['POST', '/api/v1/management/api-tokens'],
+    ['DELETE', '/api/v1/management/api-tokens/token-1'],
+    ['GET', '/api/v1/management/exports'],
+    ['GET', '/api/v1/management/exports/credentials'],
+    ['GET', '/api/v1/management/backups'],
+    ['POST', '/api/v1/management/backups'],
+    ['GET', '/api/v1/management/backups/backup-1'],
+    ['POST', '/api/v1/management/backups/backup-1/restore'],
+    ['POST', '/api/v1/credentials'],
+    ['POST', '/api/v1/credentials/bulk'],
+    ['POST', '/api/v1/credentials/export'],
+    ['POST', '/api/v1/credentials/import/preview'],
+    ['POST', '/api/v1/credentials/import'],
+    ['POST', '/api/v1/credentials/test-connection'],
+    ['PUT', '/api/v1/credentials/credential-1'],
+    ['DELETE', '/api/v1/credentials/credential-1'],
+    ['POST', '/api/v1/credentials/credential-1/validate'],
+    ['POST', '/api/v1/credentials/credential-1/refresh'],
+    ['POST', '/api/v1/credentials/credential-1/revoke'],
+    ['POST', '/api/v1/credentials/credential-1/health-check'],
+    ['POST', '/api/v1/providers'],
+    ['POST', '/api/v1/providers/example/disable'],
+    ['POST', '/api/v1/providers/example/enable'],
+    ['POST', '/api/v1/providers/example/oauth/start']
+  ];
+
+  const request = (method, pathname, headers = {}) => fetch(`${baseUrl}${pathname}`, {
+    method,
+    headers: {
+      ...(method === 'POST' || method === 'PUT' ? { 'content-type': 'application/json' } : {}),
+      ...headers
+    },
+    ...(method === 'POST' || method === 'PUT' ? { body: '{}' } : {})
+  });
+
+  try {
+    for (const [method, pathname] of matrix) {
+      const unauthenticated = await request(method, pathname);
+      assert.equal(unauthenticated.status, 401, `${method} ${pathname} unauthenticated`);
+      const unauthenticatedBody = await unauthenticated.json();
+      assert.equal(unauthenticatedBody.error.code, 'API_TOKEN_AUTH_FAILED', `${method} ${pathname} unauthenticated code`);
+
+      const underPermissioned = await request(method, pathname, { 'x-credential-hub-user': 'viewer-1' });
+      assert.equal(underPermissioned.status, 403, `${method} ${pathname} viewer`);
+      const underPermissionedBody = await underPermissioned.json();
+      assert.equal(underPermissionedBody.error.code, 'FORBIDDEN', `${method} ${pathname} viewer code`);
+    }
   } finally {
     server.close();
   }

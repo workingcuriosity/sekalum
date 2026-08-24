@@ -1,6 +1,8 @@
 import { OAuthResult } from '../../models/oauth-result.js';
 import { HealthResult } from '../../models/health-result.js';
 import { oauthConfigurationValue } from '../oauth-provider-configuration.js';
+import { safeErrorMessage } from '../../utils/safe-diagnostics.js';
+import { normalizeOAuthExpiry } from '../oauth-expiry.js';
 
 const DEFAULT_SCOPES = Object.freeze([
   'openid',
@@ -78,7 +80,7 @@ export class GoogleOAuthService {
       return new HealthResult({
         healthy: false,
         status: 'failed',
-        message: error.message
+        message: safeErrorMessage(error, 'Google OAuth health check failed')
       });
     }
   }
@@ -117,10 +119,6 @@ export class GoogleOAuthService {
   }
 
   #calculateExpiresAt(expiresIn) {
-    if (!expiresIn) {
-      return null;
-    }
-
-    return new Date(Date.now() + Number(expiresIn) * 1000);
+    return normalizeOAuthExpiry(expiresIn);
   }
 }

@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { TokenRecord } from '../models/token-record.js';
+import { safeErrorMessage } from '../utils/safe-diagnostics.js';
 
 const TOKEN_FILE_NAME_PATTERN = /^[A-Za-z0-9_-]+\.json$/;
 
@@ -21,7 +22,17 @@ export class TokenStore {
     const record = new TokenRecord(data);
     const { records } = await this.#readRecords();
     this.#assertUniqueCredentialKeys([...records.filter((entry) => entry.providerId !== record.providerId), record]);
-    if (!Object.hasOwn(data, 'credentialKey')) await this.save(record);
+    if (!Object.hasOwn(data, 'credentialKey') || !Object.hasOwn(data, 'id')) await this.save(record);
+    return record;
+  }
+
+  async loadById(id) {
+    const record = (await this.list()).find((entry) => entry.id === id);
+    if (!record) {
+      const error = new Error(`Token record '${id}' not found`);
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
     return record;
   }
 
@@ -104,12 +115,12 @@ export class TokenStore {
           const data = await this.jsonStore.load(filePath);
           const record = new TokenRecord(data);
           records.push(record);
-          if (!Object.hasOwn(data, 'credentialKey')) {
+          if (!Object.hasOwn(data, 'credentialKey') || !Object.hasOwn(data, 'id')) {
             migrate.push({ record, filePath, data });
             legacyProviderIds.add(record.providerId);
           }
         } catch (error) {
-          console.warn(`[TokenStore] Ignoring invalid token file '${filePath}': ${error.message}`);
+          console.warn(`[TokenStore] Ignoring invalid token file '${filePath}': ${safeErrorMessage(error, 'invalid token file')}`);
         }
       }
     }

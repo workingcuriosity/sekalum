@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class AccessManagementController {
   constructor({ accessManagementService }) {
     if (!accessManagementService?.listUsers) {
@@ -81,14 +83,15 @@ export class AccessManagementController {
   }
 
   #sendError(res, error) {
-    const statusCode = error.statusCode ?? 500;
-    const code = error.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
+    const safe = safeError(error);
+    const statusCode = safe.statusCode ?? 500;
+    const code = safe.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
 
     res.status(statusCode).json({
       success: false,
       error: {
         code,
-        message: error.message ?? 'Unexpected error'
+        message: safe.message
       }
     });
   }

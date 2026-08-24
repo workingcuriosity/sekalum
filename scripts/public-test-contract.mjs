@@ -175,6 +175,7 @@ export const TEST_CLASSIFICATION_SUITES = Object.freeze([
     files: [
       'tests/unit/documentation-quality-audit.test.js',
       'tests/unit/publication-security.test.js',
+      'tests/unit/safe-diagnostics.test.js',
       'tests/unit/ui-executable-report.test.js',
       'tests/unit/ui-model-tooling.test.js'
     ]

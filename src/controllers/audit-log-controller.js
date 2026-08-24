@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class AuditLogController {
   constructor({ auditLogService }) {
     if (!auditLogService?.list || !auditLogService?.get) {
@@ -34,14 +36,15 @@ export class AuditLogController {
   }
 
   #sendError(res, error) {
-    const statusCode = error.statusCode ?? 500;
-    const code = error.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
+    const safe = safeError(error);
+    const statusCode = safe.statusCode ?? 500;
+    const code = safe.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
 
     res.status(statusCode).json({
       success: false,
       error: {
         code,
-        message: error.message ?? 'Unexpected error'
+        message: safe.message
       }
     });
   }

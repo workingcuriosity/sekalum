@@ -195,12 +195,15 @@ test('ApiTokenService records audit events for create, use, and revoke', async (
     'api-token.revoked'
   ]);
   assert.equal(auditEntries[0].userId, 'admin-user');
+  assert.equal(auditEntries[0].actorType, 'user');
   assert.equal(auditEntries[0].targetType, 'api-token');
   assert.equal(auditEntries[0].targetId, created.apiToken.id);
   assert.equal(auditEntries[0].details.tokenPrefix, created.apiToken.tokenPrefix);
   assert.equal(Object.hasOwn(auditEntries[0].details, 'token'), false);
   assert.equal(Object.hasOwn(auditEntries[0].details, 'tokenHash'), false);
-  assert.equal(auditEntries[1].userId, 'integration-user');
+  assert.equal(auditEntries[1].actorType, 'api-token');
+  assert.equal(auditEntries[1].userId, null);
+  assert.equal(auditEntries[1].apiTokenId, created.apiToken.id);
   assert.equal(auditEntries[2].result, 'success');
 });
 
@@ -245,5 +248,29 @@ test('ApiTokenService records audit failures for invalid, revoked, and expired t
   assert.equal(failureEntries[0].details.reason, 'invalid-format');
   assert.equal(failureEntries[1].details.reason, 'revoked');
   assert.equal(failureEntries[2].details.reason, 'expired');
+  assert.equal(failureEntries[0].actorType, 'service');
+  assert.equal(failureEntries[1].actorType, 'api-token');
+  assert.equal(failureEntries[2].actorType, 'api-token');
   assert.equal(failureEntries.every((entry) => entry.targetType === 'api-token'), true);
+});
+
+test('ApiTokenService makes repeated revocation idempotent and records the administrator', async () => {
+  const auditEntries = [];
+  const store = new InMemoryApiTokenStore();
+  const service = new ApiTokenService({
+    store,
+    auditLogService: { record: async (entry) => auditEntries.push(entry) },
+    clock: () => new Date('2026-07-09T08:00:00.000Z'),
+    randomBytes: () => Buffer.alloc(ApiTokenServiceConstants.TOKEN_BYTES, 9)
+  });
+  const created = await service.createToken({ name: 'Idempotent token', userId: 'owner', createdBy: 'creator' });
+
+  const first = await service.revokeToken(created.apiToken.id, { revokedBy: 'admin-user' });
+  const second = await service.revokeToken(created.apiToken.id, { revokedBy: 'admin-user' });
+
+  assert.equal(first.status, 'revoked');
+  assert.deepEqual(second, first);
+  assert.equal(auditEntries.find((entry) => entry.action === 'api-token.revoked').userId, 'admin-user');
+  assert.equal(auditEntries.some((entry) => entry.action === 'api-token.revoke.noop'), true);
+  assert.equal(auditEntries.every((entry) => !JSON.stringify(entry).includes(created.token)), true);
 });

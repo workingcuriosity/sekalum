@@ -1,5 +1,7 @@
 import { access, readdir, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +17,36 @@ const CANONICAL_FIELDS = [
   'target_audience',
   'change_history'
 ];
+
+const CURRENT_REQUIRED_FIELDS = [
+  'title',
+  'document_id',
+  'classification',
+  'language',
+  'version',
+  'status',
+  'category',
+  'canonical',
+  'maintainer',
+  'contact',
+  'license',
+  'target_audience',
+  'change_history'
+];
+
+// Explicit, record-specific classification. This is not a general exemption:
+// the source bytes and the active-chain source digest are checked below.
+const IMMUTABLE_DIGEST_BOUND_GOVERNANCE_RECORDS = new Map([
+  ['docs/adr/ADR-025-Custom-Provider-Lifecycle-State.md', Object.freeze({
+    classification: 'IMMUTABLE_DIGEST_BOUND_GOVERNANCE_RECORD',
+    activeChain: 'GOV3-SLICE-2',
+    sourceContentDigest: '20fe16edec4059596fa61dd01736e7d48af4d6f9546bde7bb01a337184779e14'
+  })]
+]);
+
+const GERMAN_LANGUAGE_MARKERS = /\b(?:der|die|das|und|nicht|für|ist|sind|eine|einer|eines|von|auf|als|auch|wird|werden|durch|bei|zur|zum|über|ohne|kann|muss|soll|Dokumentation|Verzeichnis|Prüfung|Ergebnis|Freigabe|Entscheidung|Anforderung|historisch|öffentlich|privat|Bitte|Ziel|Stand|Änderung|Übergabe|Bereinigung|Wichtig|Beschreibung|Übersicht|Anleitung|Betrieb|Benutzer|Verbindung|Schlüssel|Speicher|Verschlüsselung|Fuehrende|Aktuelle|Eintraege|Zweck|Abgrenzung|erstellt|verifiziert|geprüft|enthalten|erforderlich)\b/iu;
+const HISTORICAL_STATUS_MARKERS = /\b(?:historical|archived|superseded|legacy)\b/i;
+const execFileAsync = promisify(execFile);
 
 const REQUIRED_PROJECT_DOCUMENTS = [
   'docs/project/DOCUMENTATION_INVENTORY.md',
@@ -85,6 +117,42 @@ function frontMatterValue(lines, key) {
   return lines?.find((line) => line.match(new RegExp(`^${key}:\\s*`, 'i')))?.replace(new RegExp(`^${key}:\\s*`, 'i'), '').trim();
 }
 
+function stripFrontMatter(content) {
+  if (!content.startsWith('---\n')) {
+    return content;
+  }
+
+  const end = content.indexOf('\n---', 4);
+  return end === -1 ? content : content.slice(end + 4);
+}
+
+function isHistoryPath(displayPath) {
+  return displayPath === 'docs/history' || displayPath.startsWith('docs/history/');
+}
+
+function isGeneratedOrNonDocumentationPath(displayPath) {
+  return displayPath.startsWith('docs/ui/generated/')
+    || displayPath.startsWith('docs/assets/');
+}
+
+function isCurrentGovernedPath(displayPath) {
+  return displayPath.startsWith('docs/')
+    && !isHistoryPath(displayPath)
+    && !isGeneratedOrNonDocumentationPath(displayPath);
+}
+
+function immutableGovernanceRecord(displayPath) {
+  return IMMUTABLE_DIGEST_BOUND_GOVERNANCE_RECORDS.get(displayPath);
+}
+
+function parseVersion(value) {
+  return /^\d+\.\d+\.\d+$/.test(value ?? '');
+}
+
+function changedBody(content) {
+  return stripFrontMatter(content).replace(/```[\s\S]*?```/g, '');
+}
+
 function markdownLinks(content) {
   const links = [];
   const expression = /\[[^\]]*\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g;
@@ -122,10 +190,32 @@ function isConfidentialDocument(metadata) {
 }
 
 function isHistoricalAuditEvidence(files) {
-  return files.every((file) => file.startsWith('docs/architecture/governance/audits/'));
+  return files.every((file) => isHistoryPath(file));
 }
 
-export async function auditDocumentation(root = process.cwd(), { publicProfile = false } = {}) {
+async function changedFilesSince(root, baseRef) {
+  if (!baseRef) {
+    return [];
+  }
+
+  try {
+    const { stdout } = await execFileAsync('git', ['diff', '--name-only', `${baseRef}...HEAD`], { cwd: root });
+    return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function gitFileAt(root, ref, displayPath) {
+  try {
+    const { stdout } = await execFileAsync('git', ['show', `${ref}:${displayPath}`], { cwd: root, maxBuffer: 4 * 1024 * 1024 });
+    return stdout;
+  } catch {
+    return null;
+  }
+}
+
+export async function auditDocumentation(root = process.cwd(), { publicProfile = false, baseRef = process.env.DOC_AUDIT_BASE, privateRoot = process.env.DOC_AUDIT_PRIVATE_ROOT } = {}) {
   const docsDirectory = path.join(root, 'docs');
   const markdownFiles = await listMarkdownFiles(docsDirectory);
   const allFiles = [...markdownFiles];
@@ -144,14 +234,36 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
     sensitiveMatches: [],
     duplicateNames: [],
     whitespaceIssues: [],
-    missingProjectDocuments: []
+    missingProjectDocuments: [],
+    governanceFindings: [],
+    roleFindings: [],
+    languageFindings: [],
+    headerChangeFindings: [],
+    projectionFindings: [],
+    documentIdDuplicates: [],
+    currentDocumentCount: 0,
+    historicalDocumentCount: 0,
+    nonDocumentationCount: 0,
+    publicDocumentCount: 0,
+    currentGermanDocumentCount: 0,
+    immutableExceptions: []
   };
   const contentGroups = new Map();
+  const documentIds = new Map();
+  const changedFiles = new Set(await changedFilesSince(root, baseRef));
 
   for (const filePath of allFiles) {
     const content = await readFile(filePath, 'utf8');
     const displayPath = relativePath(root, filePath);
     const metadata = frontMatter(content);
+
+    if (isHistoryPath(displayPath)) {
+      result.historicalDocumentCount += 1;
+    } else if (isGeneratedOrNonDocumentationPath(displayPath)) {
+      result.nonDocumentationCount += 1;
+    } else if (isCurrentGovernedPath(displayPath)) {
+      result.currentDocumentCount += 1;
+    }
 
     if (metadata) {
       result.frontMatterCount += 1;
@@ -162,8 +274,88 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
         const missing = CANONICAL_FIELDS.filter((field) => !keys.has(field));
 
         if (missing.length > 0) {
+        if (isCurrentGovernedPath(displayPath) && !immutableGovernanceRecord(displayPath)) {
           result.canonicalMetadataIssues.push({ file: displayPath, missing });
         }
+        }
+      }
+    }
+
+    const immutableRecord = immutableGovernanceRecord(displayPath);
+    if (immutableRecord) {
+      const actualSourceDigest = createHash('sha256').update(content, 'utf8').digest('hex');
+      if (actualSourceDigest !== immutableRecord.sourceContentDigest) {
+        result.governanceFindings.push({
+          code: 'DOC-IMMUTABLE-001',
+          file: displayPath,
+          expected: immutableRecord.sourceContentDigest,
+          actual: actualSourceDigest
+        });
+      } else {
+        result.immutableExceptions.push({ file: displayPath, ...immutableRecord });
+      }
+      if (publicProfile) {
+        result.projectionFindings.push({ code: 'DOC-PUB-002', file: displayPath, classification: immutableRecord.classification });
+      }
+    } else if (isCurrentGovernedPath(displayPath)) {
+      const keys = new Set(metadata ? frontMatterKeys(metadata) : []);
+      const missing = CURRENT_REQUIRED_FIELDS.filter((field) => !keys.has(field));
+      if (!metadata || missing.length > 0) {
+        result.governanceFindings.push({
+          code: 'DOC-HDR-001',
+          file: displayPath,
+          missing: metadata ? missing : CURRENT_REQUIRED_FIELDS
+        });
+      }
+
+      const classification = frontMatterValue(metadata, 'classification') ?? '';
+      const language = frontMatterValue(metadata, 'language');
+      const version = frontMatterValue(metadata, 'version');
+      const documentId = frontMatterValue(metadata, 'document_id');
+
+      if (HISTORICAL_STATUS_MARKERS.test(`${classification} ${frontMatterValue(metadata, 'status') ?? ''}`)) {
+        result.roleFindings.push({ code: 'DOC-HIST-001', file: displayPath, classification });
+      }
+      if (metadata && (!parseVersion(version) || language?.toLowerCase() !== 'en')) {
+        result.governanceFindings.push({ code: 'DOC-HDR-002', file: displayPath, version, language });
+      }
+      if (documentId) {
+        const existing = documentIds.get(documentId) ?? [];
+        existing.push(displayPath);
+        documentIds.set(documentId, existing);
+      }
+      if (language?.toLowerCase() !== 'en' || GERMAN_LANGUAGE_MARKERS.test(changedBody(content))) {
+        result.languageFindings.push({ code: 'DOC-LANG-001', file: displayPath });
+        result.currentGermanDocumentCount += 1;
+      }
+      if (publicProfile) {
+        result.publicDocumentCount += 1;
+        if (classification.toLowerCase() !== 'public') {
+          result.projectionFindings.push({ code: 'DOC-PUB-002', file: displayPath, classification });
+        }
+        if (privateRoot && !(await exists(path.join(privateRoot, displayPath)))) {
+          result.projectionFindings.push({ code: 'DOC-PUB-001', file: displayPath, reason: 'No private source path.' });
+        }
+      }
+
+      if (changedFiles.has(displayPath) && baseRef) {
+        const previous = await gitFileAt(root, baseRef, displayPath);
+        if (previous && changedBody(previous) !== changedBody(content)) {
+          const previousMetadata = frontMatter(previous);
+          if (frontMatterValue(previousMetadata, 'version') === version) {
+            result.headerChangeFindings.push({ code: 'DOC-CHANGE-001', file: displayPath, reason: 'Content changed without a version bump.' });
+          }
+        }
+      }
+    }
+
+    if (isHistoryPath(displayPath)) {
+      const classification = frontMatterValue(metadata, 'classification') ?? '';
+      if (classification.toLowerCase() === 'public') {
+        result.projectionFindings.push({ code: 'DOC-HIST-002', file: displayPath, reason: 'Historical documentation cannot be public.' });
+      }
+      if (publicProfile) {
+        result.projectionFindings.push({ code: 'DOC-HIST-002', file: displayPath, reason: 'Public projection contains docs/history.' });
       }
     }
 
@@ -180,6 +372,10 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
 
     if (whitespaceLines.length > 0) {
       result.whitespaceIssues.push({ file: displayPath, lines: whitespaceLines });
+    }
+
+    if (isHistoryPath(displayPath)) {
+      continue;
     }
 
     for (const target of markdownLinks(content)) {
@@ -208,6 +404,12 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
     }
   }
 
+  for (const [documentId, files] of documentIds) {
+    if (files.length > 1) {
+      result.documentIdDuplicates.push({ code: 'DOC-ID-001', documentId, files });
+    }
+  }
+
   for (const [, files] of contentGroups) {
     if (files.length > 1 && !isHistoricalAuditEvidence(files)) {
       result.duplicateNames.push({ name: path.basename(files[0]), files });
@@ -230,7 +432,13 @@ export function strictBlockingFindingCount(result) {
     + result.sensitiveMatches.length
     + result.duplicateNames.length
     + result.whitespaceIssues.length
-    + result.missingProjectDocuments.length;
+    + result.missingProjectDocuments.length
+    + (result.governanceFindings?.length ?? 0)
+    + (result.roleFindings?.length ?? 0)
+    + (result.languageFindings?.length ?? 0)
+    + (result.headerChangeFindings?.length ?? 0)
+    + (result.projectionFindings?.length ?? 0)
+    + (result.documentIdDuplicates?.length ?? 0);
 }
 
 function printReport(result) {
@@ -243,6 +451,15 @@ function printReport(result) {
   console.log(`Duplicate document groups: ${result.duplicateNames.length}`);
   console.log(`Whitespace findings: ${result.whitespaceIssues.length}`);
   console.log(`Missing project documents: ${result.missingProjectDocuments.length}`);
+  console.log(`Current governed documents: ${result.currentDocumentCount ?? 0}`);
+  console.log(`Historical documents: ${result.historicalDocumentCount ?? 0}`);
+  console.log(`Documentation governance findings: ${result.governanceFindings?.length ?? 0}`);
+  console.log(`Role/history findings: ${result.roleFindings?.length ?? 0}`);
+  console.log(`Language findings: ${result.languageFindings?.length ?? 0}`);
+  console.log(`Changed-document findings: ${result.headerChangeFindings?.length ?? 0}`);
+  console.log(`Projection findings: ${result.projectionFindings?.length ?? 0}`);
+  console.log(`Duplicate document IDs: ${result.documentIdDuplicates?.length ?? 0}`);
+  console.log(`Immutable digest-bound records: ${result.immutableExceptions?.length ?? 0}`);
 
   for (const issue of result.canonicalMetadataIssues) {
     console.log(`canonical metadata: ${issue.file} missing ${issue.missing.join(', ')}`);
@@ -254,6 +471,19 @@ function printReport(result) {
 
   for (const issue of result.sensitiveMatches) {
     console.log(`sensitive pattern: ${issue.file} (${issue.type}: ${issue.value})`);
+  }
+
+  for (const collection of [
+    result.governanceFindings,
+    result.roleFindings,
+    result.languageFindings,
+    result.headerChangeFindings,
+    result.projectionFindings,
+    result.documentIdDuplicates
+  ]) {
+    for (const issue of collection ?? []) {
+      console.log(`${issue.code ?? 'documentation finding'}: ${issue.file ?? issue.documentId}`);
+    }
   }
 }
 

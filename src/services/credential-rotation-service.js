@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class CredentialRotationService {
   constructor({
     credentialManager,
@@ -18,7 +20,8 @@ export class CredentialRotationService {
   async planRotation({ referenceDate = this.clock(), includeWarnings = false } = {}) {
     this.#assertDependencies('planRotation');
 
-    const credentials = await this.credentialManager.listCredentials();
+    const list = this.credentialManager.listCredentialMetadata ?? this.credentialManager.listCredentials;
+    const credentials = await list.call(this.credentialManager);
     const plannedAt = this.#timestamp(referenceDate);
     const candidates = [];
     const skipped = [];
@@ -89,13 +92,14 @@ export class CredentialRotationService {
           credential: this.#toJSON(frameworkResult.credential)
         });
       } catch (error) {
+        const safe = safeError(error, { fallbackMessage: 'Credential rotation failed' });
         await this.#recordAudit('credential-rotation.failed', item, context, 'failure', error);
         await this.#recordRotationNotification({
           ...item,
           success: false,
           error: {
-            code: error.code ?? 'CREDENTIAL_ROTATION_FAILED',
-            message: error.message ?? 'Credential rotation failed'
+            code: safe.code ?? 'CREDENTIAL_ROTATION_FAILED',
+            message: safe.message
           }
         }, context);
         results.push({
@@ -104,8 +108,8 @@ export class CredentialRotationService {
           success: false,
           findings: item.findings,
           error: {
-            code: error.code ?? 'CREDENTIAL_ROTATION_FAILED',
-            message: error.message ?? 'Credential rotation failed'
+            code: safe.code ?? 'CREDENTIAL_ROTATION_FAILED',
+            message: safe.message
           }
         });
       }
@@ -184,14 +188,14 @@ export class CredentialRotationService {
       details: {
         providerKey: item.providerKey,
         findings: item.findings,
-        error: error ? { message: error.message, code: error.code ?? null } : null,
+        error: error ? safeError(error) : null,
         ...extraDetails
       }
     });
   }
 
   #assertDependencies(operation) {
-    if (!this.credentialManager?.listCredentials || !this.credentialManager?.refresh) {
+    if (!(this.credentialManager?.listCredentialMetadata || this.credentialManager?.listCredentials) || !this.credentialManager?.refresh) {
       throw new Error(`CredentialRotationService.${operation}() requires credentialManager with listCredentials and refresh`);
     }
 

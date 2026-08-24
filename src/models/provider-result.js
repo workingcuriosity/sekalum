@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class ProviderResult {
   constructor({ success, data = null, error = null }) {
     this.success = Boolean(success);
@@ -24,27 +26,15 @@ export class ProviderResult {
   }
 
   static normalizeError(error) {
-    if (error instanceof Error) {
-      return {
-        name: error.name,
-        message: error.message,
-        ...(error.code ? { code: error.code } : {}),
-        ...(error.statusCode ? { statusCode: error.statusCode } : {}),
-        ...(error.status ? { status: error.status } : {})
-      };
-    }
-
-    if (typeof error === 'object' && error !== null) {
-      return {
-        name: error.name ?? 'ProviderError',
-        message: error.message ?? JSON.stringify(error),
-        ...error
-      };
-    }
-
+    const normalized = safeError(error, { fallbackMessage: 'Provider operation failed' });
+    const name = error instanceof Error ? normalized.name : 'ProviderError';
     return {
-      name: 'ProviderError',
-      message: String(error)
+      name: name || 'ProviderError',
+      message: normalized.message,
+      ...(normalized.code ? { code: normalized.code } : {}),
+      ...(normalized.statusCode ? { statusCode: normalized.statusCode } : {}),
+      ...(normalized.status ? { status: normalized.status } : {}),
+      ...(normalized.classification ? { classification: normalized.classification } : {})
     };
   }
 }

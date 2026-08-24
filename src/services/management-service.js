@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class ManagementService {
   constructor({ credentialManager, providerManager, customProviderService = null, schedulerService = null, accessManagementService = null, auditLogService = null } = {}) {
     this.credentialManager = credentialManager;
@@ -27,9 +29,10 @@ export class ManagementService {
   }
 
   async getCredentials(options = {}) {
-    this.#assertCredentialManager('listCredentials');
+    this.#assertCredentialManager('listCredentialMetadata', 'listCredentials');
 
-    const credentials = await this.credentialManager.listCredentials(options);
+    const list = this.credentialManager.listCredentialMetadata ?? this.credentialManager.listCredentials;
+    const credentials = await list.call(this.credentialManager, options);
     const items = credentials.map((credential) => this.#credentialItem(credential));
 
     return {
@@ -150,7 +153,7 @@ export class ManagementService {
         targetId: 'refresh-expired-tokens',
         result: 'failure',
         actorUserId: options.actorUserId,
-        details: { message: error.message }
+        details: { error: safeError(error) }
       });
       throw error;
     }
@@ -224,7 +227,7 @@ export class ManagementService {
         targetId: 'refresh-expired-tokens',
         result: 'failure',
         actorUserId,
-        details: { message: error.message }
+        details: { error: safeError(error) }
       });
       throw error;
     }
@@ -317,9 +320,9 @@ export class ManagementService {
     }, {});
   }
 
-  #assertCredentialManager(operation) {
-    if (typeof this.credentialManager?.[operation] !== 'function') {
-      throw new Error(`ManagementService requires CredentialManager.${operation}()`);
+  #assertCredentialManager(...operations) {
+    if (!operations.some((operation) => typeof this.credentialManager?.[operation] === 'function')) {
+      throw new Error(`ManagementService requires CredentialManager.${operations[operations.length - 1]}()`);
     }
   }
 

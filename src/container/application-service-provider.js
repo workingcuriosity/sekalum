@@ -136,6 +136,7 @@ export class ApplicationServiceProvider extends ServiceProvider {
         storageAdapter: new CompositeCredentialStoreAdapter({
           primary: new CredentialCollectionStoreAdapter({
             jsonStore: c.resolve(TOKENS.SECURE_JSON_STORE),
+            metadataJsonStore: c.resolve(TOKENS.SECURE_JSON_STORE),
             basePath: storagePath
           })
         })
@@ -256,7 +257,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
         config: c.resolve(TOKENS.CONFIG),
         logger: c.resolve(TOKENS.LOGGER),
         secretVersioningService: c.resolve(TOKENS.CREDENTIAL_SECRET_VERSION_SERVICE),
-        credentialHistoryService: c.resolve(TOKENS.CREDENTIAL_HISTORY_SERVICE)
+        credentialHistoryService: c.resolve(TOKENS.CREDENTIAL_HISTORY_SERVICE),
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
       });
     });
 
@@ -291,7 +293,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
         credentialPolicyService: c.resolve(TOKENS.CREDENTIAL_POLICY_SERVICE),
         credentialRotationService: c.resolve(TOKENS.CREDENTIAL_ROTATION_SERVICE),
         credentialHistoryService: c.resolve(TOKENS.CREDENTIAL_HISTORY_SERVICE),
-        lifecycleNotificationService: c.resolve(TOKENS.LIFECYCLE_NOTIFICATION_SERVICE)
+        lifecycleNotificationService: c.resolve(TOKENS.LIFECYCLE_NOTIFICATION_SERVICE),
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
       });
     });
 

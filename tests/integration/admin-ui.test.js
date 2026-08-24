@@ -445,6 +445,7 @@ test('Credential management UI uses the existing routes with secret-safe edit an
   assert.match(script, /method: 'DELETE'/);
   assert.match(script, /from '\.\/auth\.js'/);
   assert.match(script, /adminApi\.request/);
+  assert.match(script, /credentials\.revokeSuccess/);
   assert.match(script, /secretInventory/);
   assert.match(script, /credentialMethodKey/);
   assert.match(script, /method\?\.credentialFields/);
@@ -464,6 +465,7 @@ test('Credential management UI uses the existing routes with secret-safe edit an
   assert.match(html, /credential-edit-impact/);
   assert.match(html, /credentials\.impactHelp/);
   assert.match(html, /credential-delete-panel/);
+  assert.match(html, /credential-revoke-panel/);
   assert.match(html, /aria-modal="true"/);
 });
 

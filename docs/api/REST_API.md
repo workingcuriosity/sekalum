@@ -1,23 +1,45 @@
+---
+title: REST API Notes
+document_id: DOC-REST-API-NOTES
+classification: PUBLIC
+language: en
+version: 1.1.1
+category: API
+status: Active
+owner: Sekalum
+canonical: false
+maintainer: Working Curiosity
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+target_audience:
+  - Integrators
+  - Developers
+change_history:
+  - version: 1.1.1
+    date: 2026-08-24
+    change: Declares English as the current governed documentation language.
+  - version: 1.1.0
+    date: 2026-08-24
+    change: Replaces the obsolete German topic note with an English public route summary.
+---
+
 # REST API Notes
 
-The canonical, code-verified REST route reference is API Reference.
+The public HTTP surface includes the health endpoint, OAuth callback routes,
+management routes and the explicitly authorized Consumer API.
 
-This former topic page remains as a supporting entry point. It must not be used to infer routes, permissions, or response contracts that are not listed in the canonical reference.
+```text
+GET  /health
+GET  /oauth/:provider/login
+GET  /oauth/:provider/callback
+GET  /api/v1/consumer/credentials
+POST /api/v1/consumer/credentials/:credentialKey/resolve
+```
 
-## Boundary and terminology
+Management routes require the configured Bearer authentication and permission
+boundary. Consumer Resolve requires an active API token, the Consumer scope
+and an explicit grant. Responses never expose unrequested secret fields or
+raw provider errors.
 
-The Management API owns administrative Credential, Provider, lifecycle,
-transfer, token and Consumer Grant operations. The separate Consumer API owns
-runtime resolution of explicitly authorized Secret fields for active
-Credentials. Consumer routes do not list Credentials, expose management
-metadata or accept the legacy `x-credential-hub-user` identity header.
-
-For method-aware Providers, `credentialMethodKey` selects an available
-`ProviderMethodBinding`; the selected `CredentialMethod` owns the field and
-Secret contract. These terms describe the existing ADR-021 model and do not
-add routes or change API behavior. The canonical API Reference
-owns all public endpoints, payloads, permissions and errors.
-
-## Admin Authentication
-
-Die Admin-Oberfläche übergibt für Management-Endpunkte ausschließlich `Authorization: Bearer <management-token>`. Der gemeinsame Client in `public/admin/auth.js` liest den Token aus dem zentralen, sitzungsgebundenen Store und baut die Header. Endpunkte dürfen aus Admin-Seiten nicht mit `x-credential-hub-user`, Basic Authentication oder selbst erzeugten Authorization-Headern aufgerufen werden.
+See the [Health API](Health_API.md), [OAuth API notes](OAuth_API.md), and the
+[Consumer integration guide](../guides/wizard-consumer-verification.md).

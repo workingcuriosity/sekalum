@@ -1,3 +1,5 @@
+import { safeErrorMessage } from '../utils/safe-diagnostics.js';
+
 export class SchedulerService {
   constructor({ logger, config, refreshExpiredTokensCommand, credentialRotationService = null }) {
     this.logger = logger;
@@ -104,9 +106,9 @@ export class SchedulerService {
       this.runCount += 1;
       this.failureCount += 1;
       this.lastErrorAt = new Date().toISOString();
-      this.lastErrorMessage = error.message;
+      this.lastErrorMessage = safeErrorMessage(error, 'Scheduled refresh failed');
 
-      this.logger.error(`Scheduled refresh failed: ${error.message}`);
+      this.logger.error(`Scheduled refresh failed: ${this.lastErrorMessage}`);
     } finally {
       this.running = false;
 

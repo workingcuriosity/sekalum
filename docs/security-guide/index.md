@@ -1,6 +1,9 @@
 ---
 title: Security Guide
-version: 1.6.0
+document_id: DOC-SECURITY-GUIDE-INDEX
+classification: PUBLIC
+language: en
+version: 1.6.2
 status: Active
 category: Security
 canonical: true
@@ -16,6 +19,12 @@ dependent_documents:
   - docs/api-reference/index.md
   - docs/configuration-reference/index.md
 change_history:
+  - version: 1.6.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.6.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.6.0
     date: 2026-08-04
     change: Adds neutral deployment security recommendations for publicly reachable Admin installations without changing the product security model.
@@ -127,6 +136,31 @@ change authorization, grants, Discovery, Resolve or Runtime-Public behavior.
 The Grant Preview and Permission Summary are likewise read-only explanations:
 they display selected and excluded field names without executing Discovery or
 Resolve, exposing Secret values, or changing the server-side grant.
+
+## Credential materialization boundary
+
+Credential metadata and Credential Secret values use separate projections. The
+following inventory is the canonical boundary for Credential reads:
+
+| Path | Secret materialization | Justification |
+| --- | --- | --- |
+| `Credential.toMetadataJSON()` and `credential-metadata.json` | No | List, status, presentation and discovery metadata only. |
+| `ManagementService.getCredentials()` | No | Management summary and lifecycle counts use metadata only. |
+| `DashboardService.getDashboard()` | No | Dashboard status, provider counts and health summaries use metadata only. |
+| `CredentialController.list()` / `get()` | No | Admin list/detail and secret inventory expose no Secret values. |
+| `ConsumerCredentialService.discover()` | No | Discovery returns the existing public field contract and metadata. |
+| `ConsumerCredentialService.resolve()` | Yes, exact Credential only | Authenticated Consumer Grant and requested Secret fields require values. |
+| `ConsumerGrantService` validation | No | Grant validation checks metadata, method bindings and Secret field names. |
+| `CredentialManager` lifecycle / validation / OAuth refresh | Yes, targeted Credential | The authorized provider operation requires the corresponding values. |
+| Secret version, transfer, backup and restore services | Yes, explicit operation | Versioning, export/import and recovery are secret-bearing administrative operations. |
+| Logging, audit, diagnostics and provider display lookup | No | These paths use safe diagnostics and public provider/credential metadata. |
+
+The metadata index is encrypted separately from the secret-bearing Credential
+collection. A metadata-only read therefore does not decrypt the collection and
+cannot fail because an unrelated Credential payload is undecryptable. A missing
+metadata index is a one-time compatibility migration; after migration, normal
+metadata reads remain on the metadata projection path. Resolve and other
+secret-bearing operations remain explicit and are not replaced by this rule.
 
 ### Consumer Runtime responsibility
 

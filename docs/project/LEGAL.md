@@ -1,6 +1,9 @@
 ---
 title: Legal
-version: 1.1.0
+document_id: DOC-PROJECT-LEGAL
+classification: PUBLIC
+language: en
+version: 1.1.2
 status: Active
 category: Project
 canonical: true
@@ -17,6 +20,12 @@ dependent_documents:
   - DISCLAIMER.md
   - docs/project/THIRD_PARTY_SOFTWARE.md
 change_history:
+  - version: 1.1.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.1.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.1.0
     date: 2026-08-17
     change: Aligns the current project and maintainer identity without asserting a replacement copyright holder; AGPL-3.0-only remains unchanged.

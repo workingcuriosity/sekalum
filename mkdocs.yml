@@ -12,34 +12,25 @@ edit_uri: ""
 
 nav:
   - Handbook: index.md
-  - Quick Start:
-      - English: quick-start-guide/index.md
-  - Installation Guide:
-      - Überblick: installation-guide/index.md
-  - User Guide:
-      - Überblick: user-guide/index.md
-  - Operations Guide:
-      - Überblick: operations-guide/index.md
-  - Security Guide:
-      - Überblick: security-guide/index.md
-  - API Reference:
-      - Überblick: api-reference/index.md
-  - Configuration Reference:
-      - Überblick: configuration-reference/index.md
-  - Data Model Reference:
-      - Überblick: data-model-reference/index.md
-  - Developer Guide:
-      - Überblick: developer-guide/index.md
-  - Community: https://discord.gg/exTu3Dy2UW
+  - Quick Start: quick-start-guide/index.md
+  - Installation Guide: installation-guide/index.md
+  - User Guide: user-guide/index.md
+  - Operations Guide: operations-guide/index.md
+  - Security Guide: security-guide/index.md
+  - Developer Guide: developer-guide/index.md
+  - API Notes:
+      - REST API: api/REST_API.md
+      - OAuth: api/OAuth_API.md
+      - Health: api/Health_API.md
+  - Provider Documentation: providers/README.md
   - Release Guide:
-      - Überblick: release-guide/index.md
+      - Guide: release-guide/index.md
       - Changelog: changelog/README.md
-  - Anhang:
-      - Überblick: appendix/index.md
+  - Community: https://discord.gg/exTu3Dy2UW
 
 theme:
   name: material
-  language: de
+  language: en
   features:
     - navigation.instant
     - navigation.tracking
@@ -59,17 +50,17 @@ theme:
       accent: indigo
       toggle:
         icon: material/weather-night
-        name: Dunkles Farbschema aktivieren
+        name: Enable dark mode
     - scheme: slate
       primary: blue grey
       accent: indigo
       toggle:
         icon: material/weather-sunny
-        name: Helles Farbschema aktivieren
+        name: Enable light mode
 
 plugins:
   - search:
-      lang: de
+      lang: en
   - mermaid2
   - with-pdf:
       author: Working Curiosity

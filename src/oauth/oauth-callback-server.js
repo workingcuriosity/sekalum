@@ -23,6 +23,8 @@ import { MetricsController } from '../controllers/metrics-controller.js';
 import { ApiTokenController } from '../controllers/api-token-controller.js';
 import { ConsumerCredentialController } from '../controllers/consumer-credential-controller.js';
 import { ConsumerGrantController } from '../controllers/consumer-grant-controller.js';
+import { safeError } from '../utils/safe-diagnostics.js';
+import { sanitizeDiagnostic } from '../utils/safe-diagnostics.js';
 import { DashboardService } from '../services/dashboard-service.js';
 import { ManagementService } from '../services/management-service.js';
 import { AccessManagementService } from '../services/access-management-service.js';
@@ -339,16 +341,17 @@ export class OAuthCallbackServer {
   }
 
   #sendAuthorizationError(res, error) {
-    const statusCode = error.statusCode ?? 500;
-    const code = error.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
+    const safe = safeError(error);
+    const statusCode = safe.statusCode ?? 500;
+    const code = safe.code ?? (statusCode === 404 ? 'NOT_FOUND' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
 
     res.status(statusCode).json({
       success: false,
       error: {
         code,
-        message: error.message ?? 'Unexpected error',
+        message: safe.message,
         ...(code === 'OAUTH_REDIRECT_URI_MISMATCH' && error.redirectUri
-          ? { details: { redirectUri: error.redirectUri } }
+          ? { details: { redirectUri: sanitizeDiagnostic(error.redirectUri) } }
           : {})
       }
     });
@@ -494,6 +497,10 @@ export class OAuthCallbackServer {
     }));
 
     this.routes.delete('/api/v1/management/api-tokens/:tokenId', this.#authorized('api-tokens:manage', async (req, res) => {
+      await this.#apiTokenController().revoke(req, res);
+    }));
+
+    this.routes.post('/api/v1/management/api-tokens/:tokenId/revoke', this.#authorized('api-tokens:manage', async (req, res) => {
       await this.#apiTokenController().revoke(req, res);
     }));
 

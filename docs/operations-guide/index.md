@@ -1,6 +1,9 @@
 ---
 title: Operations Guide
-version: 1.3.0
+document_id: DOC-OPERATIONS-GUIDE-INDEX
+classification: PUBLIC
+language: en
+version: 1.3.2
 status: Active
 category: Operations
 canonical: true
@@ -14,6 +17,12 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/api-reference/index.md
 change_history:
+  - version: 1.3.2
+    date: 2026-08-24
+    change: Records explicit English as the current governed documentation language.
+  - version: 1.3.1
+    date: 2026-08-24
+    change: Completes the canonical header metadata for the current documentation source.
   - version: 1.3.0
     date: 2026-08-09
     change: Documents operational interpretation of the Issue #77 secret-free Integration Health dashboard projection.
@@ -81,6 +90,11 @@ The active application exposes authenticated management backup routes for listin
 
 Before a restore, verify authorization, backup identity, and the operational impact. This guide does not prescribe a host-specific storage location or service command.
 
+Audit exports and backups preserve the separate `actorType`, `userId`,
+`consumerId`, and `apiTokenId` fields. Use the audit endpoint filters to review
+human, Consumer, or API-token activity independently. Never treat
+`legacyUserId` on a `legacy-ambiguous` record as proof of a human identity.
+
 ## Maintenance
 
 Run the repository checks after application changes:
@@ -99,6 +113,15 @@ data. It does not call providers, refresh tokens, alter grants or repair
 integrations. Treat an Error or Unknown state as a prompt to inspect the
 existing Credential, Provider, Grant or scheduler views; never copy token or
 Secret values into an operational report.
+
+The Dashboard `observability` projection adds secret-free Resolve counts,
+Consumer attribution, authentication/authorization rejection counts and
+refresh-failure history. `runtimeHealth` is intentionally separate from
+Credential lifecycle status: repeated failures are evidence for operator
+review, not an automatic replacement or repair instruction. Retain existing
+audit and Credential history according to the deployment's approved storage
+retention policy; do not export resolved values, token material, request bodies
+or provider response bodies.
 
 ### OAuth token rotation
 

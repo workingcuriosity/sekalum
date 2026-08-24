@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class ProviderController {
   constructor({ providerManager, customProviderService = null, oauthRuntimeDetails = null }) {
     this.providerManager = providerManager;
@@ -110,14 +112,15 @@ export class ProviderController {
   }
 
   #sendError(res, error) {
-    const statusCode = error.statusCode ?? (error.code === 'NOT_FOUND' ? 404 : 500);
-    const code = error.code ?? (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
+    const safe = safeError(error);
+    const statusCode = safe.statusCode ?? (safe.code === 'NOT_FOUND' ? 404 : 500);
+    const code = safe.code ?? (statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_ERROR');
 
     res.status(statusCode).json({
       success: false,
       error: {
         code,
-        message: error.message ?? 'Unexpected error'
+        message: safe.message
       }
     });
   }

@@ -1,3 +1,5 @@
+import { safeError } from '../utils/safe-diagnostics.js';
+
 export class MetricsController {
   constructor({ metricsService }) {
     if (!metricsService?.getMetrics) {
@@ -25,14 +27,15 @@ export class MetricsController {
   }
 
   #sendError(res, error) {
-    const statusCode = error.statusCode ?? 500;
-    const code = error.code ?? (statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
+    const safe = safeError(error);
+    const statusCode = safe.statusCode ?? 500;
+    const code = safe.code ?? (statusCode === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR');
 
     res.status(statusCode).json({
       success: false,
       error: {
         code,
-        message: error.message ?? 'Unexpected error'
+        message: safe.message
       }
     });
   }

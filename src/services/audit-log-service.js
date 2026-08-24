@@ -1,3 +1,7 @@
+import { sanitizeDiagnostic } from '../utils/safe-diagnostics.js';
+
+const ACTOR_TYPES = Object.freeze(['user', 'consumer', 'api-token', 'service', 'legacy-ambiguous']);
+
 export class AuditLogService {
   constructor({ store = null, clock = () => new Date() } = {}) {
     this.store = store;
@@ -39,17 +43,7 @@ export class AuditLogService {
       throw this.#badRequest('entries must be an array');
     }
 
-    const records = entries.map((entry) => ({
-      entryId: this.#normalizeRequiredString(entry.entryId, 'entryId'),
-      timestamp: this.#normalizeRequiredString(entry.timestamp, 'timestamp'),
-      userId: this.#normalizeActor(entry.userId),
-      roleKey: this.#normalizeOptionalString(entry.roleKey),
-      action: this.#normalizeRequiredString(entry.action, 'action'),
-      targetType: this.#normalizeRequiredString(entry.targetType, 'targetType'),
-      targetId: this.#normalizeOptionalString(entry.targetId),
-      result: this.#normalizeResult(entry.result),
-      details: this.#cloneDetails(entry.details ?? null)
-    }));
+    const records = entries.map((entry) => this.#normalizeStoredEntry(entry));
 
     await this.#saveEntries(records);
     return records.map((entry) => this.#entryItem(entry));
@@ -57,13 +51,13 @@ export class AuditLogService {
 
   async #loadEntries() {
     if (!this.store?.load) {
-      return this.entries.map((entry) => ({ ...entry, details: this.#cloneDetails(entry.details) }));
+      return this.entries.map((entry) => this.#normalizeStoredEntry(entry));
     }
 
     try {
       const data = await this.store.load();
       const entries = Array.isArray(data?.entries) ? data.entries : [];
-      return entries.map((entry) => ({ ...entry, details: this.#cloneDetails(entry.details) }));
+      return entries.map((entry) => this.#normalizeStoredEntry(entry));
     } catch (error) {
       if (error?.code === 'ENOENT') {
         return [];
@@ -85,11 +79,12 @@ export class AuditLogService {
 
   #normalizeEntry(input) {
     const timestamp = this.#timestamp();
+    const actor = this.#normalizeActorFields(input);
 
     return {
       entryId: input.entryId ?? this.#createEntryId(timestamp),
       timestamp,
-      userId: this.#normalizeActor(input.userId),
+      ...actor,
       roleKey: this.#normalizeOptionalString(input.roleKey),
       action: this.#normalizeRequiredString(input.action, 'action'),
       targetType: this.#normalizeRequiredString(input.targetType, 'targetType'),
@@ -99,8 +94,88 @@ export class AuditLogService {
     };
   }
 
+  #normalizeStoredEntry(input = {}) {
+    const action = this.#normalizeRequiredString(input.action, 'action');
+    const details = this.#cloneDetails(input.details ?? null);
+    const hasCanonicalActor = Object.hasOwn(input, 'actorType')
+      || Object.hasOwn(input, 'consumerId')
+      || Object.hasOwn(input, 'apiTokenId');
+    const actorInput = hasCanonicalActor
+      ? input
+      : this.#legacyActorInput({ ...input, action, details });
+
+    return {
+      entryId: this.#normalizeRequiredString(input.entryId, 'entryId'),
+      timestamp: this.#normalizeRequiredString(input.timestamp, 'timestamp'),
+      ...this.#normalizeActorFields(actorInput),
+      roleKey: this.#normalizeOptionalString(input.roleKey),
+      action,
+      targetType: this.#normalizeRequiredString(input.targetType, 'targetType'),
+      targetId: this.#normalizeOptionalString(input.targetId),
+      result: this.#normalizeResult(input.result),
+      details
+    };
+  }
+
+  #legacyActorInput(input) {
+    const legacyUserId = this.#normalizeOptionalString(input.userId);
+    const legacyConsumerId = this.#normalizeOptionalString(input.details?.consumerId);
+
+    if (input.action.startsWith('consumer-credential.') && legacyConsumerId) {
+      return {
+        ...input,
+        actorType: 'consumer',
+        userId: null,
+        consumerId: legacyConsumerId,
+        apiTokenId: null,
+        ...(legacyUserId && legacyUserId !== 'system' ? { legacyUserId } : {})
+      };
+    }
+
+    if (legacyUserId && legacyUserId !== 'system') {
+      return {
+        ...input,
+        actorType: 'legacy-ambiguous',
+        userId: null,
+        consumerId: null,
+        apiTokenId: null,
+        legacyUserId
+      };
+    }
+
+    return { ...input, actorType: 'service', userId: 'system', consumerId: null, apiTokenId: null };
+  }
+
+  #normalizeActorFields(input = {}) {
+    const explicitActorType = this.#normalizeOptionalString(input.actorType);
+    const consumerId = this.#normalizeOptionalString(input.consumerId);
+    const apiTokenId = this.#normalizeOptionalString(input.apiTokenId);
+    const legacyUserId = this.#normalizeOptionalString(input.legacyUserId);
+    const actorType = explicitActorType
+      ?? (consumerId ? 'consumer' : apiTokenId && !input.userId ? 'api-token' : this.#isSystemActor(input.userId) ? 'service' : 'user');
+
+    if (!ACTOR_TYPES.includes(actorType)) {
+      throw this.#badRequest(`actorType must be one of: ${ACTOR_TYPES.join(', ')}`);
+    }
+
+    const userId = ['consumer', 'api-token', 'legacy-ambiguous'].includes(actorType)
+      ? null
+      : this.#normalizeActor(input.userId);
+
+    return { actorType, userId, consumerId, apiTokenId, legacyUserId };
+  }
+
   #matchesFilters(entry, filters = {}) {
     if (filters.userId && entry.userId !== filters.userId) {
+      if (entry.legacyUserId !== filters.userId) return false;
+    }
+    if (filters.consumerId && entry.consumerId !== filters.consumerId) {
+      return false;
+    }
+    if (filters.apiTokenId && entry.apiTokenId !== filters.apiTokenId) {
+      return false;
+    }
+    if (filters.actorType && entry.actorType !== filters.actorType) {
       return false;
     }
     if (filters.action && entry.action !== filters.action) {
@@ -138,7 +213,11 @@ export class AuditLogService {
     return {
       entryId: entry.entryId,
       timestamp: entry.timestamp,
+      actorType: entry.actorType,
       userId: entry.userId,
+      consumerId: entry.consumerId,
+      apiTokenId: entry.apiTokenId,
+      ...(entry.legacyUserId ? { legacyUserId: entry.legacyUserId } : {}),
       roleKey: entry.roleKey,
       action: entry.action,
       targetType: entry.targetType,
@@ -153,6 +232,10 @@ export class AuditLogService {
       return 'system';
     }
     return value.trim();
+  }
+
+  #isSystemActor(value) {
+    return value === undefined || value === null || value === '' || value === 'system';
   }
 
   #normalizeRequiredString(value, name) {
@@ -184,7 +267,7 @@ export class AuditLogService {
     if (details === null || details === undefined) {
       return null;
     }
-    return JSON.parse(JSON.stringify(details));
+    return sanitizeDiagnostic(details);
   }
 
   #badRequest(message) {

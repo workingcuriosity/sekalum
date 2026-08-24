@@ -219,6 +219,28 @@ test('CredentialManager updates a credential through the CredentialStore', async
   assert.equal(await store.load(credential.credentialId), updatedCredential);
 });
 
+test('CredentialManager updates one same-provider Credential without changing another secret', async () => {
+  const store = createMemoryStore();
+  const manager = new CredentialManager({ credentialStore: store });
+  const first = await manager.register({
+    providerKey: 'threads',
+    externalReference: 'first',
+    secrets: [{ name: 'accessToken', value: 'first-secret' }]
+  });
+  const second = await manager.register({
+    providerKey: 'threads',
+    externalReference: 'second',
+    secrets: [{ name: 'accessToken', value: 'second-secret' }]
+  });
+
+  await manager.updateCredential(first.credentialId, {
+    secrets: [{ name: 'accessToken', value: 'first-replacement' }]
+  });
+
+  assert.equal((await store.load(first.credentialId)).secrets[0].value, 'first-replacement');
+  assert.equal((await store.load(second.credentialId)).secrets[0].value, 'second-secret');
+});
+
 test('CredentialManager applies public Credential patches without exposing or clearing unchanged secrets', async () => {
   const store = createMemoryStore();
   const manager = new CredentialManager({ credentialStore: store, providerManager: createProviderManager(openAiFields) });
@@ -384,6 +406,40 @@ test('CredentialManager rejects delete for unknown credentials', async () => {
   );
 });
 
+test('CredentialManager separates rotation, revocation, and deletion audits and makes revoke idempotent', async () => {
+  const store = createMemoryStore();
+  const auditEntries = [];
+  const providerManager = {
+    async revokeCredential() { return ProviderResult.success({ revoked: true }); }
+  };
+  const manager = new CredentialManager({
+    credentialStore: store,
+    providerManager,
+    auditLogService: { record: async (entry) => auditEntries.push(entry) }
+  });
+  const credential = await manager.register({
+    credentialId: 'lifecycle-credential',
+    providerKey: 'threads',
+    secrets: [{ name: 'accessToken', value: 'access' }]
+  });
+
+  const first = await manager.revoke(credential, { userId: 'admin-user', roleKey: 'administrator' });
+  const second = await manager.revoke(credential.credentialId, { userId: 'admin-user', roleKey: 'administrator' });
+  const deleted = await manager.delete(credential.credentialId, { userId: 'admin-user', roleKey: 'administrator' });
+
+  assert.equal(first.data.credential.lifecycleState, LifecycleState.REVOKED);
+  assert.equal(second.data.credential.lifecycleState, LifecycleState.REVOKED);
+  assert.equal(second.data.idempotent, true);
+  assert.equal(deleted.lifecycleState, LifecycleState.DELETED);
+  assert.deepEqual(auditEntries.map((entry) => entry.action), [
+    'credential.revoked',
+    'credential.revoke.noop',
+    'credential.deleted'
+  ]);
+  assert.equal(auditEntries.every((entry) => entry.userId === 'admin-user'), true);
+  assert.equal(auditEntries.every((entry) => !JSON.stringify(entry).includes('access')), true);
+});
+
 test('CredentialManager executes lifecycle actions and owns state transitions', async () => {
   const store = createMemoryStore();
   const providerManager = {
@@ -531,6 +587,57 @@ test('CredentialManager persists a rotated refresh token atomically with the acc
   ]);
 });
 
+test('CredentialManager preserves the current refresh token when OAuth refresh omits rotation', async () => {
+  const saved = [];
+  const credential = new Credential({
+    credentialId: 'google-omitted-refresh', providerKey: 'google', credentialMethodKey: 'oauth2', lifecycleState: LifecycleState.ACTIVE,
+    secrets: [{ name: 'accessToken', value: 'old-access' }, { name: 'refreshToken', value: 'old-refresh' }],
+    metadata: { expiresAt: new Date(Date.now() - 1_000).toISOString() }
+  });
+  const manager = new CredentialManager({
+    credentialStore: { async save(value) { saved.push(value); } },
+    providerManager: { async refreshCredential() { return ProviderResult.success(new OAuthResult({
+      providerId: 'google:main', provider: 'google', accountId: 'main', accessToken: 'new-access', refreshToken: null
+    })); } },
+    config: { get() { return 14; } },
+    logger: { info() {} }
+  });
+
+  const result = await manager.refresh(credential);
+
+  assert.equal(result.data.credential.secrets.find((secret) => secret.name === 'accessToken').value, 'new-access');
+  assert.equal(result.data.credential.secrets.find((secret) => secret.name === 'refreshToken').value, 'old-refresh');
+  assert.equal(result.data.credential.metadata.expiresAt, null);
+  assert.equal(saved.length, 1);
+});
+
+test('CredentialManager does not expose a partially refreshed credential when persistence fails', async () => {
+  let stored;
+  let versionRecords = 0;
+  const credential = new Credential({
+    credentialId: 'google-refresh-crash', providerKey: 'google', credentialMethodKey: 'oauth2', lifecycleState: LifecycleState.ACTIVE,
+    secrets: [{ name: 'accessToken', value: 'old-access' }, { name: 'refreshToken', value: 'old-refresh' }],
+    metadata: { expiresAt: new Date(Date.now() - 1_000).toISOString() }
+  });
+  stored = credential;
+  const manager = new CredentialManager({
+    credentialStore: {
+      async load() { return stored; },
+      async save() { throw new Error('simulated persistence crash'); }
+    },
+    providerManager: { async refreshCredential() { return ProviderResult.success(new OAuthResult({
+      providerId: 'google:main', provider: 'google', accountId: 'main', accessToken: 'new-access', refreshToken: 'new-refresh', expiresAt: new Date(Date.now() + 3600_000)
+    })); } },
+    secretVersioningService: { async recordCredentialVersion() { versionRecords += 1; } },
+    logger: { info() {} }
+  });
+
+  await assert.rejects(() => manager.refresh(credential), /simulated persistence crash/);
+  assert.equal(stored.secrets.find((secret) => secret.name === 'accessToken').value, 'old-access');
+  assert.equal(stored.secrets.find((secret) => secret.name === 'refreshToken').value, 'old-refresh');
+  assert.equal(versionRecords, 0);
+});
+
 test('a successful refresh is returned by Consumer Resolve from the canonical store', async () => {
   const store = createMemoryStore();
   const credential = new Credential({
@@ -616,8 +723,41 @@ test('CredentialManager owns OAuth import orchestration during MS7 migration', a
 
   const result = await manager.importCredential(oauthResult);
 
-  assert.equal(result.credentialId, 'threads:main');
+  assert.match(result.credentialId, /^[0-9a-f-]{36}$/);
+  assert.notEqual(result.credentialId, oauthResult.providerId);
   assert.equal(result.secrets.find((secret) => secret.name === 'accessToken').value, 'access-token');
+});
+
+test('CredentialManager reuses the canonical Credential identity when OAuth material is replaced', async () => {
+  const credentials = [];
+  const credentialStore = {
+    async list() { return [...credentials]; },
+    async loadByExternalReference(providerKey, externalReference) {
+      const credential = credentials.find((entry) => entry.providerKey === providerKey && entry.externalReference === externalReference);
+      if (credential) return credential;
+      const error = new Error('missing');
+      error.code = 'NOT_FOUND';
+      throw error;
+    },
+    async save(credential) {
+      const index = credentials.findIndex((entry) => entry.credentialId === credential.credentialId);
+      if (index === -1) credentials.push(credential);
+      else credentials[index] = credential;
+    }
+  };
+  const manager = new CredentialManager({ credentialStore, providerManager: {} });
+
+  const first = await manager.importCredential(new OAuthResult({
+    providerId: 'threads:main', provider: 'threads', accountId: 'main', accessToken: 'first-access'
+  }));
+  const second = await manager.importCredential(new OAuthResult({
+    providerId: 'threads:main', provider: 'threads', accountId: 'main', accessToken: 'second-access'
+  }));
+
+  assert.equal(second.credentialId, first.credentialId);
+  assert.equal(second.credentialKey, first.credentialKey);
+  assert.equal(second.secrets[0].value, 'second-access');
+  assert.equal(credentials.length, 1);
 });
 
 test('CredentialManager refresh workflow logs public Credential terminology', async () => {

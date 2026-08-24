@@ -60,6 +60,57 @@ test('generic credential collection persists a generated key when migrating an e
   assert.equal((await store.load('legacy-main')).credentialKey, firstLoad.credentialKey);
 });
 
+test('metadata-first legacy migration persists one generated public key for later runtime resolution', async () => {
+  let rawData = {
+    credentials: [{ credentialId: 'legacy-main', providerKey: 'openai', externalReference: 'main', secrets: [] }]
+  };
+  let metadataData = null;
+  const jsonStore = {
+    async exists(filePath) { return filePath.endsWith('credentials.json') ? rawData !== null : metadataData !== null; },
+    async load(filePath) { return structuredClone(filePath.endsWith('credentials.json') ? rawData : metadataData); },
+    async save(filePath, value) {
+      if (filePath.endsWith('credentials.json')) rawData = structuredClone(value);
+      else metadataData = structuredClone(value);
+    }
+  };
+  const store = new CredentialCollectionStoreAdapter({ jsonStore, metadataJsonStore: jsonStore, basePath: '/data' });
+
+  const metadata = await store.listMetadata();
+  const loaded = await store.load('legacy-main');
+
+  assert.equal(loaded.credentialKey, metadata[0].credentialKey);
+  assert.equal(rawData.credentials[0].credentialKey, metadata[0].credentialKey);
+});
+
+test('credential collection reports orphaned metadata instead of silently falling back', async () => {
+  const rawData = { credentials: [] };
+  const metadataData = {
+    schemaVersion: 1,
+    credentials: [{ credentialId: 'missing-id', credentialKey: 'orphan-key', providerKey: 'openai', externalReference: 'main' }]
+  };
+  const jsonStore = {
+    async exists(filePath) { return filePath.endsWith('credentials.json') ? true : true; },
+    async load(filePath) { return structuredClone(filePath.endsWith('credentials.json') ? rawData : metadataData); },
+    async save() {}
+  };
+  const store = new CredentialCollectionStoreAdapter({ jsonStore, metadataJsonStore: jsonStore, basePath: '/data' });
+
+  await assert.rejects(
+    () => store.loadByCredentialKey('orphan-key'),
+    { code: 'CREDENTIAL_IDENTITY_ORPHANED' }
+  );
+});
+
+test('credential collection resolves OAuth imports by exact provider and external reference', async () => {
+  const store = new CredentialCollectionStoreAdapter({ jsonStore: createJsonStore(), basePath: '/data' });
+  await store.save({ ...credentialInput, credentialId: 'canonical-id' });
+
+  const loaded = await store.loadByExternalReference('openai', 'main');
+
+  assert.equal(loaded.credentialId, 'canonical-id');
+  await assert.rejects(() => store.loadByExternalReference('openai', 'missing'), { code: 'NOT_FOUND' });
+});
+
 test('generic credential collection rejects duplicate public credential keys', async () => {
   const store = new CredentialCollectionStoreAdapter({ jsonStore: createJsonStore(), basePath: '/data' });
 

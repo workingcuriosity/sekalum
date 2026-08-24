@@ -8,13 +8,21 @@
 
 function assertUniqueCredentialKeys(credentials) {
   const byKey = new Map();
+  const byId = new Map();
   for (const credential of credentials) {
+    const existingById = byId.get(credential.credentialId);
+    if (existingById && existingById.credentialKey !== credential.credentialKey) {
+      const error = new Error(`Credential identity '${credential.credentialId}' has conflicting persisted projections`);
+      error.code = 'CREDENTIAL_IDENTITY_CONFLICT';
+      throw error;
+    }
     const existing = byKey.get(credential.credentialKey);
     if (existing && existing.credentialId !== credential.credentialId) {
       const error = new Error(`Credential key '${credential.credentialKey}' is assigned to credentials '${existing.credentialId}' and '${credential.credentialId}'`);
       error.code = 'CREDENTIAL_KEY_DUPLICATE';
       throw error;
     }
+    byId.set(credential.credentialId, credential);
     byKey.set(credential.credentialKey, credential);
   }
 }
@@ -57,10 +65,97 @@ export class CompositeCredentialStoreAdapter {
     return combined;
   }
 
+  async listMetadata() {
+    const primary = typeof this.primary.listMetadata === 'function'
+      ? await this.primary.listMetadata()
+      : (await this.primary.list()).map((credential) => this.#metadata(credential));
+    const legacy = this.legacy
+      ? typeof this.legacy.listMetadata === 'function'
+        ? await this.legacy.listMetadata()
+        : (this.legacy.list ? (await this.legacy.list()).map((credential) => this.#metadata(credential)) : [])
+      : [];
+    const seen = new Set(primary.map((credential) => credential.credentialId));
+    const combined = [...primary, ...legacy.filter((credential) => !seen.has(credential.credentialId))];
+    assertUniqueCredentialKeys(combined);
+    return combined;
+  }
+
+  async loadMetadata(credentialId) {
+    if (typeof this.primary.loadMetadata === 'function') {
+      try {
+        return await this.primary.loadMetadata(credentialId);
+      } catch (error) {
+        if (error.code !== 'NOT_FOUND' || !this.legacy) throw error;
+      }
+    }
+    if (this.legacy?.loadMetadata) return this.legacy.loadMetadata(credentialId);
+    const credential = (await this.listMetadata()).find((entry) => entry.credentialId === credentialId);
+    if (!credential) {
+      const error = new Error(`Credential '${credentialId}' not found`);
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+    return credential;
+  }
+
+  async loadByCredentialKey(credentialKey) {
+    const metadata = (await this.listMetadata()).find((entry) => entry.credentialKey === credentialKey);
+    if (!metadata) {
+      const error = new Error(`Credential '${credentialKey}' not found`);
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+    try {
+      return await this.load(metadata.credentialId);
+    } catch (error) {
+      if (error?.code !== 'NOT_FOUND') throw error;
+      throw this.#orphanedIdentity({ credentialKey, credentialId: metadata.credentialId });
+    }
+  }
+
+  async loadByExternalReference(providerKey, externalReference) {
+    const metadata = await this.listMetadata();
+    const matches = metadata.filter((entry) => (
+      entry.providerKey === providerKey && entry.externalReference === externalReference
+    ));
+    if (matches.length === 0) {
+      const error = new Error(`Credential '${providerKey}:${externalReference}' not found`);
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+    if (matches.length > 1) {
+      const error = new Error(`External Credential reference '${providerKey}:${externalReference}' is ambiguous`);
+      error.code = 'CREDENTIAL_IDENTITY_AMBIGUOUS';
+      error.details = { providerKey, externalReference, credentialIds: matches.map((entry) => entry.credentialId) };
+      throw error;
+    }
+    try {
+      return await this.load(matches[0].credentialId);
+    } catch (error) {
+      if (error?.code !== 'NOT_FOUND') throw error;
+      throw this.#orphanedIdentity({
+        providerKey,
+        externalReference,
+        credentialId: matches[0].credentialId
+      });
+    }
+  }
+
+  #metadata(credential) {
+    return typeof credential?.toMetadataJSON === 'function' ? credential.toMetadataJSON() : credential;
+  }
+
   async listLegacyTokens() {
     if (!this.legacy?.listLegacyTokens) {
       throw new Error('CompositeCredentialStoreAdapter requires a legacy adapter for token workflows');
     }
     return this.legacy.listLegacyTokens();
+  }
+
+  #orphanedIdentity(details) {
+    const error = new Error('Credential metadata references a missing canonical Credential identity');
+    error.code = 'CREDENTIAL_IDENTITY_ORPHANED';
+    error.details = details;
+    return error;
   }
 }

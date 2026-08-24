@@ -1,46 +1,43 @@
-# Consumer-Grant-Verwaltung
+---
+title: Consumer Grant Management
+document_id: DOC-CONSUMER-GRANT-MANAGEMENT
+classification: PUBLIC
+language: en
+version: 1.1.1
+category: Guide
+status: Active
+owner: Sekalum
+canonical: false
+maintainer: Working Curiosity
+contact: luiscyphre404@gmail.com
+license: AGPL-3.0-only
+target_audience:
+  - Administrators
+  - Integrators
+change_history:
+  - version: 1.1.1
+    date: 2026-08-24
+    change: Declares English as the current governed documentation language.
+  - version: 1.1.0
+    date: 2026-08-24
+    change: Migrates the Consumer Grant guide to English and aligns its terminology with the current Consumer API boundary.
+---
 
-Diese Anleitung beschreibt den Beta-1-Stand. Consumer- und Credential-
-Zuordnungen sind in Beta 1 schreibgeschuetzt; bearbeitbar bleibt nur die
-explizite Freigabe von Secret-Feldnamen je Credential. Die Admin-Seite stellt
-diese bestehende Berechtigungsgrenze als Consumer-Zugriff dar, ohne das
-Grant-Modell oder die API zu veraendern.
+# Consumer Grant Management
 
-Die Verwaltungsseite `/admin/consumer-grants.html` zeigt vorhandene Consumer-Grants und erlaubt ihre gezielte Aktualisierung. Ein Grant ist die explizite Least-Privilege-Freigabe eines Credentials und einzelner Secret-Feldnamen fuer genau eine Consumer-API-Identitaet.
+Consumer Grants define which Credential fields a Consumer may resolve. An
+administrator creates the grant; the Consumer receives no management
+metadata and cannot expand its own grant.
 
-1. Einen Management-Bearer-Token mit `consumer-grants:manage` eingeben. Der Token bleibt nur im Speicher der geöffneten Seite und wird weder in Local Storage noch im Formular gespeichert.
-2. Optional nach Consumer-ID, Credential-ID oder Provider-Key filtern.
-3. Den jeweiligen Grant oeffnen. Die Uebersicht zeigt Consumer, Credential, Provider und ausschliesslich die Namen der freigegebenen Secret-Felder.
-4. Nur die fuer den konkreten Consumer benoetigten Secret-Feldnamen eingeben und speichern. Eine leere Liste wird vor dem Senden und durch den Server abgelehnt; die Oberflaeche ergaenzt keine versteckten Standardfelder oder Wildcards.
+## Safe workflow
 
-Fuer eine neue Freigabe verwenden Sie den Credential Wizard mit einem
-Management Token, der `consumer-grants:manage` besitzt. Waehlen Sie genau eine
-Consumer-Identitaet, ein Credential, den Provider und die zulaessigen Secret-
-Feldnamen. Ein Grant autorisiert weder andere Credentials noch andere Provider
-oder Felder. Die serverseitige Grant-Pruefung bleibt fuer jeden Discovery- und
-Resolve-Aufruf massgeblich.
+1. Create or identify the Consumer API token.
+2. Select the Credential and the exact secret fields the integration needs.
+3. Save the grant through the management API or Admin UI.
+4. Use Consumer Discovery to select the opaque `credentialKey`.
+5. Use Consumer Resolve with the granted field names only.
 
-Vor dem Speichern zeigt der Wizard eine schreibgeschuetzte Grant Preview. Sie
-trennt die ausgewaehlten Secret-Feldnamen von ausgeschlossenen Feldern und
-ordnet Discovery, Resolve und Runtime-Public dem bestehenden Consumer-Vertrag
-zu. Die Vorschau fuehrt keinen API-Aufruf aus, zeigt keine Secret-Werte und
-veraendert keine Berechtigung; der Server bleibt fuer die tatsaechliche
-Grant-Pruefung massgeblich.
-
-Die Seite zeigt nie Secret-Werte. Management- und Consumer-Token bleiben nur
-im Arbeitsspeicher der geoeffneten Seite; sie werden nicht in Browser Storage
-gespeichert. Die Diagnose prueft die Konfiguration ohne Secret-Werte
-anzuzeigen, ersetzt aber nicht den echten Consumer-Resolve.
-
-Die Seite zeigt nie Secret-Werte und kann keine neue Freigabe erzeugen. Neue Grants werden weiterhin bewusst im Credential Wizard angelegt.
-
-### Was der Consumer-Zugriff bedeutet
-
-Der Consumer sieht in **Discovery** nur aktive Credentials mit passender
-Freigabe sowie deren öffentliche Metadaten und Feldvertrag. **Resolve** liefert
-nur ausdrücklich angeforderte Secret-Felder, die für genau dieses Credential
-und diese Consumer-Identität freigegeben sind. Andere Credentials,
-Provider-Interna, nicht freigegebene Felder und nicht autorisierte Secret-Werte
-sind nicht zugänglich; Wildcards gibt es nicht. Der Consumer-API-Token
-authentifiziert den Consumer. Der Management-Token dient ausschließlich der
-Administration und ist keine Consumer-Berechtigung.
+Revoked Credentials, revoked tokens and missing grants fail closed. The
+Consumer API never returns unrequested secret fields or raw provider errors.
+The internal management `credentialId` and the public Consumer `credentialKey`
+are different identifiers and must not be substituted.
