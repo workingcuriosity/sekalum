@@ -16,6 +16,7 @@ function createService() {
   const records = new Map();
   const store = {
     async save(record) { records.set(record.configurationId, structuredClone(record)); return record; },
+    async list() { return [...records.values()].map((record) => structuredClone(record)); },
     async load(id) { return structuredClone(records.get(id)); },
     async delete(id) { return records.delete(id); }
   };
@@ -69,4 +70,57 @@ test('provider configuration public result masks secret fields without returning
   assert.deepEqual(publicRecord.configuredFields.sort(), ['clientId', 'clientSecret', 'redirectUri']);
   assert.deepEqual(publicRecord.maskedFields, ['clientSecret']);
   assert.equal(JSON.stringify(publicRecord).includes('x-secret'), false);
+});
+
+test('provider configuration cleanup removes only expired temporary flow records', async () => {
+  const { service, records } = createService();
+  const now = new Date('2026-08-27T12:00:00.000Z');
+  records.set('referenced', {
+    configurationId: 'referenced',
+    providerKey: 'x',
+    lifecycle: 'temporary_oauth_flow',
+    expiresAt: '2026-08-27T11:00:00.000Z'
+  });
+  records.set('expired-temporary', {
+    configurationId: 'expired-temporary',
+    providerKey: 'x',
+    lifecycle: 'temporary_oauth_flow',
+    expiresAt: '2026-08-27T11:00:00.000Z'
+  });
+  records.set('live-temporary', {
+    configurationId: 'live-temporary',
+    providerKey: 'x',
+    lifecycle: 'temporary_oauth_flow',
+    expiresAt: '2026-08-27T13:00:00.000Z'
+  });
+  records.set('durable-unreferenced', { configurationId: 'durable-unreferenced', providerKey: 'x' });
+  records.set('unknown', { configurationId: 'unknown', providerKey: 'x', expiresAt: '2026-08-27T11:00:00.000Z' });
+
+  const result = await service.removeExpiredTemporaryFlowConfigurations(['referenced'], now);
+
+  assert.deepEqual(result.removed, ['expired-temporary']);
+  assert.deepEqual(result.failed, []);
+  assert.equal(records.has('referenced'), true);
+  assert.equal(records.has('expired-temporary'), false);
+  assert.equal(records.has('live-temporary'), true);
+  assert.equal(records.has('durable-unreferenced'), true);
+  assert.equal(records.has('unknown'), true);
+});
+
+test('new OAuth-flow configuration records carry explicit temporary ownership and expiry', async () => {
+  const { service } = createService();
+  const record = await service.prepare({
+    providerKey: 'x',
+    fields: fields(),
+    values: {
+      clientId: 'x-client',
+      clientSecret: 'x-secret',
+      redirectUri: 'https://credential-hub.example.com/oauth/x/callback'
+    },
+    temporary: true,
+    expiresAt: '2026-08-27T13:00:00.000Z'
+  });
+
+  assert.equal(record.lifecycle, 'temporary_oauth_flow');
+  assert.equal(record.expiresAt, '2026-08-27T13:00:00.000Z');
 });

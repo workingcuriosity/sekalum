@@ -13,6 +13,12 @@
     <span class="badge" id="provider-status" data-i18n="providers.loading">Preparing provider wizard…</span>
   </header>
   <main class="layout provider-onboarding-layout">
+    <section class="panel provider-management-panel" aria-labelledby="provider-management-title">
+      <p class="eyebrow" data-i18n="providers.managementEyebrow">Provider management</p>
+      <h2 id="provider-management-title" data-i18n="providers.managementTitle">Manage custom providers</h2>
+      <p data-i18n="providers.managementHelp">Edit declarative metadata or delete an unused custom provider. Changes are compatibility-checked and never cascade into Credentials or Consumer Grants.</p>
+      <div id="managed-providers" class="summary" aria-live="polite"></div>
+    </section>
     <aside class="sidebar" aria-label="Provider onboarding steps" data-i18n-aria-label="providers.steps">
       <ol class="steps">
         <li class="active" data-provider-step-indicator="1" data-i18n="providers.step1">1. Provider details</li>

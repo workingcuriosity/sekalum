@@ -21,7 +21,9 @@ export class ConsumerGrant {
     grantId = crypto.randomUUID(),
     consumerId,
     credentialId,
+    credentialGeneration = null,
     providerKey,
+    providerProfile = null,
     secretNames,
     createdAt = new Date(),
     updatedAt = new Date()
@@ -29,7 +31,11 @@ export class ConsumerGrant {
     this.grantId = required(grantId, 'grantId');
     this.consumerId = required(consumerId, 'consumerId');
     this.credentialId = required(credentialId, 'credentialId');
+    this.credentialGeneration = credentialGeneration === null || credentialGeneration === undefined
+      ? null
+      : required(credentialGeneration, 'credentialGeneration');
     this.providerKey = required(providerKey, 'providerKey');
+    this.providerProfile = providerProfile ? Object.freeze({ ...providerProfile }) : null;
     this.secretNames = normalizeSecretNames(secretNames);
     this.createdAt = createdAt instanceof Date ? createdAt : new Date(createdAt);
     this.updatedAt = updatedAt instanceof Date ? updatedAt : new Date(updatedAt);
@@ -46,7 +52,9 @@ export class ConsumerGrant {
       grantId: this.grantId,
       consumerId: this.consumerId,
       credentialId: this.credentialId,
+      credentialGeneration: this.credentialGeneration,
       providerKey: this.providerKey,
+      ...(this.providerProfile ? { providerProfile: { ...this.providerProfile } } : {}),
       secretNames: [...this.secretNames],
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString()

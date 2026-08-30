@@ -65,12 +65,12 @@ export class LegacyTokenCredentialStoreAdapter {
 
   async listMetadata() {
     const tokenRecords = await this.tokenStore.list();
-    return tokenRecords.map((tokenRecord) => this.#tokenRecordToCredential(tokenRecord).toMetadataJSON());
+    return tokenRecords.map((tokenRecord) => this.#tokenRecordToCredential(tokenRecord).toInternalMetadataJSON());
   }
 
   async loadMetadata(credentialId) {
     const credential = await this.load(credentialId);
-    return credential.toMetadataJSON();
+    return credential.toInternalMetadataJSON();
   }
 
   async loadByExternalReference(providerKey, externalReference) {

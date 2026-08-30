@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { assertBackupPath, backupFilePath, backupPathError, validateBackupIdentifier } from './backup-path-policy.js';
 
 export class ManagementBackupStore {
   constructor({ jsonStore, basePath }) {
@@ -12,19 +13,30 @@ export class ManagementBackupStore {
   }
 
   async save(backup) {
-    await this.jsonStore.save(this.#filePath(backup.backupId), backup);
+    const filePath = this.#filePath(backup.backupId);
+    await assertBackupPath(filePath, this.directoryPath, { allowMissing: true });
+    await this.jsonStore.save(filePath, backup);
   }
 
   async load(backupId) {
-    return this.jsonStore.load(this.#filePath(backupId));
+    const filePath = this.#filePath(backupId);
+    await assertBackupPath(filePath, this.directoryPath, { allowMissing: true });
+    return this.jsonStore.load(filePath);
   }
 
   async list() {
     try {
-      const entries = await fs.readdir(this.directoryPath);
+      await assertBackupPath(this.directoryPath, this.directoryPath, { kind: 'directory' });
+      const entries = await fs.readdir(this.directoryPath, { withFileTypes: true });
       return entries
-        .filter((entry) => entry.endsWith('.json'))
-        .map((entry) => entry.replace(/\.json$/, ''))
+        .filter((entry) => {
+          if (entry.isSymbolicLink()) throw backupPathError('Symlinks are not allowed in the backup directory');
+          return entry.name.endsWith('.json');
+        })
+        .map((entry) => {
+          if (!entry.isFile()) throw backupPathError('Backup directory contains a non-regular file');
+          return entry.name.replace(/\.json$/, '');
+        })
         .sort()
         .reverse();
     } catch (error) {
@@ -36,6 +48,7 @@ export class ManagementBackupStore {
   }
 
   #filePath(backupId) {
-    return path.join(this.directoryPath, `${backupId}.json`);
+    validateBackupIdentifier(backupId);
+    return backupFilePath(this.directoryPath, [`${backupId}.json`]);
   }
 }

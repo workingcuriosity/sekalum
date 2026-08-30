@@ -101,6 +101,7 @@ export class OpenAIServiceProvider extends ServiceProvider {
         credentialMethods: [new CredentialMethod({
           key: 'api-key',
           displayName: 'API key',
+          authenticationMethod: 'api-key',
           credentialFields: [
             { key: 'displayName', label: 'Display name', type: 'text', required: true, csvAliases: ['name', 'credential_name'], group: 'Basic information', displayOrder: 10 },
             { key: 'description', label: 'Description', type: 'textarea', required: false, csvAliases: ['notes', 'comment'], group: 'Basic information', displayOrder: 20 },

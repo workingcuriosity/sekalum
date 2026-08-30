@@ -76,8 +76,9 @@ export class ApplicationServiceProvider extends ServiceProvider {
       });
     });
 
-    container.singleton(TOKENS.OAUTH_SECURITY_SERVICE, () => {
-      return new OAuthSecurityService();
+    container.singleton(TOKENS.OAUTH_SECURITY_SERVICE, (c) => {
+      const ttlMs = Number(c.resolve(TOKENS.CONFIG).get('OAUTH_WIZARD_INTENT_TTL_MS', 10 * 60 * 1000));
+      return new OAuthSecurityService({ ttlMs: Number.isFinite(ttlMs) ? ttlMs : undefined });
     });
 
     container.singleton(TOKENS.OAUTH_MANAGER, (c) => {
@@ -222,7 +223,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
 
     container.singleton(TOKENS.PROVIDER_CONFIGURATION_SERVICE, (c) => {
       return new ProviderConfigurationService({
-        store: c.resolve(TOKENS.PROVIDER_CONFIGURATION_STORE)
+        store: c.resolve(TOKENS.PROVIDER_CONFIGURATION_STORE),
+        providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY)
       });
     });
 
@@ -237,6 +239,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
       return new CustomProviderService({
         store: c.resolve(TOKENS.CUSTOM_PROVIDER_DEFINITION_STORE),
         providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY),
+        credentialStore: c.resolve(TOKENS.CREDENTIAL_STORE),
+        consumerGrantStore: c.resolve(TOKENS.CONSUMER_GRANT_STORE),
         auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
       });
     });
@@ -300,21 +304,25 @@ export class ApplicationServiceProvider extends ServiceProvider {
 
     container.singleton(TOKENS.AUDIT_LOG_SERVICE, (c) => {
       return new AuditLogService({
-        store: c.resolve(TOKENS.AUDIT_LOG_STORE)
+        store: c.resolve(TOKENS.AUDIT_LOG_STORE),
+        logger: c.resolve(TOKENS.LOGGER)
       });
     });
 
     container.singleton(TOKENS.ACCESS_MANAGEMENT_SERVICE, (c) => {
       return new AccessManagementService({
         store: c.resolve(TOKENS.ACCESS_MANAGEMENT_STORE),
-        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE),
+        config: c.resolve(TOKENS.CONFIG),
+        apiTokenService: c.resolve(TOKENS.API_TOKEN_SERVICE)
       });
     });
 
     container.singleton(TOKENS.API_TOKEN_SERVICE, (c) => {
       return new ApiTokenService({
         store: c.resolve(TOKENS.API_TOKEN_STORE),
-        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE),
+        userIdentityProvider: (userId) => c.resolve(TOKENS.ACCESS_MANAGEMENT_SERVICE).getUserIdentity(userId)
       });
     });
 
@@ -427,6 +435,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
         providerManager: c.resolve(TOKENS.PROVIDER_MANAGER),
         importTokenCommand: c.resolve(TOKENS.IMPORT_TOKEN_COMMAND),
         credentialManager: c.resolve(TOKENS.CREDENTIAL_MANAGER),
+        secureJsonStore: c.resolve(TOKENS.SECURE_JSON_STORE),
+        storagePath,
         schedulerService: c.resolve(TOKENS.SCHEDULER),
         dashboardService: c.resolve(TOKENS.DASHBOARD_SERVICE),
         managementService: c.resolve(TOKENS.MANAGEMENT_SERVICE),
@@ -451,7 +461,10 @@ export class ApplicationServiceProvider extends ServiceProvider {
         providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY),
         oauthManager: c.resolve(TOKENS.OAUTH_MANAGER),
         providerManager: c.resolve(TOKENS.PROVIDER_MANAGER),
+        providerConfigurationService: c.resolve(TOKENS.PROVIDER_CONFIGURATION_SERVICE),
         credentialManager: c.resolve(TOKENS.CREDENTIAL_MANAGER),
+        secureJsonStore: c.resolve(TOKENS.SECURE_JSON_STORE),
+        storagePath,
         schedulerService: c.resolve(TOKENS.SCHEDULER),
         oauthCallbackServer: c.resolve(TOKENS.OAUTH_CALLBACK_SERVER),
         refreshExpiredTokensCommand: c.resolve(TOKENS.REFRESH_EXPIRED_TOKENS_COMMAND)

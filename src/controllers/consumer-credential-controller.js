@@ -9,17 +9,19 @@ export class ConsumerCredentialController {
   async discover(req, res) {
     try {
       const data = await this.consumerCredentialService.discover({
-        consumerId: req.auth.consumerId
+        consumerId: req.auth.consumerId,
+        filters: req.query
       });
       res.set('Cache-Control', 'no-store');
       res.status(200).json({ success: true, meta: { apiVersion: 'v1' }, data });
-    } catch {
+    } catch (error) {
+      const invalidFilter = error.code === 'INVALID_DISCOVERY_FILTER';
       res.set('Cache-Control', 'no-store');
-      res.status(500).json({
+      res.status(invalidFilter ? 400 : 500).json({
         success: false,
         error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Credential discovery could not be completed'
+          code: invalidFilter ? error.code : 'INTERNAL_ERROR',
+          message: invalidFilter ? 'Credential discovery filters are invalid' : 'Credential discovery could not be completed'
         }
       });
     }
@@ -45,6 +47,28 @@ export class ConsumerCredentialController {
         error: {
           code: internal ? 'INTERNAL_ERROR' : invalidRequest ? error.code : diagnostic.code,
           message: internal ? 'Credential resolution could not be completed' : diagnostic.message
+        }
+      });
+    }
+  }
+
+  async batchResolve(req, res) {
+    try {
+      const data = await this.consumerCredentialService.batchResolve({
+        consumerId: req.auth.consumerId,
+        apiTokenId: req.auth.apiToken?.id ?? null,
+        requests: req.body?.requests
+      });
+      res.set('Cache-Control', 'no-store');
+      res.status(200).json({ success: true, meta: { apiVersion: 'v1' }, data });
+    } catch (error) {
+      const invalidRequest = error.code === 'INVALID_BATCH_REQUEST';
+      res.set('Cache-Control', 'no-store');
+      res.status(invalidRequest ? 400 : 500).json({
+        success: false,
+        error: {
+          code: invalidRequest ? error.code : 'INTERNAL_ERROR',
+          message: invalidRequest ? error.message : 'Batch credential resolution could not be completed'
         }
       });
     }

@@ -2,6 +2,34 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 
+import {
+  createIsolatedRuntime,
+  sourcePath,
+  stopChild,
+  testEnvironment
+} from '../support/isolated-runtime.js';
+
+function startApplication(port, environment) {
+  const runtime = createIsolatedRuntime(`sekalum-oauth-http-${port}-`);
+  const child = spawn(process.execPath, [sourcePath('src/index.js')], {
+    cwd: runtime.cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: testEnvironment({
+      ...environment,
+      OAUTH_CALLBACK_PORT: String(port)
+    })
+  });
+
+  return {
+    child,
+    async cleanup() {
+      await stopChild(child);
+      runtime.cleanup();
+    }
+  };
+}
+
 function waitForOutput(child, pattern, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     let output = '';
@@ -28,17 +56,12 @@ function waitForOutput(child, pattern, timeoutMs = 10000) {
 
 test('HTTP OAuth login endpoint redirects to Threads OAuth URL with state', async () => {
   const port = 3101;
-  const child = spawn(process.execPath, ['src/index.js'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      THREADS_CLIENT_ID: 'threads-client-id',
-      THREADS_CLIENT_SECRET: 'threads-client-secret',
-      THREADS_REDIRECT_URI: 'https://credential.example.test/oauth/threads/callback',
-      OAUTH_CALLBACK_PORT: String(port)
-    }
+  const application = startApplication(port, {
+    THREADS_CLIENT_ID: 'threads-client-id',
+    THREADS_CLIENT_SECRET: 'threads-client-secret',
+    THREADS_REDIRECT_URI: 'https://credential.example.test/oauth/threads/callback'
   });
+  const { child } = application;
 
   try {
     await waitForOutput(child, /Application started/);
@@ -61,23 +84,18 @@ test('HTTP OAuth login endpoint redirects to Threads OAuth URL with state', asyn
     assert.ok(parsed.searchParams.get('redirect_uri'));
     assert.ok(parsed.searchParams.get('state'));
   } finally {
-    child.kill('SIGTERM');
+    await application.cleanup();
   }
 });
 
 test('HTTP OAuth login endpoint redirects to Twitch OAuth URL with state', async () => {
   const port = 3102;
-  const child = spawn(process.execPath, ['src/index.js'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      TWITCH_CLIENT_ID: 'twitch-client-id',
-      TWITCH_CLIENT_SECRET: 'twitch-client-secret',
-      TWITCH_REDIRECT_URI: 'https://credential.example.test/oauth/twitch/callback',
-      OAUTH_CALLBACK_PORT: String(port)
-    }
+  const application = startApplication(port, {
+    TWITCH_CLIENT_ID: 'twitch-client-id',
+    TWITCH_CLIENT_SECRET: 'twitch-client-secret',
+    TWITCH_REDIRECT_URI: 'https://credential.example.test/oauth/twitch/callback'
   });
+  const { child } = application;
 
   try {
     await waitForOutput(child, /Application started/);
@@ -100,23 +118,18 @@ test('HTTP OAuth login endpoint redirects to Twitch OAuth URL with state', async
     assert.ok(parsed.searchParams.get('redirect_uri'));
     assert.ok(parsed.searchParams.get('state'));
   } finally {
-    child.kill('SIGTERM');
+    await application.cleanup();
   }
 });
 
 test('HTTP OAuth login endpoint redirects to Kick OAuth URL with state and PKCE', async () => {
   const port = 3103;
-  const child = spawn(process.execPath, ['src/index.js'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      KICK_CLIENT_ID: 'kick-client-id',
-      KICK_CLIENT_SECRET: 'kick-client-secret',
-      KICK_REDIRECT_URI: 'https://credential.example.test/oauth/kick/callback',
-      OAUTH_CALLBACK_PORT: String(port)
-    }
+  const application = startApplication(port, {
+    KICK_CLIENT_ID: 'kick-client-id',
+    KICK_CLIENT_SECRET: 'kick-client-secret',
+    KICK_REDIRECT_URI: 'https://credential.example.test/oauth/kick/callback'
   });
+  const { child } = application;
 
   try {
     await waitForOutput(child, /Application started/);
@@ -141,24 +154,19 @@ test('HTTP OAuth login endpoint redirects to Kick OAuth URL with state and PKCE'
     assert.ok(parsed.searchParams.get('code_challenge'));
     assert.equal(parsed.searchParams.get('code_challenge_method'), 'S256');
   } finally {
-    child.kill('SIGTERM');
+    await application.cleanup();
   }
 });
 
 
 test('HTTP OAuth login endpoint redirects to Discord OAuth URL with state', async () => {
   const port = 3104;
-  const child = spawn(process.execPath, ['src/index.js'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      DISCORD_CLIENT_ID: 'discord-client-id',
-      DISCORD_CLIENT_SECRET: 'discord-client-secret',
-      DISCORD_REDIRECT_URI: 'https://credential.example.test/oauth/discord/callback',
-      OAUTH_CALLBACK_PORT: String(port)
-    }
+  const application = startApplication(port, {
+    DISCORD_CLIENT_ID: 'discord-client-id',
+    DISCORD_CLIENT_SECRET: 'discord-client-secret',
+    DISCORD_REDIRECT_URI: 'https://credential.example.test/oauth/discord/callback'
   });
+  const { child } = application;
 
   try {
     await waitForOutput(child, /Application started/);
@@ -181,24 +189,19 @@ test('HTTP OAuth login endpoint redirects to Discord OAuth URL with state', asyn
     assert.ok(parsed.searchParams.get('redirect_uri'));
     assert.ok(parsed.searchParams.get('state'));
   } finally {
-    child.kill('SIGTERM');
+    await application.cleanup();
   }
 });
 
 
 test('HTTP OAuth login endpoint redirects to X OAuth URL with state and PKCE', async () => {
   const port = 3105;
-  const child = spawn(process.execPath, ['src/index.js'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      X_CLIENT_ID: 'x-client-id',
-      X_CLIENT_SECRET: 'x-client-secret',
-      X_REDIRECT_URI: 'https://credential.example.test/oauth/x/callback',
-      OAUTH_CALLBACK_PORT: String(port)
-    }
+  const application = startApplication(port, {
+    X_CLIENT_ID: 'x-client-id',
+    X_CLIENT_SECRET: 'x-client-secret',
+    X_REDIRECT_URI: 'https://credential.example.test/oauth/x/callback'
   });
+  const { child } = application;
 
   try {
     await waitForOutput(child, /Application started/);
@@ -223,24 +226,19 @@ test('HTTP OAuth login endpoint redirects to X OAuth URL with state and PKCE', a
     assert.ok(parsed.searchParams.get('code_challenge'));
     assert.equal(parsed.searchParams.get('code_challenge_method'), 'S256');
   } finally {
-    child.kill('SIGTERM');
+    await application.cleanup();
   }
 });
 
 
 test('HTTP OAuth login endpoint redirects to Facebook OAuth URL with state', async () => {
   const port = 3106;
-  const child = spawn(process.execPath, ['src/index.js'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      FACEBOOK_CLIENT_ID: 'facebook-client-id',
-      FACEBOOK_CLIENT_SECRET: 'facebook-client-secret',
-      FACEBOOK_REDIRECT_URI: 'https://credential.example.test/oauth/facebook/callback',
-      OAUTH_CALLBACK_PORT: String(port)
-    }
+  const application = startApplication(port, {
+    FACEBOOK_CLIENT_ID: 'facebook-client-id',
+    FACEBOOK_CLIENT_SECRET: 'facebook-client-secret',
+    FACEBOOK_REDIRECT_URI: 'https://credential.example.test/oauth/facebook/callback'
   });
+  const { child } = application;
 
   try {
     await waitForOutput(child, /Application started/);
@@ -263,23 +261,18 @@ test('HTTP OAuth login endpoint redirects to Facebook OAuth URL with state', asy
     assert.ok(parsed.searchParams.get('redirect_uri'));
     assert.ok(parsed.searchParams.get('state'));
   } finally {
-    child.kill('SIGTERM');
+    await application.cleanup();
   }
 });
 
 test('HTTP OAuth login endpoint redirects to Instagram OAuth URL with state', async () => {
   const port = 3107;
-  const child = spawn(process.execPath, ['src/index.js'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      INSTAGRAM_CLIENT_ID: 'instagram-client-id',
-      INSTAGRAM_CLIENT_SECRET: 'instagram-client-secret',
-      INSTAGRAM_REDIRECT_URI: 'https://credential.example.test/oauth/instagram/callback',
-      OAUTH_CALLBACK_PORT: String(port)
-    }
+  const application = startApplication(port, {
+    INSTAGRAM_CLIENT_ID: 'instagram-client-id',
+    INSTAGRAM_CLIENT_SECRET: 'instagram-client-secret',
+    INSTAGRAM_REDIRECT_URI: 'https://credential.example.test/oauth/instagram/callback'
   });
+  const { child } = application;
 
   try {
     await waitForOutput(child, /Application started/);
@@ -302,6 +295,6 @@ test('HTTP OAuth login endpoint redirects to Instagram OAuth URL with state', as
     assert.ok(parsed.searchParams.get('redirect_uri'));
     assert.ok(parsed.searchParams.get('state'));
   } finally {
-    child.kill('SIGTERM');
+    await application.cleanup();
   }
 });

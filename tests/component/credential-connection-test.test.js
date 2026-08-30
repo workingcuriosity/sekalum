@@ -18,11 +18,18 @@ const ftpFields = [
   { key: 'password', required: true, secret: true, type: 'password' }
 ];
 
-function providerManager({ providerKey = 'openai', fields = openAiFields, capabilities = ['validation'], result = ProviderResult.success({}) } = {}) {
+function providerManager({
+  providerKey = 'openai',
+  fields = openAiFields,
+  capabilities = ['validation'],
+  result = ProviderResult.success({}),
+  providerProfile = null,
+  authType = null
+} = {}) {
   return {
     getProvider(key) {
       if (key !== providerKey) throw new Error('provider not found');
-      return { key, credentialFields: fields, capabilities };
+      return { key, credentialFields: fields, capabilities, providerProfile, authType };
     },
     async validateCredential(credential) {
       this.credential = credential;
@@ -165,6 +172,88 @@ test('CredentialManager maps authentication, permission, rate-limit, and timeout
       (error) => error.code === expectedCode && error.details.field === 'apiKey'
     );
   }
+});
+
+test('CredentialManager binds the current ProviderProfile to ephemeral connection tests', async () => {
+  const providerProfile = { digest: 'profile-current' };
+  const providers = providerManager({ providerProfile });
+  const manager = new CredentialManager({ providerManager: providers });
+
+  await manager.testConnection({
+    providerKey: 'openai',
+    metadata: { displayName: 'OpenAI Test' },
+    secrets: [{ name: 'apiKey', value: 'sk-example-12345678901234567890' }]
+  });
+
+  assert.equal(providers.credential.providerProfile.digest, 'profile-current');
+});
+
+test('CredentialManager classifies current provider-validation failure taxonomy', async () => {
+  const cases = [
+    {
+      failure: { status: 401, message: 'authorization required' },
+      options: { capabilities: ['validation', 'oauth'], authType: 'oauth2' },
+      classification: 'authorization_required'
+    },
+    {
+      failure: { status: 403, code: 'INSUFFICIENT_SCOPE', message: 'scope missing' },
+      classification: 'scope_insufficient'
+    },
+    {
+      failure: { status: 403, code: 'POLICY_REJECTED', message: 'policy rejected' },
+      classification: 'policy_rejected'
+    },
+    {
+      failure: { code: 'ETIMEDOUT', message: 'transport timeout' },
+      classification: 'transport_failure'
+    },
+    {
+      failure: { status: 401, message: 'invalid credential' },
+      classification: 'credential_invalid'
+    }
+  ];
+
+  for (const { failure, options = {}, classification } of cases) {
+    const manager = new CredentialManager({
+      providerManager: providerManager({ ...options, result: ProviderResult.failure(failure) })
+    });
+
+    await assert.rejects(
+      () => manager.testConnection({
+        providerKey: 'openai',
+        metadata: { displayName: 'OpenAI Test' },
+        secrets: [{ name: 'apiKey', value: 'sk-example-12345678901234567890' }]
+      }),
+      (error) => error.classification === classification
+    );
+  }
+});
+
+test('CredentialManager rejects unresolved placeholders and stale provider profiles before transport', async () => {
+  const providerProfile = { digest: 'profile-current' };
+  const providers = providerManager({ providerProfile });
+  const manager = new CredentialManager({ providerManager: providers });
+
+  await assert.rejects(
+    () => manager.testConnection({
+      providerKey: 'openai',
+      metadata: { displayName: 'OpenAI Test' },
+      secrets: [{ name: 'apiKey', value: '${OPENAI_API_KEY}' }]
+    }),
+    (error) => error.code === 'CREDENTIAL_CONNECTION_INVALID'
+      && error.classification === 'provider_configuration_invalid'
+  );
+
+  await assert.rejects(
+    () => manager.testConnection({
+      providerKey: 'openai',
+      metadata: { displayName: 'OpenAI Test', custom: { providerProfile: { digest: 'profile-stale' } } },
+      secrets: [{ name: 'apiKey', value: 'sk-example-12345678901234567890' }]
+    }),
+    (error) => error.code === 'CREDENTIAL_CONNECTION_INVALID'
+      && error.classification === 'provider_contract_incompatible'
+  );
+  assert.equal(providers.credential, undefined);
 });
 
 test('CredentialManager activates only a successfully validated stored credential and records its check time', async () => {

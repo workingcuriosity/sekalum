@@ -4,6 +4,7 @@ import { CredentialMethod } from '../models/credential-method.js';
 import { ProviderMethodBinding } from '../models/provider-method-binding.js';
 import { DeclarativeCustomProvider } from '../providers/custom/declarative-custom-provider.js';
 import { safeError, safeErrorMessage } from '../utils/safe-diagnostics.js';
+import { SerializedMutationQueue } from '../storage/serialized-mutation-queue.js';
 
 const PROVIDER_KEY = /^[a-z][a-z0-9-]{1,62}$/;
 const ROOT_KEYS = new Set(['key', 'displayName', 'category', 'description', 'enabled', 'credentialMethods', 'providerMethodBindings', 'credentialFields']);
@@ -14,11 +15,14 @@ const FIELD_KEYS = new Set(['key', 'label', 'type', 'required', 'secret', 'descr
 
 /** Creates data-only providers. They intentionally have no executable operations or OAuth support. */
 export class CustomProviderService {
-  constructor({ store, providerRegistry, auditLogService = null }) {
+  constructor({ store, providerRegistry, credentialStore = null, consumerGrantStore = null, auditLogService = null }) {
     this.store = store;
     this.providerRegistry = providerRegistry;
+    this.credentialStore = credentialStore;
+    this.consumerGrantStore = consumerGrantStore;
     this.auditLogService = auditLogService;
     this.transitionLocks = new Map();
+    this.mutationQueue = new SerializedMutationQueue();
   }
 
   async hydrate() {
@@ -30,6 +34,10 @@ export class CustomProviderService {
   }
 
   async create(input) {
+    return this.mutationQueue.run(() => this.#create(input));
+  }
+
+  async #create(input) {
     const definition = this.#normalize(input);
     if (this.providerRegistry.has(definition.key)) {
       const error = new Error(`Provider '${definition.key}' already exists`);
@@ -51,6 +59,100 @@ export class CustomProviderService {
       throw error;
     }
     return definition;
+  }
+
+  async update(key, input = {}, options = {}) {
+    return this.mutationQueue.run(() => this.#withTransitionLock(key, () => this.#update(key, input, options)));
+  }
+
+  async #update(key, input, options) {
+    const current = await this.#loadCustomDefinition(key);
+    if (input?.key !== undefined && input.key !== key) {
+      throw this.#invalid('Provider ID cannot be changed after creation');
+    }
+    const editableCurrent = this.#editableDefinition(current);
+    const next = this.#normalize({ ...editableCurrent, ...input, key, enabled: current.enabled });
+    const currentProfile = this.#profileFor(current);
+    const nextProfile = this.#profileFor(next);
+    const profileChanged = Boolean(currentProfile && nextProfile && currentProfile.digest !== nextProfile.digest);
+    const metadataOnly = current.displayName !== next.displayName
+      || current.description !== next.description
+      || current.category !== next.category;
+    const credentials = await this.#credentialsFor(key);
+    if (profileChanged && credentials.length > 0) {
+      const error = new Error(`Provider '${key}' has dependent Credentials; profile migration is required before this edit`);
+      error.code = 'PROVIDER_EDIT_MIGRATION_REQUIRED';
+      error.statusCode = 409;
+      await this.#tryAudit('custom_provider_updated', key, options.actorUserId, 'blocked', {
+        classification: 'MIGRATION_REQUIRED_CHANGE',
+        metadataOnly,
+        credentialCount: credentials.length,
+        error
+      });
+      throw error;
+    }
+
+    const classification = metadataOnly && !profileChanged
+      ? 'NON_BREAKING_METADATA_CHANGE'
+      : profileChanged ? 'COMPATIBLE_PROFILE_CHANGE' : 'NON_BREAKING_METADATA_CHANGE';
+    const wasRegistered = this.providerRegistry.has(key);
+    if (wasRegistered) this.providerRegistry.unregister(key);
+    try {
+      await this.store.update(key, () => next);
+      if (next.enabled) this.#register(next);
+      await this.#audit('custom_provider_updated', key, options.actorUserId, 'success', {
+        classification,
+        profileDigest: nextProfile?.digest ?? null
+      });
+      return this.#lifecycleResult(next, { classification });
+    } catch (error) {
+      try {
+        await this.store.update(key, () => current);
+        if (wasRegistered) this.#register(current);
+      } catch (rollbackError) {
+        throw this.#consistencyError(`Update for '${key}' failed and compensation failed`, error, rollbackError);
+      }
+      await this.#tryAudit('custom_provider_updated', key, options.actorUserId, 'failure', { error });
+      throw error;
+    }
+  }
+
+  async delete(key, options = {}) {
+    return this.mutationQueue.run(() => this.#withTransitionLock(key, () => this.#delete(key, options)));
+  }
+
+  async #delete(key, options) {
+    const current = await this.#loadCustomDefinition(key);
+    await this.#tryAudit('custom_provider_delete_attempted', key, options.actorUserId, 'attempted');
+    const credentials = await this.#credentialsFor(key);
+    const grants = await this.#grantsFor(key);
+    if (credentials.length > 0 || grants.length > 0) {
+      const error = new Error(`Provider '${key}' cannot be deleted while Credentials or Consumer Grants reference it`);
+      error.code = 'CUSTOM_PROVIDER_DEPENDENCIES';
+      error.statusCode = 409;
+      await this.#tryAudit('custom_provider_delete_blocked', key, options.actorUserId, 'blocked', {
+        credentialCount: credentials.length,
+        grantCount: grants.length,
+        error
+      });
+      throw error;
+    }
+    const wasRegistered = this.providerRegistry.has(key);
+    if (wasRegistered) this.providerRegistry.unregister(key);
+    try {
+      const deleted = await this.store.delete(key);
+      if (!deleted && await this.store.get(key)) throw this.#consistencyError(`Provider '${key}' could not be deleted`);
+      await this.#audit('custom_provider_deleted', key, options.actorUserId, 'success');
+      return this.#lifecycleResult({ ...current, enabled: false });
+    } catch (error) {
+      try {
+        if (wasRegistered) this.#register(current);
+      } catch (rollbackError) {
+        throw this.#consistencyError(`Delete for '${key}' failed and compensation failed`, error, rollbackError);
+      }
+      await this.#tryAudit('custom_provider_deleted', key, options.actorUserId, 'failure', { error });
+      throw error;
+    }
   }
 
   #normalize(input) {
@@ -87,6 +189,7 @@ export class CustomProviderService {
         return new CredentialMethod({
         key: method.key,
         displayName: method.displayName,
+        authenticationMethod: method.authenticationMethod ?? method.key,
         description: method.description ?? null,
         credentialFields: method.credentialFields.map((field) => ({ ...field, section: 'accountCredentials' })),
         operationCapabilities: []
@@ -157,11 +260,11 @@ export class CustomProviderService {
   }
 
   async disable(key, options = {}) {
-    return this.#withTransitionLock(key, () => this.#disable(key, options));
+    return this.mutationQueue.run(() => this.#withTransitionLock(key, () => this.#disable(key, options)));
   }
 
   async enable(key, options = {}) {
-    return this.#withTransitionLock(key, () => this.#enable(key, options));
+    return this.mutationQueue.run(() => this.#withTransitionLock(key, () => this.#enable(key, options)));
   }
 
   async #disable(key, options) {
@@ -224,6 +327,57 @@ export class CustomProviderService {
     const definition = this.#storedDefinition(stored);
     this.#assertNoBuiltInConflict(key);
     return definition;
+  }
+
+  #profileFor(definition) {
+    try {
+      return new ProviderDefinition({
+        name: definition.key,
+        provider: new DeclarativeCustomProvider({ name: definition.key }),
+        apiClient: Object.freeze({ kind: 'declarative-custom-provider' }),
+        capabilities: new ProviderCapabilities([]),
+        credentialFields: definition.credentialFields,
+        credentialMethods: definition.credentialMethods,
+        providerMethodBindings: definition.providerMethodBindings,
+        metadata: { category: definition.category, customProvider: true, runtimeOperations: [] }
+      }).providerProfile;
+    } catch {
+      return null;
+    }
+  }
+
+  #editableDefinition(definition) {
+    const field = (value) => Object.fromEntries(Object.entries(value).filter(([key]) => FIELD_KEYS.has(key)));
+    return {
+      key: definition.key,
+      displayName: definition.displayName,
+      category: definition.category,
+      ...(definition.description ? { description: definition.description } : {}),
+      enabled: definition.enabled,
+      credentialFields: (definition.credentialFields ?? []).map(field),
+      credentialMethods: (definition.credentialMethods ?? []).map((method) => ({
+        key: method.key,
+        displayName: method.displayName,
+        description: method.description,
+        credentialFields: (method.credentialFields ?? []).map(field)
+      })),
+      providerMethodBindings: (definition.providerMethodBindings ?? []).map((binding) => ({
+        methodKey: binding.methodKey,
+        displayName: binding.displayName,
+        description: binding.description
+      }))
+    };
+  }
+
+  async #credentialsFor(providerKey) {
+    if (typeof this.credentialStore?.listMetadata !== 'function') return [];
+    return (await this.credentialStore.listMetadata()).filter((credential) => credential.providerKey === providerKey);
+  }
+
+  async #grantsFor(providerKey) {
+    if (typeof this.consumerGrantStore?.load !== 'function') return [];
+    const data = await this.consumerGrantStore.load();
+    return (data.grants ?? []).filter((grant) => grant.providerKey === providerKey);
   }
 
   #storedDefinition(definition) {
@@ -293,6 +447,27 @@ export class CustomProviderService {
     });
   }
 
+  async #audit(action, key, actorUserId, result, details = {}) {
+    if (!this.auditLogService?.record) throw new Error('Custom provider audit is not configured');
+    await this.auditLogService.record({
+      userId: actorUserId ?? null,
+      action,
+      targetType: 'provider',
+      targetId: key,
+      result,
+      details: { ...details, ...(details.error ? { error: safeError(details.error) } : {}) }
+    });
+  }
+
+  async #tryAudit(action, key, actorUserId, result, details = {}) {
+    try {
+      await this.#audit(action, key, actorUserId, result, details);
+    } catch {
+      // Audit failure is surfaced by mutating operations; best-effort records
+      // preserve the original dependency or consistency classification.
+    }
+  }
+
   async #tryAuditLifecycle(action, key, actorUserId, result, error) {
     try {
       await this.#auditLifecycle(action, key, actorUserId, result, error);
@@ -301,14 +476,15 @@ export class CustomProviderService {
     }
   }
 
-  #lifecycleResult(definition) {
+  #lifecycleResult(definition, extra = {}) {
     return {
       providerKey: definition.key,
       enabled: definition.enabled,
       customProvider: true,
       displayName: definition.displayName,
       description: definition.description ?? null,
-      category: definition.category ?? null
+      category: definition.category ?? null,
+      ...extra
     };
   }
 

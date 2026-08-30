@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import { CredentialTransferService } from '../../src/services/credential-transfer-service.js';
 import { Credential } from '../../src/models/credential.js';
@@ -52,6 +53,30 @@ function createCredentialManager(initialCredentials = []) {
       });
       credentials[index] = updated;
       return updated;
+    },
+    async importCredentialBatch(operations, { onCommitted = null } = {}) {
+      const snapshot = [...credentials];
+      try {
+        for (const operation of operations) {
+          if (operation.action === 'create') {
+            credentials.push(Credential.from(operation.credential));
+          } else {
+            const index = credentials.findIndex((credential) => credential.credentialId === operation.targetCredentialId);
+            assert.notEqual(index, -1);
+            credentials[index] = Credential.from({
+              ...credentials[index].toJSON(),
+              ...operation.credential,
+              credentialId: operation.targetCredentialId,
+              version: credentials[index].version + 1
+            });
+          }
+        }
+        await onCommitted?.({ credentials: [...credentials], operations });
+        return { credentials: [...credentials], operations };
+      } catch (error) {
+        credentials.splice(0, credentials.length, ...snapshot);
+        throw error;
+      }
     }
   };
 }
@@ -76,14 +101,16 @@ test('CredentialTransferService exports selected credentials in transfer format'
     clock: () => new Date('2026-07-09T10:00:00.000Z')
   });
 
-  const result = await service.exportCredentials({ credentialIds: ['cred-1'] }, { userId: 'admin' });
+  const result = await service.exportCredentials({ credentialIds: ['cred-1'], encryptionPassword: 'safe export password' }, { userId: 'admin' });
   const payload = JSON.parse(result.content);
 
-  assert.equal(result.filename, 'credential-hub-credentials-2026-07-09T10-00-00-000Z.json');
+  assert.equal(result.filename, 'credential-hub-credentials-2026-07-09T10-00-00-000Z.encrypted.json');
   assert.equal(payload.format, 'credential-hub-credential-transfer');
   assert.equal(payload.schemaVersion, 1);
   assert.equal(payload.metadata.credentialCount, 1);
-  assert.equal(payload.credentials[0].secrets[0].value, 'secret-openai-key');
+  assert.equal(payload.credentials, undefined);
+  assert.equal(result.encrypted, true);
+  assert.equal(result.content.includes('secret-openai-key'), false);
   assert.equal(auditLogService.entries[0].action, 'credential-export.created');
   assert.equal(auditLogService.entries[0].result, 'success');
 });
@@ -183,7 +210,15 @@ test('CredentialTransferService rejects invalid transfer payloads and conflict s
 
   await assert.rejects(() => service.previewImport({ format: 'wrong', schemaVersion: 1, credentials: [] }), /transfer payload format/);
   await assert.rejects(() => service.importCredentials({ format: 'credential-hub-credential-transfer', schemaVersion: 1, credentials: [] }, { conflictStrategy: 'merge' }), /conflictStrategy must be one of/);
-  await assert.rejects(() => service.exportCredentials({ credentialIds: [] }), /credentialIds must contain/);
+  await assert.rejects(() => service.exportCredentials({ credentialIds: [], encryptionPassword: 'safe export password' }), /credentialIds must contain/);
+});
+
+test('CredentialTransferService rejects missing, empty and invalid export passwords', async () => {
+  const service = new CredentialTransferService({ credentialManager: createCredentialManager([createCredential()]) });
+
+  await assert.rejects(() => service.exportCredentials({ credentialIds: ['cred-1'] }), /requires a non-empty encryption password/);
+  await assert.rejects(() => service.exportCredentials({ credentialIds: ['cred-1'], encryptionPassword: '' }), /requires a non-empty encryption password/);
+  await assert.rejects(() => service.exportCredentials({ credentialIds: ['cred-1'], encryptionPassword: 42 }), /requires a non-empty encryption password/);
 });
 
 test('CredentialTransferService exports encrypted transfer envelopes when a password is supplied', async () => {
@@ -203,7 +238,7 @@ test('CredentialTransferService exports encrypted transfer envelopes when a pass
   assert.equal(envelope.encryption.algorithm, 'aes-256-gcm');
   assert.equal(envelope.encryption.kdf, 'pbkdf2');
   assert.equal(envelope.encryption.digest, 'sha256');
-  assert.ok(envelope.encryption.iterations >= 100000);
+  assert.equal(envelope.encryption.iterations, 210000);
   assert.ok(envelope.ciphertext);
   assert.equal(envelope.credentials, undefined);
   assert.equal(result.content.includes('secret-openai-key'), false);
@@ -256,6 +291,45 @@ test('CredentialTransferService rejects encrypted transfers with missing, wrong,
   const tampered = JSON.parse(encryptedExport.content);
   tampered.ciphertext = tampered.ciphertext.replace(/.$/, tampered.ciphertext.endsWith('A') ? 'B' : 'A');
   await assert.rejects(() => importService.previewImport(tampered, { password: 'safe export password' }), /could not be decrypted/);
+});
+
+test('CredentialTransferService rejects unsupported transfer KDF iterations before PBKDF2', async () => {
+  const service = new CredentialTransferService({ credentialManager: createCredentialManager() });
+  const originalPbkdf2 = crypto.pbkdf2;
+  let pbkdf2Calls = 0;
+  crypto.pbkdf2 = (...args) => {
+    pbkdf2Calls += 1;
+    return originalPbkdf2(...args);
+  };
+
+  try {
+    for (const iterations of [99999, 210001, 2147483647, 210000.5, -1, '210000']) {
+      const envelope = {
+        format: 'credential-hub-credential-transfer',
+        schemaVersion: 1,
+        encrypted: true,
+        encryption: {
+          algorithm: 'aes-256-gcm',
+          kdf: 'pbkdf2',
+          digest: 'sha256',
+          iterations,
+          salt: Buffer.alloc(16).toString('base64'),
+          iv: Buffer.alloc(12).toString('base64'),
+          authTag: Buffer.alloc(16).toString('base64')
+        },
+        ciphertext: Buffer.from('ciphertext').toString('base64')
+      };
+
+      await assert.rejects(
+        () => service.previewImport(envelope, { password: 'safe export password' }),
+        /iterations must equal 210000/
+      );
+    }
+  } finally {
+    crypto.pbkdf2 = originalPbkdf2;
+  }
+
+  assert.equal(pbkdf2Calls, 0);
 });
 
 test('CredentialTransferService previews CSV credential imports with dynamic secret columns', async () => {

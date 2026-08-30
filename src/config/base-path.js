@@ -59,7 +59,29 @@ export function normalizeTrustedProxy(value) {
   if (!values.length || values.some((entry) => !isTrustedProxyToken(entry))) {
     throw new Error('TRUSTED_PROXY must contain only loopback, linklocal, uniquelocal, or IP/CIDR values');
   }
+  if (values.some((entry) => ['0.0.0.0/0', '::/0'].includes(entry))) {
+    throw new Error('TRUSTED_PROXY must identify an explicit proxy boundary');
+  }
+  if (values.some((entry) => entry.endsWith('/0'))) {
+    throw new Error('TRUSTED_PROXY must identify an explicit proxy boundary');
+  }
   return values.length === 1 ? values[0] : values;
+}
+
+export function normalizeApplicationBindHost(value, { hosted = false } = {}) {
+  const host = typeof value === 'string' && value.trim() !== '' ? value.trim() : (hosted ? '0.0.0.0' : '127.0.0.1');
+  const isLoopback = ['127.0.0.1', '::1', 'localhost'].includes(host);
+  const isWildcard = ['0.0.0.0', '::'].includes(host);
+  if (!isLoopback && !isWildcard) {
+    throw new Error('APP_BIND_HOST must be a loopback or wildcard address');
+  }
+  if (hosted && isLoopback) {
+    throw new Error('HOSTED_MODE requires a non-loopback application bind for the private proxy network');
+  }
+  if (!hosted && !isLoopback) {
+    throw new Error('Standalone mode requires a loopback application bind');
+  }
+  return host;
 }
 
 export function isInternalPublicOrigin(value) {

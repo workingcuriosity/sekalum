@@ -109,3 +109,6 @@ docs/**/*.pdf
 
 # Gov3 Orchestrator runtime outputs are generated locally and are not Candidate code.
 /outputs/gov3-orchestrator/*.json
+
+# Private Gov3 runtime state (telemetry and control-plane records).
+/.sekalum-runtime/

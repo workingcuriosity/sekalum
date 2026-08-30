@@ -116,6 +116,40 @@ function createServer() {
       definition.enabled = true;
       providers.set(providerKey, { ...definition });
       return { providerKey, enabled: true, customProvider: true, displayName: definition.displayName, description: definition.description, category: definition.category };
+    },
+    async update(providerKey, input) {
+      const definition = customDefinitions.get(providerKey);
+      if (!definition) {
+        const error = new Error(`Provider '${providerKey}' cannot be changed`);
+        error.code = 'BUILTIN_PROVIDER_IMMUTABLE';
+        error.statusCode = 400;
+        throw error;
+      }
+      const updated = { ...definition, ...input, key: providerKey, enabled: definition.enabled };
+      customDefinitions.set(providerKey, updated);
+      providers.set(providerKey, {
+        ...updated,
+        customProvider: true,
+        providerKey,
+        capabilities: [],
+        providerConfigurationFields: [],
+        authType: null,
+        defaultScopes: [],
+        oauthSecurity: null,
+        oauthTechnical: null
+      });
+      return { providerKey, enabled: updated.enabled, customProvider: true, displayName: updated.displayName, description: updated.description, category: updated.category, classification: 'NON_BREAKING_METADATA_CHANGE' };
+    },
+    async delete(providerKey) {
+      if (!customDefinitions.has(providerKey)) {
+        const error = new Error(`Provider '${providerKey}' cannot be changed`);
+        error.code = 'BUILTIN_PROVIDER_IMMUTABLE';
+        error.statusCode = 400;
+        throw error;
+      }
+      customDefinitions.delete(providerKey);
+      providers.delete(providerKey);
+      return { providerKey, enabled: false, customProvider: true };
     }
   };
 
@@ -369,6 +403,47 @@ test('HTTP provider lifecycle routes require the bounded action and preserve man
     });
     assert.equal(builtIn.status, 400);
     assert.equal((await builtIn.json()).error.code, 'BUILTIN_PROVIDER_IMMUTABLE');
+  } finally {
+    server.close();
+  }
+});
+
+test('HTTP provider management routes edit metadata and delete an unused custom provider', async () => {
+  const httpServer = createServer();
+  const { server, baseUrl } = await listen(httpServer.app);
+  const input = {
+    key: 'acme-service', displayName: 'Acme Service', category: 'CRM', description: 'Declarative provider',
+    credentialMethods: [{ key: 'api-key', displayName: 'API key', credentialFields: [{ key: 'apiKey', label: 'API key', type: 'api-key', secret: true }], operationCapabilities: [] }],
+    providerMethodBindings: [{ methodKey: 'api-key', displayName: 'Acme API key' }],
+    credentialFields: [{ key: 'apiKey', label: 'API key', type: 'api-key', secret: true }]
+  };
+
+  try {
+    await fetch(`${baseUrl}/api/v1/providers`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-credential-hub-user': 'admin' }, body: JSON.stringify(input)
+    });
+
+    const updated = await fetch(`${baseUrl}/api/v1/providers/acme-service`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-credential-hub-user': 'admin' },
+      body: JSON.stringify({ ...input, displayName: 'Acme Operations', category: 'Operations' })
+    });
+    const updatedBody = await updated.json();
+    assert.equal(updated.status, 200);
+    assert.equal(updatedBody.success, true);
+    assert.equal(updatedBody.data.displayName, 'Acme Operations');
+    assert.equal(updatedBody.classification, 'NON_BREAKING_METADATA_CHANGE');
+
+    const deleted = await fetch(`${baseUrl}/api/v1/providers/acme-service`, {
+      method: 'DELETE', headers: { 'x-credential-hub-user': 'admin' }
+    });
+    const deletedBody = await deleted.json();
+    assert.equal(deleted.status, 200);
+    assert.equal(deletedBody.success, true);
+    assert.equal(deletedBody.data.providerKey, 'acme-service');
+
+    const missing = await fetch(`${baseUrl}/api/v1/providers/acme-service`);
+    assert.equal(missing.status, 404);
   } finally {
     server.close();
   }

@@ -164,7 +164,8 @@ export const TEST_CLASSIFICATION_SUITES = Object.freeze([
       'tests/architecture/no-direct-http-in-provider.test.js',
       'tests/architecture/no-legacy-provider-manager-import.test.js',
       'tests/architecture/no-provider-logging.test.js',
-      'tests/architecture/storage-abstraction.test.js'
+      'tests/architecture/storage-abstraction.test.js',
+      'tests/unit/provider-profile.test.js'
     ]
   },
   {

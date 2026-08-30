@@ -41,6 +41,30 @@ function createProviderManager(fields, providerKey = 'openai') {
   };
 }
 
+function createOAuthProviderManager(providerKey = 'threads') {
+  return {
+    getProvider(key) {
+      if (key !== providerKey) {
+        const error = new Error('not found');
+        error.code = 'NOT_FOUND';
+        throw error;
+      }
+      return {
+        key,
+        credentialMethods: [{
+          key: 'oauth2',
+          authenticationMethod: 'oauth2',
+          credentialFields: [
+            { key: 'accessToken', required: false, secret: true, section: 'oauthRuntime', systemManaged: true },
+            { key: 'refreshToken', required: false, secret: true, section: 'oauthRuntime', systemManaged: true }
+          ]
+        }],
+        providerMethodBindings: [{ methodKey: 'oauth2' }]
+      };
+    }
+  };
+}
+
 const openAiFields = [
   { key: 'displayName', required: true, secret: false, type: 'text' },
   { key: 'apiKey', required: true, secret: true, type: 'api-key', validation: { minLength: 20 } }
@@ -658,11 +682,16 @@ test('a successful refresh is returned by Consumer Resolve from the canonical st
   await manager.refreshExpiredCredentials();
   const consumer = new ConsumerCredentialService({
     credentialStore: store,
-    consumerGrantService: { async findGrant() { return { secretNames: ['accessToken'] }; } },
+    consumerGrantService: {
+      async findGrant() {
+        return { consumerId: 'consumer-1', credentialId: credential.credentialId, providerKey: credential.providerKey, secretNames: ['accessToken'] };
+      }
+    },
     providerRegistry: { get() { return {
       getCredentialMethod() { return { credentialFields: [{ key: 'accessToken', secret: true }] }; },
       getProviderMethodBinding() { return { methodKey: 'oauth2' }; }
-    }; } }
+    }; } },
+    auditLogService: { async record() {} }
   });
 
   const resolved = await consumer.resolve({ consumerId: 'consumer-1', credentialKey: credential.credentialKey, secretNames: ['accessToken'] });
@@ -718,7 +747,7 @@ test('CredentialManager owns OAuth import orchestration during MS7 migration', a
       async load() { const error = new Error('missing'); error.code = 'NOT_FOUND'; throw error; },
       async save(credential) { this.saved = credential; }
     },
-    providerManager: {},
+    providerManager: createOAuthProviderManager(),
   });
 
   const result = await manager.importCredential(oauthResult);
@@ -745,7 +774,7 @@ test('CredentialManager reuses the canonical Credential identity when OAuth mate
       else credentials[index] = credential;
     }
   };
-  const manager = new CredentialManager({ credentialStore, providerManager: {} });
+  const manager = new CredentialManager({ credentialStore, providerManager: createOAuthProviderManager() });
 
   const first = await manager.importCredential(new OAuthResult({
     providerId: 'threads:main', provider: 'threads', accountId: 'main', accessToken: 'first-access'

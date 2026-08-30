@@ -28,6 +28,14 @@ test('AuditLogService records audit entries with required fields', async () => {
   assert.deepEqual(entry.details, { roleKey: 'viewer' });
 });
 
+test('AuditLogService rejects malformed new entry identifiers', async () => {
+  const service = new AuditLogService();
+  await assert.rejects(
+    () => service.record({ entryId: 42, action: 'test.action', targetType: 'test' }),
+    { code: 'BAD_REQUEST' }
+  );
+});
+
 test('AuditLogService filters entries by user, action and result', async () => {
   const service = new AuditLogService();
 
@@ -93,7 +101,7 @@ test('AuditLogService makes legacy ambiguity explicit without inventing a user i
       result: 'success', details: null
     }
   ] }];
-  const service = new AuditLogService({ store: {
+  const service = new AuditLogService({ clock: () => new Date('2026-07-09T00:00:00.000Z'), store: {
     async load() { return saved[0]; },
     async save(data) { saved.push(data); }
   } });

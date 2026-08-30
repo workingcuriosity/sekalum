@@ -1,3 +1,5 @@
+import { isProviderProfileMigrationVerified } from '../models/credential.js';
+
 const FORBIDDEN_KEYS = new Set([
   'adapter',
   'adapterKey',
@@ -51,9 +53,11 @@ export class RuntimePublicProjectionService {
     let record;
     try {
       provider = this.providerRegistry.get(binding.providerKey);
+      if (provider?.providerProfile && !isProviderProfileMigrationVerified(credential)) return null;
       record = await this.providerConfigurationService.load(
         binding.configurationId,
-        binding.providerKey
+        binding.providerKey,
+        provider.providerProfile ?? null
       );
     } catch {
       return null;
@@ -89,7 +93,8 @@ export class RuntimePublicProjectionService {
     }
 
     const metadata = credential.metadata?.toJSON?.() ?? credential.metadata ?? {};
-    const configurationId = credential.metadata?.providerConfigurationId
+    const configurationId = credential.providerConfigurationId
+      ?? credential.metadata?.providerConfigurationId
       ?? credential.metadata?.custom?.providerConfigurationId
       ?? metadata.providerConfigurationId
       ?? metadata.custom?.providerConfigurationId;
@@ -98,7 +103,8 @@ export class RuntimePublicProjectionService {
 
     return {
       configurationId: configurationId.trim(),
-      providerKey: credential.providerKey.trim()
+      providerKey: credential.providerKey.trim(),
+      providerProfile: credential.providerProfile ?? credential.metadata?.custom?.providerProfile ?? null
     };
   }
 
@@ -106,6 +112,7 @@ export class RuntimePublicProjectionService {
     return isRecord(record)
       && record.configurationId === binding.configurationId
       && record.providerKey === binding.providerKey
+      && (!binding.providerProfile || !record.providerProfile || binding.providerProfile.digest === record.providerProfile.digest)
       && isRecord(record.configuration);
   }
 }

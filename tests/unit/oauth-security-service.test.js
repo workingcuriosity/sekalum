@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 
 import { OAuthSecurityService } from '../../src/oauth/oauth-security-service.js';
 import { OAuthSecurityRequirements } from '../../src/models/oauth-security-requirements.js';
+import { ProviderProfile } from '../../src/models/provider-definition.js';
 
 test('OAuthSecurityService creates generic state context without provider-specific logic', () => {
   const service = new OAuthSecurityService({ ttlMs: 1000 });
@@ -63,4 +64,50 @@ test('OAuthSecurityService rejects provider mismatch and expired context', () =>
     () => service.consumeCallbackContext({ provider: 'google', state: expired.state, now: 1002 }),
     /expired/
   );
+});
+
+test('OAuthSecurityService rejects callback after provider profile drift', () => {
+  const service = new OAuthSecurityService({ ttlMs: 1000 });
+  const original = new ProviderProfile({ providerKey: 'google', version: '1.0.0', contract: { endpoint: 'v1' } });
+  const changed = new ProviderProfile({ providerKey: 'google', version: '2.0.0', contract: { endpoint: 'v2' } });
+  const created = service.createAuthorizationContext({ provider: 'google', providerProfile: original });
+
+  assert.throws(
+    () => service.consumeCallbackContext({ provider: 'google', state: created.state, providerProfile: changed }),
+    (error) => error.code === 'OAUTH_STATE_INVALID' && /profile mismatch/.test(error.message)
+  );
+});
+
+test('OAuthSecurityService binds callbacks to the initiating actor before one-shot consumption', () => {
+  const service = new OAuthSecurityService({ ttlMs: 1000 });
+  const created = service.createAuthorizationContext({ provider: 'google', actorUserId: 'actor-a' });
+
+  assert.throws(
+    () => service.consumeCallbackContext({
+      provider: 'google',
+      state: created.state,
+      expectedActorUserId: 'actor-b'
+    }),
+    /actor mismatch/
+  );
+  assert.equal(service.contexts.has(created.state), true);
+
+  const consumed = service.consumeCallbackContext({
+    provider: 'google',
+    state: created.state,
+    expectedActorUserId: 'actor-a'
+  });
+  assert.equal(consumed.state, created.state);
+});
+
+test('OAuthSecurityService purges only expired contexts without extending their lifetime', () => {
+  const service = new OAuthSecurityService({ ttlMs: 1000 });
+  const live = service.createAuthorizationContext({ provider: 'google', now: 1500 });
+  const expired = service.createAuthorizationContext({ provider: 'google', now: 1000 });
+
+  const purged = service.purgeExpiredContexts(2001);
+  assert.equal(purged.length, 1);
+  assert.equal(purged[0].expiresAt.getTime(), 2000);
+  assert.equal(service.contexts.has(live.state), true);
+  assert.equal(service.contexts.has(expired.state), false);
 });

@@ -1,12 +1,12 @@
 # Sekalum n8n Examples
 
-Diese Workflows demonstrieren den offiziellen Consumer API Ablauf von Sekalum.
+These workflows demonstrate Sekalum's official Consumer API flow.
 
 ## Enthaltene Beispiele
 
 ### Consumer API Example (OpenAI)
 
-Zeigt:
+Shows:
 
 - Discovery
 - Credential Selection
@@ -16,7 +16,7 @@ Zeigt:
 
 ### OAuth Consumer Example (Twitch)
 
-Zeigt:
+Shows:
 
 - Discovery
 - Runtime-Public Fields
@@ -26,22 +26,22 @@ Zeigt:
 
 ### Consumer API Template
 
-Generischer Ausgangspunkt für eigene Integrationen und die Auswahl eines
-Credentials aus mehreren Discover-Ergebnissen.
+A generic starting point for custom integrations and selecting one Credential
+from multiple Discovery results.
 
-Das Template zeigt:
+The template shows:
 
-- ein n8n-Item pro von Discover geliefertem Credential;
-- providerbasierte Auswahl über `metadata.displayName` mit einem Switch;
-- getrennte Twitch- und OpenAI-Zweige;
-- Weitergabe des ausgewählten `credentialKey` an Resolve;
-- einen sicheren Auffangzweig für nicht konfigurierte Provider.
+- one n8n item per Credential returned by Discovery;
+- provider-based selection through `metadata.displayName` with a Switch;
+- separate Twitch and OpenAI branches;
+- forwarding the selected `credentialKey` to Resolve;
+- a safe inspection branch for unconfigured providers.
 
-Die Auswahl ist unabhängig von der Reihenfolge der Discover-Items. Der
-Sekalum-Node unterstützt zusätzlich einen lokalen Provider Filter: leer für
-alle Provider oder mit einem Provider-Namen für Variante A.
+Selection is independent of Discovery item order. The Sekalum node also
+supports a local Provider Filter: leave it empty for all providers or enter a
+provider name for variant A.
 
-Der Anwender muss lediglich konfigurieren:
+Configure only:
 
 - Credential Display Name
 - Secret Names
@@ -49,17 +49,23 @@ Der Anwender muss lediglich konfigurieren:
 
 ---
 
-## Voraussetzungen
+## Prerequisites
 
-- Sekalum läuft
-- Consumer API Token vorhanden
-- Credential eingerichtet
-- Consumer Grant vorhanden
+- Sekalum is running
+- a Consumer API token is available
+- the Credential is configured
+- a matching Consumer grant exists
 
 ---
 
-## Sicherheit
+## Security boundary
 
-Sekalum liefert Secrets ausschließlich über Resolve.
+Sekalum delivers Secret values only through Resolve. The OpenAI and Twitch
+examples use the resolved value directly in the immediate target HTTP Request
+expression. They do not copy it into an ordinary item, a Code/Set node, a URL,
+workflow notes, logs, retry payloads, pinned data or static data.
 
-Die Beispiele geben niemals Secret-Werte aus.
+The target request is followed by a sanitized result node. Do not add a
+preparation node that returns a resolved Secret as ordinary JSON. Keep workflow
+success and error retention disabled, and treat Resolve or target failures as
+failures without replaying Secret-bearing data.

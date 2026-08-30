@@ -1,6 +1,6 @@
 {
   "name": "sekalum",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-rc.2",
   "description": "Sekalum open-source credential lifecycle management platform.",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -17,7 +17,7 @@
     "start": "node src/index.js",
     "oauth": "node src/cli/run-oauth.js",
     "refresh": "node src/cli/run-refresh.js",
-    "check": "node --check src/index.js && node --check src/bootstrap.js && node --check src/cli/run-oauth.js && node --check src/cli/run-refresh.js",
+    "check": "node --check src/index.js && node --check src/bootstrap.js && node --check src/cli/run-credentials.js && node --check src/cli/run-oauth.js && node --check src/cli/run-refresh.js",
     "test": "NODE_ENV=test npm run check && NODE_ENV=test node --test tests/unit/*.test.js tests/component/*.test.js tests/architecture/*.test.js tests/integration/*.test.js",
     "test:unit": "node --test tests/unit/*.test.js",
     "test:architecture": "node --test tests/architecture/*.test.js",

@@ -6,6 +6,8 @@ import { AccessManagementService } from '../../src/services/access-management-se
 import { AuditLogService } from '../../src/services/audit-log-service.js';
 import { ApiTokenService, ApiTokenServiceConstants } from '../../src/services/api-token-service.js';
 
+const BOOTSTRAP_TOKEN = 'b'.repeat(32);
+
 class InMemoryApiTokenStore {
   constructor() {
     this.tokens = new Map();
@@ -37,7 +39,7 @@ class InMemoryApiTokenStore {
 
 function createServer() {
   const auditLogService = new AuditLogService();
-  const accessManagementService = new AccessManagementService({ auditLogService });
+  const accessManagementService = new AccessManagementService({ auditLogService, bootstrapSecret: BOOTSTRAP_TOKEN });
 
   const server = new OAuthCallbackServer({
     providerManager: { listProviders() { return []; } },
@@ -53,9 +55,9 @@ function createServer() {
   return server;
 }
 
-function createBootstrapServer() {
+function createBootstrapServer({ nodeEnv = 'test' } = {}) {
   const auditLogService = new AuditLogService();
-  const accessManagementService = new AccessManagementService({ auditLogService });
+  const accessManagementService = new AccessManagementService({ auditLogService, bootstrapSecret: BOOTSTRAP_TOKEN });
   const apiTokenService = new ApiTokenService({
     store: new InMemoryApiTokenStore(),
     auditLogService,
@@ -63,6 +65,7 @@ function createBootstrapServer() {
   });
 
   return {
+    accessManagementService,
     apiTokenService,
     server: new OAuthCallbackServer({
       providerManager: { listProviders() { return []; } },
@@ -72,7 +75,11 @@ function createBootstrapServer() {
       accessManagementService,
       auditLogService,
       apiTokenService,
-      config: { get() { return 0; } },
+      config: { get(key, fallback = null) {
+        if (key === 'NODE_ENV') return nodeEnv;
+        if (key === 'PUBLIC_BASE_URL' && nodeEnv === 'production') return 'https://sekalum.example.test';
+        return fallback;
+      } },
       logger: { success() {}, error() {}, info() {} }
     })
   };
@@ -110,7 +117,7 @@ test('HTTP management users endpoint creates, updates and deletes users', async 
   try {
     const createResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'user-1', displayName: 'User One', roleKey: 'admin' })
     });
     const created = await createResponse.json();
@@ -138,17 +145,32 @@ test('HTTP management users endpoint creates, updates and deletes users', async 
   }
 });
 
-test('HTTP management users endpoint allows only the first administrator without a Bearer token', async () => {
+test('HTTP management users endpoint requires bootstrap proof and allows only the first administrator without a Bearer token', async () => {
   const setup = createBootstrapServer();
   const { server, baseUrl } = await listen(setup.server.app);
 
   try {
-    const bootstrapResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
+    const missingProofResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'admin-missing', displayName: 'Admin', roleKey: 'admin' })
+    });
+    assert.equal(missingProofResponse.status, 403);
+
+    const wrongProofResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': 'w'.repeat(32) },
+      body: JSON.stringify({ userId: 'admin-wrong', displayName: 'Admin', roleKey: 'admin' })
+    });
+    assert.equal(wrongProofResponse.status, 403);
+
+    const bootstrapResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
     assert.equal(bootstrapResponse.status, 201);
+    assert.doesNotMatch(await bootstrapResponse.clone().text(), new RegExp(BOOTSTRAP_TOKEN));
 
     const unauthenticatedResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
@@ -156,8 +178,15 @@ test('HTTP management users endpoint allows only the first administrator without
       body: JSON.stringify({ userId: 'admin-2', displayName: 'Second Admin', roleKey: 'admin' })
     });
     const unauthenticated = await unauthenticatedResponse.json();
-    assert.equal(unauthenticatedResponse.status, 401);
-    assert.equal(unauthenticated.error.code, 'API_TOKEN_AUTH_FAILED');
+    assert.equal(unauthenticatedResponse.status, 403);
+    assert.equal(unauthenticated.error.code, 'BOOTSTRAP_CLOSED');
+
+    const reusedBootstrapResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
+      body: JSON.stringify({ userId: 'admin-3', displayName: 'Second Bootstrap', roleKey: 'admin' })
+    });
+    assert.equal(reusedBootstrapResponse.status, 403);
 
     const managementToken = await setup.apiTokenService.createToken({
       name: 'Bootstrap validation token',
@@ -179,6 +208,26 @@ test('HTTP management users endpoint allows only the first administrator without
   }
 });
 
+test('production management users endpoint does not trust loopback proxy headers as bootstrap proof', async () => {
+  const setup = createBootstrapServer({ nodeEnv: 'production' });
+  const { server, baseUrl } = await listen(setup.server.app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/management/users`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-for': '127.0.0.1'
+      },
+      body: JSON.stringify({ userId: 'proxy-admin', displayName: 'Proxy Admin', roleKey: 'admin' })
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await setup.accessManagementService.listUsers(), []);
+  } finally {
+    server.close();
+  }
+});
+
 test('HTTP management users endpoint enforces role permissions after bootstrap', async () => {
   const httpServer = createServer();
   const { server, baseUrl } = await listen(httpServer.app);
@@ -186,7 +235,7 @@ test('HTTP management users endpoint enforces role permissions after bootstrap',
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -273,9 +322,11 @@ test('credential-sensitive route matrix denies unauthenticated and under-permiss
   try {
     for (const [method, pathname] of matrix) {
       const unauthenticated = await request(method, pathname);
-      assert.equal(unauthenticated.status, 401, `${method} ${pathname} unauthenticated`);
+      const expectedUnauthenticatedStatus = pathname === '/api/v1/management/users' && method === 'POST' ? 403 : 401;
+      assert.equal(unauthenticated.status, expectedUnauthenticatedStatus, `${method} ${pathname} unauthenticated`);
       const unauthenticatedBody = await unauthenticated.json();
-      assert.equal(unauthenticatedBody.error.code, 'API_TOKEN_AUTH_FAILED', `${method} ${pathname} unauthenticated code`);
+      const expectedUnauthenticatedCode = expectedUnauthenticatedStatus === 403 ? 'BOOTSTRAP_CLOSED' : 'API_TOKEN_AUTH_FAILED';
+      assert.equal(unauthenticatedBody.error.code, expectedUnauthenticatedCode, `${method} ${pathname} unauthenticated code`);
 
       const underPermissioned = await request(method, pathname, { 'x-credential-hub-user': 'viewer-1' });
       assert.equal(underPermissioned.status, 403, `${method} ${pathname} viewer`);
@@ -294,7 +345,7 @@ test('HTTP management audit-log endpoint lists audited user changes for admins',
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -330,7 +381,7 @@ test('HTTP management audit-log endpoint rejects viewers', async () => {
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -359,7 +410,7 @@ test('HTTP management export endpoints return JSON and CSV exports for admins', 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -399,7 +450,7 @@ test('HTTP management export endpoints reject viewers', async () => {
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -429,7 +480,7 @@ test('HTTP management backup endpoints create and restore management backups for
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -478,7 +529,7 @@ test('HTTP management backup endpoints reject viewers', async () => {
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -508,7 +559,7 @@ test('HTTP management metrics endpoint returns extended operating metrics for ad
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 
@@ -535,7 +586,7 @@ test('HTTP management metrics endpoint rejects disabled users', async () => {
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-admin-bootstrap-token': BOOTSTRAP_TOKEN },
       body: JSON.stringify({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' })
     });
 

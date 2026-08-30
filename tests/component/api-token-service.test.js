@@ -1,11 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 import { ApiTokenService, ApiTokenServiceConstants } from '../../src/services/api-token-service.js';
+import { ApiTokenStore } from '../../src/storage/api-token-store.js';
+import { JsonStore } from '../../src/storage/json-store.js';
 
 class InMemoryApiTokenStore {
   constructor() {
     this.tokens = new Map();
+    this.failNextSave = false;
   }
 
   async list() {
@@ -23,12 +29,35 @@ class InMemoryApiTokenStore {
   }
 
   async save(token) {
+    if (this.failNextSave) {
+      this.failNextSave = false;
+      throw new Error('simulated token persistence failure');
+    }
     this.tokens.set(token.id, token);
     return token;
   }
 
   async findByPrefix(tokenPrefix) {
     return [...this.tokens.values()].filter((token) => token.tokenPrefix === tokenPrefix);
+  }
+}
+
+class SnapshotBlockingApiTokenStore extends InMemoryApiTokenStore {
+  constructor() {
+    super();
+    this.blockNextLookup = false;
+    this.lookupEntered = new Promise((resolve) => { this.resolveLookupEntered = resolve; });
+    this.releaseLookup = new Promise((resolve) => { this.resolveLookup = resolve; });
+  }
+
+  async findByPrefix(tokenPrefix) {
+    const snapshot = await super.findByPrefix(tokenPrefix);
+    if (this.blockNextLookup) {
+      this.blockNextLookup = false;
+      this.resolveLookupEntered();
+      await this.releaseLookup;
+    }
+    return snapshot;
   }
 }
 
@@ -273,4 +302,96 @@ test('ApiTokenService makes repeated revocation idempotent and records the admin
   assert.equal(auditEntries.find((entry) => entry.action === 'api-token.revoked').userId, 'admin-user');
   assert.equal(auditEntries.some((entry) => entry.action === 'api-token.revoke.noop'), true);
   assert.equal(auditEntries.every((entry) => !JSON.stringify(entry).includes(created.token)), true);
+});
+
+test('ApiTokenService serializes authentication and revocation around a stale snapshot', async () => {
+  const store = new SnapshotBlockingApiTokenStore();
+  const service = new ApiTokenService({
+    store,
+    clock: () => new Date('2026-07-09T08:00:00.000Z'),
+    randomBytes: () => Buffer.alloc(ApiTokenServiceConstants.TOKEN_BYTES, 11)
+  });
+  const created = await service.createToken({ name: 'Race token', userId: 'owner', createdBy: 'admin' });
+
+  store.blockNextLookup = true;
+  const authentication = service.authenticate(created.token);
+  await store.lookupEntered;
+
+  const revocation = service.revokeToken(created.apiToken.id, {
+    revokedAt: '2026-07-10T08:00:00.000Z',
+    revokedBy: 'admin'
+  });
+
+  store.resolveLookup();
+
+  const authenticationResult = await authentication;
+  const revocationResult = await revocation;
+  const stored = await store.load(created.apiToken.id);
+
+  assert.equal(authenticationResult.authenticated, false);
+  assert.equal(authenticationResult.reason, 'revoked');
+  assert.equal(revocationResult.status, 'revoked');
+  assert.equal(stored.revokedAt.toISOString(), '2026-07-10T08:00:00.000Z');
+  assert.equal((await service.authenticate(created.token)).authenticated, false);
+});
+
+test('ApiTokenService recovers its mutation queue after an authentication write failure', async () => {
+  const { store, service } = createService();
+  const created = await service.createToken({ name: 'Recovery token', userId: 'owner', createdBy: 'admin' });
+
+  store.failNextSave = true;
+  await assert.rejects(() => service.authenticate(created.token), /simulated token persistence failure/);
+
+  const revoked = await service.revokeToken(created.apiToken.id, {
+    revokedAt: '2026-07-10T08:00:00.000Z',
+    revokedBy: 'admin'
+  });
+
+  assert.equal(revoked.status, 'revoked');
+  assert.equal((await service.authenticate(created.token)).authenticated, false);
+});
+
+test('ApiTokenService keeps revocation terminal across concurrent token use', async () => {
+  const { store, service } = createService();
+  const created = await service.createToken({ name: 'Concurrent token', userId: 'owner', createdBy: 'admin' });
+
+  const operations = [
+    ...Array.from({ length: 10 }, () => service.authenticate(created.token)),
+    service.revokeToken(created.apiToken.id, {
+      revokedAt: '2026-07-10T08:00:00.000Z',
+      revokedBy: 'admin'
+    })
+  ];
+  await Promise.all(operations);
+
+  const stored = await store.load(created.apiToken.id);
+  assert.equal(stored.revokedAt.toISOString(), '2026-07-10T08:00:00.000Z');
+  assert.equal((await service.authenticate(created.token)).authenticated, false);
+});
+
+test('ApiTokenService preserves terminal revocation through the real file-backed store', async () => {
+  const basePath = await fs.mkdtemp(path.join(os.tmpdir(), 'credential-hub-api-token-service-'));
+  try {
+    const store = new ApiTokenStore({ jsonStore: new JsonStore(), basePath });
+    const service = new ApiTokenService({
+      store,
+      clock: () => new Date('2026-07-09T08:00:00.000Z'),
+      randomBytes: () => Buffer.alloc(ApiTokenServiceConstants.TOKEN_BYTES, 12)
+    });
+    const created = await service.createToken({ name: 'File token', userId: 'owner', createdBy: 'admin' });
+
+    await Promise.all([
+      service.authenticate(created.token),
+      service.revokeToken(created.apiToken.id, {
+        revokedAt: '2026-07-10T08:00:00.000Z',
+        revokedBy: 'admin'
+      })
+    ]);
+
+    const persisted = await store.load(created.apiToken.id);
+    assert.equal(persisted.revokedAt.toISOString(), '2026-07-10T08:00:00.000Z');
+    assert.equal((await service.authenticate(created.token)).authenticated, false);
+  } finally {
+    await fs.rm(basePath, { recursive: true, force: true });
+  }
 });

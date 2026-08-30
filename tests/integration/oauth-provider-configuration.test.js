@@ -64,6 +64,87 @@ test('OAuth start accepts provider configuration without returning secret values
   }
 });
 
+test('OAuth callback requires the initiating actor binding cookie', async () => {
+  let state;
+  let callbackCalls = 0;
+  const httpServer = new OAuthCallbackServer({
+    providerManager: {
+      async startOAuth(_provider, options) {
+        state = options.state;
+        return {
+          success: true,
+          data: {
+            authorizationUrl: `https://provider.example.test/authorize?state=${encodeURIComponent(options.state)}&redirect_uri=${encodeURIComponent(options.providerConfiguration.redirectUri)}`
+          }
+        };
+      },
+      async handleOAuthCallback(_provider, _callback, options) {
+        callbackCalls += 1;
+        assert.equal(options.expectedActorUserId, 'actor-a');
+        return { success: true, data: { provider: 'x', metadata: {} } };
+      },
+      async cleanupExpiredOAuthContexts() {}
+    },
+    importTokenCommand: {
+      async execute(result) {
+        return { credentialId: 'credential-1', provider: result.provider };
+      }
+    },
+    credentialManager: { async listCredentials() { return []; } },
+    accessManagementService: {
+      async listUsers() { return []; },
+      async isAuthorizationRequired() { return true; },
+      async authorize(userId) { assert.equal(userId, 'actor-a'); }
+    },
+    apiTokenService: {
+      async createToken() { return {}; },
+      async listTokens() { return []; },
+      async authenticate(token) {
+        assert.equal(token, 'management-token');
+        return { authenticated: true, userId: 'actor-a', scopes: ['providers:manage'] };
+      }
+    },
+    config: {
+      get(key, fallback) {
+        if (key === 'NODE_ENV') return 'development';
+        return key === 'OAUTH_WIZARD_INTENT_TTL_MS' ? 60000 : fallback;
+      }
+    },
+    logger: { success() {}, info() {}, error() {} }
+  });
+  const { server, baseUrl } = await listen(httpServer.app);
+
+  try {
+    const start = await fetch(`${baseUrl}/api/v1/providers/x/oauth/start`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer management-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ providerConfiguration: { clientId: 'client-id' } })
+    });
+    assert.equal(start.status, 200);
+    const startBody = await start.json();
+    const bindingCookie = start.headers.get('set-cookie');
+    assert.match(bindingCookie, /HttpOnly/);
+    assert.match(bindingCookie, /SameSite=Lax/);
+
+    const cookieName = bindingCookie.split('=', 1)[0];
+    const withoutValidBinding = await fetch(`${baseUrl}/oauth/x/callback?code=code&state=${encodeURIComponent(state)}`, {
+      headers: { cookie: `${cookieName}=invalid` }
+    });
+    assert.ok(withoutValidBinding.status >= 400 && withoutValidBinding.status < 500);
+    assert.equal(callbackCalls, 0);
+
+    const withCookie = await fetch(`${baseUrl}/oauth/x/callback?code=code&state=${encodeURIComponent(state)}`, {
+      headers: { cookie: bindingCookie.split(';', 1)[0] }
+    });
+    assert.equal(withCookie.status, 200);
+    assert.match(await withCookie.text(), /data-oauth-result="success"/);
+    assert.equal(callbackCalls, 1);
+    assert.equal(startBody.data.callbackPath, '/oauth/x/callback');
+  } finally {
+    server.close();
+  }
+});
+
 test('OAuth start derives a BASE_PATH-safe redirect URI from the request origin', async () => {
   const httpServer = new OAuthCallbackServer({
     providerManager: {
@@ -339,6 +420,42 @@ test('OAuth server rejects an invalid public base URL at startup', () => {
     config: { get(key, fallback) { return key === 'PUBLIC_BASE_URL' ? 'https://hub.example.test/path' : fallback; } },
     logger: { success() {}, info() {}, error() {} }
   }), /PUBLIC_BASE_URL/);
+});
+
+test('hosted mode requires an explicit proxy and binds only to the private proxy network', async () => {
+  const values = {
+    HOSTED_MODE: 'true',
+    PUBLIC_BASE_URL: 'https://hub.example.test',
+    OAUTH_CALLBACK_PORT: '0'
+  };
+  const config = {
+    get(key, fallback) { return Object.hasOwn(values, key) ? values[key] : fallback; }
+  };
+
+  assert.throws(() => new OAuthCallbackServer({
+    providerManager: {},
+    importTokenCommand: {},
+    credentialManager: {},
+    config,
+    logger: { success() {}, info() {}, error() {} }
+  }), /explicit TRUSTED_PROXY/);
+
+  values.TRUSTED_PROXY = '172.30.0.2';
+  values.APP_BIND_HOST = '0.0.0.0';
+  const server = new OAuthCallbackServer({
+    providerManager: {},
+    importTokenCommand: {},
+    credentialManager: {},
+    config,
+    logger: { success() {}, info() {}, error() {} }
+  });
+
+  await server.start();
+  try {
+    assert.equal(server.server.address().address, '0.0.0.0');
+  } finally {
+    await server.stop();
+  }
 });
 
 test('OAuth start returns a stable provider configuration error code', async () => {

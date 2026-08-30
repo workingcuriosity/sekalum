@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 const ENCRYPTED_JSON_TYPE = 'credential-hub-encrypted-json';
 const ENCRYPTED_JSON_VERSION = 1;
@@ -121,6 +123,109 @@ export class EncryptedJsonStore {
       before,
       after
     };
+  }
+
+  assertConfigured() {
+    this.#key(this.#currentKeyVersion());
+  }
+
+  async migrateBeforeServing({
+    rootPath,
+    rootFiles = [],
+    recursiveDirectories = []
+  }) {
+    this.assertConfigured();
+    const filePaths = await this.#storageFilePaths({ rootPath, rootFiles, recursiveDirectories });
+    const migrated = [];
+    let inspected = 0;
+
+    for (const filePath of filePaths) {
+      if (!(await this.exists(filePath))) continue;
+      inspected += 1;
+      const payload = await this.jsonStore.load(filePath);
+      if (!this.#isEncryptedPayload(payload) && !this.#isSupportedLegacyPayload(rootPath, filePath, payload)) {
+        throw new EncryptedJsonStoreError(
+          'ENCRYPTED_JSON_UNKNOWN_LEGACY_FORMAT',
+          'Secure storage contains an unsupported legacy format and cannot be served safely.',
+          { details: { relativePath: path.relative(rootPath, filePath) } }
+        );
+      }
+
+      await this.load(filePath);
+      const before = await this.getEncryptionMetadata(filePath);
+      if (before.encrypted === false || before.needsReEncryption === true) {
+        await this.reEncrypt(filePath);
+        migrated.push(path.relative(rootPath, filePath));
+      }
+
+      const after = await this.getEncryptionMetadata(filePath);
+      if (after.encrypted !== true || after.needsReEncryption === true) {
+        throw new EncryptedJsonStoreError(
+          'ENCRYPTED_JSON_MIGRATION_INCOMPLETE',
+          'Secure storage migration did not produce the active encrypted format.',
+          { details: { relativePath: path.relative(rootPath, filePath) } }
+        );
+      }
+    }
+
+    return { inspected, migrated };
+  }
+
+  async #storageFilePaths({ rootPath, rootFiles, recursiveDirectories }) {
+    const filePaths = rootFiles.map((fileName) => path.join(rootPath, fileName));
+    for (const directoryName of recursiveDirectories) {
+      const directoryPath = path.join(rootPath, directoryName);
+      filePaths.push(...await this.#jsonFilesInDirectory(directoryPath));
+    }
+    return [...new Set(filePaths)].sort();
+  }
+
+  async #jsonFilesInDirectory(directoryPath) {
+    let entries;
+    try {
+      entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === 'ENOENT') return [];
+      throw error;
+    }
+
+    const files = [];
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) {
+        throw new EncryptedJsonStoreError(
+          'ENCRYPTED_JSON_STORAGE_LINK_UNSUPPORTED',
+          'Secure storage cannot be migrated through a symbolic link.'
+        );
+      }
+      const entryPath = path.join(directoryPath, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...await this.#jsonFilesInDirectory(entryPath));
+      } else if (entry.isFile() && entry.name.endsWith('.json')) {
+        files.push(entryPath);
+      }
+    }
+    return files;
+  }
+
+  #isSupportedLegacyPayload(rootPath, filePath, payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+    const relativePath = path.relative(rootPath, filePath);
+    if (relativePath.includes(path.sep)) return Object.keys(payload).length > 0;
+
+    const collectionFieldByFile = {
+      'credentials.json': 'credentials',
+      'credential-metadata.json': 'credentials',
+      'access-management.json': 'users',
+      'api-tokens.json': 'tokens',
+      'audit-log.json': 'events',
+      'consumer-grants.json': 'grants',
+      'credential-policies.json': 'policies',
+      'credential-secret-versions.json': 'versions',
+      'lifecycle-notifications.json': 'notifications',
+      'provider-configurations.json': 'configurations'
+    };
+    const field = collectionFieldByFile[path.basename(filePath)];
+    return Boolean(field && Array.isArray(payload[field]));
   }
 
   #isEncryptedPayload(payload) {
@@ -286,6 +391,14 @@ export class EncryptedJsonStore {
         'ENCRYPTED_JSON_INVALID_KEY_LENGTH',
         `TOKEN_ENCRYPTION_KEY for version ${keyVersion} must contain exactly 32 characters.`,
         { details: { keyVersion, expectedLength: 32, actualLength: key.length } }
+      );
+    }
+
+    if (this.config.get('NODE_ENV', 'development') === 'production'
+      && key === 'DEV_ONLY_NOT_FOR_PRODUCTION_0000') {
+      throw new EncryptedJsonStoreError(
+        'ENCRYPTED_JSON_DEVELOPMENT_KEY_REJECTED',
+        'The configured encryption key is a development sentinel and cannot be used in production.'
       );
     }
 

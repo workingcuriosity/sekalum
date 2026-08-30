@@ -93,6 +93,20 @@ test('Consumer UI uses the authenticated discovery endpoint and keeps token in m
   assert.doesNotMatch(fs.readFileSync(path.resolve('public/consumer/consumer.js'), 'utf8'), /localStorage|sessionStorage|document\.cookie|location\.(search|hash)/);
 });
 
+test('Consumer UI exposes non-executing client example generation for every approved format', () => {
+  const html = fs.readFileSync(path.resolve('public/consumer/index.html'), 'utf8');
+  const generator = fs.readFileSync(path.resolve('public/consumer/client-generator.js'), 'utf8');
+  assert.match(html, /consumer-client-examples/);
+  assert.match(html, /consumer-client-example-format/);
+  assert.match(html, /readonly/);
+  assert.match(generator, /curl/);
+  assert.match(generator, /Node\.js/);
+  assert.match(generator, /Python/);
+  assert.match(generator, /PowerShell/);
+  assert.match(generator, /n8n HTTP Request/);
+  assert.doesNotMatch(generator, /eval\s*\(|new Function\s*\(/);
+});
+
 test('Consumer UI does not request discovery without a token', async () => {
   const fixture = documentFixture();
   let requestCount = 0;

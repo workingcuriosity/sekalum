@@ -58,7 +58,7 @@ export class KickServiceProvider extends ServiceProvider {
         credentialFields: oauthCredentialFields({
           defaultScopes: ['user:read', 'channel:read']
         }),
-        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', credentialFields: oauthCredentialFields({ defaultScopes: ['user:read', 'channel:read'] }), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
+        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', authenticationMethod: 'oauth2', credentialFields: oauthCredentialFields({ defaultScopes: ['user:read', 'channel:read'] }), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
         providerMethodBindings: [new ProviderMethodBinding({ methodKey: 'oauth2' })],
         metadata: {
           authType: 'oauth2.1',

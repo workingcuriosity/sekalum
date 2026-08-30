@@ -3,7 +3,7 @@ title: Security Guide
 document_id: DOC-SECURITY-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.6.2
+version: 1.8.0
 status: Active
 category: Security
 canonical: true
@@ -19,6 +19,15 @@ dependent_documents:
   - docs/api-reference/index.md
   - docs/configuration-reference/index.md
 change_history:
+  - version: 1.8.0
+    date: 2026-08-27
+    change: Defines bounded Credential transfer import admission and atomic batch persistence together with the combined 30-day UTC-instant Audit retention boundary, legacy convergence and fail-closed Resolve audit finalization.
+  - version: 1.7.0
+    date: 2026-08-27
+    change: Defines fixed 24-hour Secret-Version retention, fail-closed rollback, and immediate terminal history invalidation.
+  - version: 1.6.3
+    date: 2026-08-26
+    change: Defines the proof-of-possession and atomicity requirements for the one-time First Administrator Bootstrap boundary.
   - version: 1.6.2
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -92,6 +101,21 @@ network security, TLS, VPN access, source-IP restrictions or an
 identity-aware proxy. Do not expose or transport it through URLs, source
 control, screenshots or logs.
 
+### First Administrator Bootstrap boundary
+
+An empty persisted user collection is state, not identity. The one-time
+`POST /api/v1/management/users` Bootstrap operation requires the configured
+`ADMIN_BOOTSTRAP_TOKEN` proof in `X-Admin-Bootstrap-Token`. The value must be a
+high-entropy secret of at least 32 bytes; missing, weak or incorrect proof
+fails closed. The Bootstrap proof is not a Management Token, is not an API
+token, is not derived from `TOKEN_ENCRYPTION_KEY`, and is never returned,
+logged, audited or persisted as a token. Only one active `admin` First
+Administrator may be created. The empty-state check and persistence are one
+serialized security operation, and Bootstrap is permanently closed after the
+first user is persisted. Normal management access then requires Bearer
+authentication, scope validation and RBAC. Reverse-proxy and forwarding
+headers do not replace this proof.
+
 ### Deployment responsibility boundary
 
 Sekalum defines application authentication, authorization and API
@@ -140,11 +164,17 @@ Resolve, exposing Secret values, or changing the server-side grant.
 ## Credential materialization boundary
 
 Credential metadata and Credential Secret values use separate projections. The
+normal `metadata.custom` namespace is an explicit allowlist, and arbitrary or
+nested custom values are rejected at write boundaries. Sensitive application
+metadata belongs in the separate `sensitiveMetadata` namespace; it is retained
+only for the authorized internal operation and is never included in any safe
+metadata, Consumer, Runtime-Public, CLI, log or diagnostic projection.
 following inventory is the canonical boundary for Credential reads:
 
 | Path | Secret materialization | Justification |
 | --- | --- | --- |
-| `Credential.toMetadataJSON()` and `credential-metadata.json` | No | List, status, presentation and discovery metadata only. |
+| `Credential.toMetadataJSON()` | No | Public list, status, presentation and discovery metadata only. |
+| `Credential.toInternalMetadataJSON()` and `credential-metadata.json` | No | Encrypted routing/profile index; no secrets and no `sensitiveMetadata`. |
 | `ManagementService.getCredentials()` | No | Management summary and lifecycle counts use metadata only. |
 | `DashboardService.getDashboard()` | No | Dashboard status, provider counts and health summaries use metadata only. |
 | `CredentialController.list()` / `get()` | No | Admin list/detail and secret inventory expose no Secret values. |
@@ -155,12 +185,55 @@ following inventory is the canonical boundary for Credential reads:
 | Secret version, transfer, backup and restore services | Yes, explicit operation | Versioning, export/import and recovery are secret-bearing administrative operations. |
 | Logging, audit, diagnostics and provider display lookup | No | These paths use safe diagnostics and public provider/credential metadata. |
 
+Secret-Version history is bounded to a fixed 24-hour window from `createdAt`.
+Only non-terminal Credentials may use an eligible historical version. Expiry,
+malformed timestamps, terminal deletion, terminal revoke, and terminal
+invalidation make historical values unavailable at the application boundary;
+invalidation failures prevent the terminal operation from succeeding. Audit
+records remain metadata-only. This does not provide physical secure erase or
+retroactive cleanup of offline/legacy backups, which are separate retention
+boundaries.
+
+### Credential transfer import boundary
+
+Credential transfer import is a secret-bearing administrative boundary and is
+bounded before cryptographic admission. The input limit is `5242880` UTF-8
+bytes and the record limit is `100`. PBKDF2-SHA256 remains fixed at `210000`
+iterations for AES-256-GCM transfers, with no more than two concurrent import
+KDF operations. Excess work is rejected immediately; imports do not queue or
+retry automatically.
+
+The importer validates all records before persistence and applies creates and
+overwrites as one atomic batch. Overwrites preserve the target public identity
+and use a version CAS check, so stale, deleted, revoked, or otherwise terminal
+records fail closed without partial persistence. Secret-Version records and
+the aggregate success audit are finalized only after the Credential batch
+commit; a failure compensates the batch. The staging-worker resource and
+restart proof remain deployment evidence and must be verified separately.
+
+Audit persistence is a separate metadata-only retention boundary. At each
+governed load or write, records with age less than 30 days at the current UTC
+instant are eligible; records at or beyond 30 days expire. The newest 10,000
+eligible records are retained and persisted oldest to newest. Legacy state
+converges on first governed load/write, including malformed-record exclusion,
+expiry, capping and canonical ordering. Malformed legacy records may produce
+only a secret-free operational warning. New malformed audit records are
+rejected. Consumer Resolve writes its success audit before Secret delivery and
+fails closed if that write cannot be persisted.
+
 The metadata index is encrypted separately from the secret-bearing Credential
 collection. A metadata-only read therefore does not decrypt the collection and
 cannot fail because an unrelated Credential payload is undecryptable. A missing
 metadata index is a one-time compatibility migration; after migration, normal
 metadata reads remain on the metadata projection path. Resolve and other
 secret-bearing operations remain explicit and are not replaced by this rule.
+
+Provider-profile-dependent Consumer Discovery, Resolve, Batch Resolve and
+Runtime-Public paths require an exact current Provider Profile plus persisted
+`migrationComplete=true` and `migrationVerified=true` state. Legacy,
+profile-less, stale or ambiguous records fail closed using the normal
+non-enumerating Consumer response. Provider operations apply the same gate
+before invoking an adapter or transport.
 
 ### Consumer Runtime responsibility
 

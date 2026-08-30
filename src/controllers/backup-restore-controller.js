@@ -1,4 +1,5 @@
 import { safeError } from '../utils/safe-diagnostics.js';
+import { authenticatedUserId } from '../utils/authenticated-user.js';
 
 export class BackupRestoreController {
   constructor({ backupRestoreService }) {
@@ -45,7 +46,7 @@ export class BackupRestoreController {
   }
 
   #userIdFromRequest(req) {
-    return req.headers?.['x-credential-hub-user'] ?? null;
+    return authenticatedUserId(req);
   }
 
   #sendSuccess(res, data, statusCode = 200) {

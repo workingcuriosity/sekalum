@@ -8,6 +8,16 @@ import {
 } from './public-test-contract.mjs';
 
 const root = process.cwd();
+const PUBLICATION_TEST_KEY = '12345678901234567890123456789012';
+const safeEnvironment = {
+  PATH: process.env.PATH ?? '/usr/bin:/bin',
+  HOME: process.env.HOME ?? '/tmp',
+  TMPDIR: process.env.TMPDIR ?? '/tmp',
+  NODE_ENV: 'test',
+  PUBLIC_PROFILE: '1',
+  TOKEN_ENCRYPTION_KEY: PUBLICATION_TEST_KEY,
+  TOKEN_ENCRYPTION_KEY_VERSION: '1'
+};
 const missing = [];
 for (const file of PUBLIC_TEST_FILES) {
   try {
@@ -27,7 +37,7 @@ if (process.env.PUBLIC_PROFILE === '1') {
 
 const child = spawn(process.execPath, ['--test', ...PUBLIC_TEST_FILES], {
   stdio: 'inherit',
-  env: { ...process.env, NODE_ENV: 'test', PUBLIC_PROFILE: '1' }
+  env: safeEnvironment
 });
 
 child.on('exit', (code, signal) => {

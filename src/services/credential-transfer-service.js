@@ -16,6 +16,12 @@ const EXPORT_ENCRYPTION_KEY_LENGTH = 32;
 const EXPORT_ENCRYPTION_SALT_LENGTH = 16;
 const EXPORT_ENCRYPTION_IV_LENGTH = 12;
 
+export const MAX_IMPORT_PAYLOAD_BYTES = 5 * 1024 * 1024;
+export const MAX_IMPORT_RECORDS = 100;
+export const MAX_CONCURRENT_IMPORT_KDF = 2;
+export const MAX_PENDING_IMPORTS = 0;
+export const MAX_IMPORT_RETRIES = 0;
+
 export class CredentialTransferService {
   constructor({ credentialManager, providerManager = null, auditLogService = null, clock = () => new Date(), idGenerator = () => crypto.randomUUID() } = {}) {
     if (!credentialManager) {
@@ -27,10 +33,12 @@ export class CredentialTransferService {
     this.auditLogService = auditLogService;
     this.clock = clock;
     this.idGenerator = idGenerator;
+    this.activeImportKdf = 0;
   }
 
   async exportCredentials(options = {}, context = {}) {
     try {
+      const encryptionPassword = this.#requireExportEncryptionPassword(options);
       const credentials = await this.#selectCredentials(options);
       const generatedAt = this.#timestamp();
       const payload = {
@@ -44,7 +52,7 @@ export class CredentialTransferService {
         credentials: credentials.map((credential) => this.#toCredential(credential).toJSON())
       };
 
-      const exportEnvelope = this.#buildExportEnvelope(payload, options);
+      const exportEnvelope = await this.#buildExportEnvelope(payload, { encryptionPassword });
 
       await this.#recordAudit({
         action: 'credential-export.created',
@@ -84,7 +92,7 @@ export class CredentialTransferService {
     const { importOptions, context } = this.#normalizeImportArguments(optionsOrContext, maybeContext);
 
     try {
-      const payload = this.#parseTransferInput(transferInput, importOptions);
+      const payload = await this.#parseTransferInput(transferInput, importOptions);
       const credentials = payload.credentials.map((credential) => this.#toCredential(credential));
       const existingCredentials = (await this.credentialManager.listCredentials()).map((credential) => this.#toCredential(credential));
       const items = credentials.map((credential) => this.#previewCredential(credential, existingCredentials));
@@ -121,9 +129,10 @@ export class CredentialTransferService {
     const strategy = this.#normalizeConflictStrategy(options.conflictStrategy ?? 'skip');
 
     try {
-      const payload = this.#parseTransferInput(transferInput, options);
+      const payload = await this.#parseTransferInput(transferInput, options);
       const existingCredentials = (await this.credentialManager.listCredentials()).map((credential) => this.#toCredential(credential));
       const results = [];
+      const operations = [];
 
       for (const inputCredential of payload.credentials.map((credential) => this.#toCredential(credential))) {
         const preview = this.#previewCredential(inputCredential, existingCredentials);
@@ -139,22 +148,15 @@ export class CredentialTransferService {
         }
 
         if (preview.conflict && strategy === 'overwrite') {
-          const imported = inputCredential.toJSON();
-          const updated = await this.credentialManager.updateCredential(preview.conflict.targetCredentialId, {
-            providerKey: imported.providerKey,
-            credentialMethodKey: imported.credentialMethodKey,
-            externalReference: imported.externalReference,
-            lifecycleState: imported.lifecycleState,
-            secrets: imported.secrets,
-            metadata: imported.metadata
-          }, {
-            versionReason: 'credential-import-overwrite',
-            createdBy: context.userId ?? 'system',
-            replaceSecrets: true
+          operations.push({
+            action: 'overwrite',
+            targetCredentialId: preview.conflict.targetCredentialId,
+            expectedVersion: preview.conflict.expectedVersion,
+            sourceCredentialId: inputCredential.credentialId,
+            credential: inputCredential.toJSON()
           });
-
           results.push({
-            credentialId: updated.credentialId,
+            credentialId: preview.conflict.targetCredentialId,
             sourceCredentialId: inputCredential.credentialId,
             action: 'overwritten',
             success: true,
@@ -167,10 +169,15 @@ export class CredentialTransferService {
           ? this.#renameCredential(inputCredential, existingCredentials)
           : inputCredential;
 
-        const created = await this.credentialManager.register(credentialToRegister.toJSON());
-        existingCredentials.push(created);
+        operations.push({
+          action: 'create',
+          sourceCredentialId: inputCredential.credentialId,
+          resultAction: preview.conflict ? 'renamed' : 'created',
+          credential: credentialToRegister.toJSON()
+        });
+        existingCredentials.push(credentialToRegister);
         results.push({
-          credentialId: created.credentialId,
+          credentialId: credentialToRegister.credentialId,
           sourceCredentialId: inputCredential.credentialId,
           action: preview.conflict ? 'renamed' : 'created',
           success: true,
@@ -188,12 +195,19 @@ export class CredentialTransferService {
         conflictStrategy: strategy
       };
 
-      await this.#recordAudit({
-        action: 'credential-import.completed',
-        targetId: null,
-        result: 'success',
-        context,
-        details: summary
+      if (typeof this.credentialManager.importCredentialBatch !== 'function') {
+        throw this.#atomicityError('CREDENTIAL_IMPORT_ATOMICITY_UNSUPPORTED', 'Credential import requires an atomic credential store', 500);
+      }
+
+      await this.credentialManager.importCredentialBatch(operations, {
+        createdBy: context.userId ?? 'system',
+        onCommitted: () => this.#recordAudit({
+          action: 'credential-import.completed',
+          targetId: null,
+          result: 'success',
+          context,
+          details: summary
+        })
       });
 
       return { summary, results };
@@ -299,7 +313,8 @@ export class CredentialTransferService {
     return Credential.from(value);
   }
 
-  #parseTransferInput(input, options = {}) {
+  async #parseTransferInput(input, options = {}) {
+    this.#assertImportPayloadSize(input);
     const envelope = typeof input === 'string' ? this.#parseJson(input) : input;
 
     if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
@@ -307,7 +322,7 @@ export class CredentialTransferService {
     }
 
     const payload = envelope.encrypted === true
-      ? this.#decryptTransferEnvelope(envelope, options)
+      ? await this.#decryptTransferEnvelope(envelope, options)
       : envelope;
 
     this.#validatePlainTransferPayload(payload);
@@ -316,6 +331,7 @@ export class CredentialTransferService {
 
 
   async #csvToTransferPayload(csvInput, options = {}) {
+    this.#assertImportPayloadSize(csvInput);
     const csv = this.#parseCsv(csvInput);
     this.#validateCsvHeaders(csv.headers);
     const generatedAt = this.#timestamp();
@@ -419,6 +435,10 @@ export class CredentialTransferService {
       }
       return Object.fromEntries(headers.map((header, valueIndex) => [header, String(values[valueIndex] ?? '').trim()]));
     });
+
+    if (rows.length > MAX_IMPORT_RECORDS) {
+      throw this.#atomicityError('IMPORT_RECORD_COUNT_EXCEEDED', `Credential import supports at most ${MAX_IMPORT_RECORDS} records`, 413);
+    }
 
     return { headers, rows };
   }
@@ -619,23 +639,15 @@ export class CredentialTransferService {
       .filter(Boolean);
   }
 
-  #buildExportEnvelope(payload, options = {}) {
-    const password = options.encryptionPassword ?? options.password ?? null;
-    if (password === null || password === undefined || password === '') {
-      return payload;
-    }
-
-    if (typeof password !== 'string') {
-      throw this.#badRequest('export encryption password must be a non-empty string');
-    }
+  async #buildExportEnvelope(payload, options = {}) {
+    const password = options.encryptionPassword;
 
     const salt = crypto.randomBytes(EXPORT_ENCRYPTION_SALT_LENGTH);
     const iv = crypto.randomBytes(EXPORT_ENCRYPTION_IV_LENGTH);
-    const key = crypto.pbkdf2Sync(
+    const key = await this.#deriveTransferKey(
       password,
       salt,
       EXPORT_ENCRYPTION_ITERATIONS,
-      EXPORT_ENCRYPTION_KEY_LENGTH,
       EXPORT_ENCRYPTION_DIGEST
     );
     const cipher = crypto.createCipheriv(EXPORT_ENCRYPTION_ALGORITHM, key, iv);
@@ -662,7 +674,15 @@ export class CredentialTransferService {
     };
   }
 
-  #decryptTransferEnvelope(envelope, options = {}) {
+  #requireExportEncryptionPassword(options = {}) {
+    const password = options.encryptionPassword ?? options.password;
+    if (typeof password !== 'string' || password.trim() === '') {
+      throw this.#badRequest('credential export requires a non-empty encryption password');
+    }
+    return password;
+  }
+
+  async #decryptTransferEnvelope(envelope, options = {}) {
     this.#validateEncryptedEnvelope(envelope);
     const password = options.encryptionPassword ?? options.password ?? null;
     if (!password || typeof password !== 'string') {
@@ -674,18 +694,19 @@ export class CredentialTransferService {
       const iv = Buffer.from(envelope.encryption.iv, 'base64');
       const authTag = Buffer.from(envelope.encryption.authTag, 'base64');
       const ciphertext = Buffer.from(envelope.ciphertext, 'base64');
-      const key = crypto.pbkdf2Sync(
+      const key = await this.#deriveTransferKey(
         password,
         salt,
         envelope.encryption.iterations,
-        EXPORT_ENCRYPTION_KEY_LENGTH,
-        envelope.encryption.digest
+        envelope.encryption.digest,
+        { admitImport: true }
       );
       const decipher = crypto.createDecipheriv(envelope.encryption.algorithm, key, iv);
       decipher.setAuthTag(authTag);
       const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
       return this.#parseJson(plaintext);
     } catch (error) {
+      if (error?.code === 'IMPORT_CAPACITY_EXHAUSTED') throw error;
       throw this.#badRequest('encrypted credential transfer could not be decrypted; password or file integrity check failed');
     }
   }
@@ -702,6 +723,9 @@ export class CredentialTransferService {
     }
     if (!Array.isArray(payload.credentials)) {
       throw this.#badRequest('transfer payload credentials must be an array');
+    }
+    if (payload.credentials.length > MAX_IMPORT_RECORDS) {
+      throw this.#atomicityError('IMPORT_RECORD_COUNT_EXCEEDED', `Credential import supports at most ${MAX_IMPORT_RECORDS} records`, 413);
     }
   }
 
@@ -724,8 +748,8 @@ export class CredentialTransferService {
     if (envelope.encryption.digest !== EXPORT_ENCRYPTION_DIGEST) {
       throw this.#badRequest(`encrypted transfer digest must be '${EXPORT_ENCRYPTION_DIGEST}'`);
     }
-    if (!Number.isInteger(envelope.encryption.iterations) || envelope.encryption.iterations < 100000) {
-      throw this.#badRequest('encrypted transfer iterations must be at least 100000');
+    if (envelope.encryption.iterations !== EXPORT_ENCRYPTION_ITERATIONS) {
+      throw this.#badRequest(`encrypted transfer iterations must equal ${EXPORT_ENCRYPTION_ITERATIONS}`);
     }
     for (const field of ['salt', 'iv', 'authTag']) {
       if (!envelope.encryption[field] || typeof envelope.encryption[field] !== 'string') {
@@ -734,6 +758,44 @@ export class CredentialTransferService {
     }
     if (!envelope.ciphertext || typeof envelope.ciphertext !== 'string') {
       throw this.#badRequest('encrypted transfer requires ciphertext');
+    }
+    const declaredCount = envelope.metadata?.credentialCount;
+    if (declaredCount !== undefined && (!Number.isInteger(declaredCount) || declaredCount < 0)) {
+      throw this.#atomicityError('IMPORT_RECORD_COUNT_INVALID', 'Credential import record count is invalid', 400);
+    }
+    if (declaredCount > MAX_IMPORT_RECORDS) {
+      throw this.#atomicityError('IMPORT_RECORD_COUNT_EXCEEDED', `Credential import supports at most ${MAX_IMPORT_RECORDS} records`, 413);
+    }
+  }
+
+  #deriveTransferKey(password, salt, iterations, digest, { admitImport = false } = {}) {
+    const work = () => new Promise((resolve, reject) => {
+      crypto.pbkdf2(password, salt, iterations, EXPORT_ENCRYPTION_KEY_LENGTH, digest, (error, key) => {
+        if (error) reject(error);
+        else resolve(key);
+      });
+    });
+
+    if (!admitImport) return work();
+    if (this.activeImportKdf >= MAX_CONCURRENT_IMPORT_KDF) {
+      throw this.#atomicityError('IMPORT_CAPACITY_EXHAUSTED', 'Credential import capacity is temporarily exhausted', 429);
+    }
+
+    this.activeImportKdf += 1;
+    return work().finally(() => {
+      this.activeImportKdf -= 1;
+    });
+  }
+
+  #assertImportPayloadSize(input) {
+    let bytes;
+    try {
+      bytes = Buffer.byteLength(typeof input === 'string' ? input : JSON.stringify(input ?? null), 'utf8');
+    } catch {
+      throw this.#badRequest('transfer payload must be serializable');
+    }
+    if (bytes > MAX_IMPORT_PAYLOAD_BYTES) {
+      throw this.#atomicityError('IMPORT_PAYLOAD_TOO_LARGE', `Credential import payload exceeds ${MAX_IMPORT_PAYLOAD_BYTES} bytes`, 413);
     }
   }
 
@@ -767,7 +829,7 @@ export class CredentialTransferService {
   #findConflict(credential, existingCredentials) {
     const byId = existingCredentials.find((existing) => existing.credentialId === credential.credentialId);
     if (byId) {
-      return { type: 'credentialId', targetCredentialId: byId.credentialId };
+      return { type: 'credentialId', targetCredentialId: byId.credentialId, expectedVersion: byId.version };
     }
 
     if (!credential.externalReference) {
@@ -784,7 +846,7 @@ export class CredentialTransferService {
       return null;
     }
 
-    return { type: 'providerExternalReference', targetCredentialId: byIdentity.credentialId };
+    return { type: 'providerExternalReference', targetCredentialId: byIdentity.credentialId, expectedVersion: byIdentity.version };
   }
 
   #renameCredential(credential, existingCredentials) {
@@ -807,8 +869,9 @@ export class CredentialTransferService {
       externalReference = `${externalReference}-imported-${stamp}`;
     }
 
+    const { credentialKey: _credentialKey, credentialGeneration: _credentialGeneration, ...renamed } = imported;
     return Credential.from({
-      ...imported,
+      ...renamed,
       credentialId,
       externalReference,
       metadata,
@@ -869,6 +932,13 @@ export class CredentialTransferService {
     const error = new Error(message);
     error.statusCode = 404;
     error.code = 'NOT_FOUND';
+    return error;
+  }
+
+  #atomicityError(code, message, statusCode) {
+    const error = new Error(message);
+    error.code = code;
+    error.statusCode = statusCode;
     return error;
   }
 }

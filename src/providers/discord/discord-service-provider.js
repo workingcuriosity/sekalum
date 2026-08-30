@@ -62,6 +62,7 @@ export class DiscordServiceProvider extends ServiceProvider {
           new CredentialMethod({
             key: 'oauth2',
             displayName: 'OAuth 2.0',
+            authenticationMethod: 'oauth2',
             credentialFields: oauthCredentialFields({
               defaultScopes: ['identify', 'email', 'guilds']
             }),
@@ -73,6 +74,7 @@ export class DiscordServiceProvider extends ServiceProvider {
           new CredentialMethod({
             key: 'webhook',
             displayName: 'Webhook',
+            authenticationMethod: 'webhook',
             description: 'Provider-neutral incoming webhook credential.',
             credentialFields: [
               {

@@ -1,9 +1,11 @@
 import { ProviderResult } from '../models/provider-result.js';
 import { Credential } from '../models/credential.js';
+import { CredentialMetadata } from '../models/credential-metadata.js';
 import { LifecycleState } from '../models/lifecycle-state.js';
 import { OAuthResult } from '../models/oauth-result.js';
 import { ConnectionTargetPolicy } from '../services/connection-target-policy.js';
 import { safeError } from '../utils/safe-diagnostics.js';
+import { assertResolvedValue } from '../oauth/oauth-provider-configuration.js';
 
 export class CredentialManager {
   constructor({
@@ -31,10 +33,11 @@ export class CredentialManager {
   }
 
   async register(credentialInput) {
-    const credential = Credential.from(credentialInput);
+    CredentialMetadata.assertWriteSafe(credentialInput?.metadata ?? {});
+    const credential = this.#bindProviderProfile(Credential.from(credentialInput));
     this.#validateCreationContract(credential);
     try {
-      await this.#saveIfAvailable(credential);
+      await this.#createIfAvailable(credential);
       try {
         await this.#recordSecretVersion(credential, { reason: 'initial-import' });
       } catch (versionError) {
@@ -104,6 +107,16 @@ export class CredentialManager {
       throw this.#creationError('CREDENTIAL_PROVIDER_UNKNOWN', 'Credential provider is not registered', 400, 'credential.create.providerUnknown');
     }
 
+    const boundProfile = credential.providerProfile ?? credential.metadata.toJSON().custom?.providerProfile ?? null;
+    if (boundProfile && provider.providerProfile && boundProfile.digest !== provider.providerProfile.digest) {
+      throw this.#creationError(
+        'CREDENTIAL_PROFILE_MISMATCH',
+        'Credential provider profile is stale or incompatible',
+        409,
+        'credential.create.profileMismatch'
+      );
+    }
+
     const fields = this.#credentialFieldsFor(credential, provider, 'credential.create');
     const fieldKeys = new Set(fields.map((field) => field.key));
     for (const secret of credential.secrets) {
@@ -165,6 +178,17 @@ export class CredentialManager {
   }
 
   #validateCredentialField(field, value) {
+    try {
+      assertResolvedValue(value, field.key);
+    } catch {
+      throw this.#creationError(
+        'CREDENTIAL_PLACEHOLDER_UNRESOLVED',
+        `Credential field '${field.key}' contains an unresolved placeholder`,
+        400,
+        'credential.create.placeholderUnresolved',
+        { field: field.key }
+      );
+    }
     const validation = field.validation ?? {};
     const text = typeof value === 'string' ? value.trim() : null;
     const invalidType = ['api-key', 'password', 'text', 'textarea', 'url', 'email'].includes(field.type) && text === null;
@@ -200,11 +224,15 @@ export class CredentialManager {
 
     const existing = await this.#findOAuthCredential(oauthResult);
 
-    const credential = Credential.from({
+    const providerProfile = oauthResult.metadata?.providerProfile ?? this.#providerProfileFor(oauthResult.provider);
+    const credentialMethodKey = oauthResult.metadata?.credentialMethodKey
+      ?? this.#oauthCredentialMethodKeyFor(oauthResult.provider);
+    const credential = this.#bindProviderProfile(Credential.from({
       ...(existing?.toJSON?.() ?? {}),
       ...(existing ? { credentialKey: existing.credentialKey } : {}),
       providerKey: oauthResult.provider,
-      credentialMethodKey: existing?.credentialMethodKey ?? 'oauth2',
+      ...(providerProfile ? { providerProfile } : {}),
+      credentialMethodKey: existing?.credentialMethodKey ?? credentialMethodKey,
       externalReference: oauthResult.accountId,
       lifecycleState: LifecycleState.ACTIVE,
       secrets: [
@@ -218,16 +246,189 @@ export class CredentialManager {
         custom: {
           ...(existing?.metadata?.toJSON?.().custom ?? {}),
           ...(oauthResult.accountName ? { accountName: oauthResult.accountName } : {}),
+          ...(providerProfile ? { providerProfile } : {}),
           ...oauthResult.metadata
         }
       },
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
       version: (existing?.version ?? 0) + 1
-    });
+    }));
 
-    await this.credentialStore.save(credential);
+    CredentialMetadata.assertWriteSafe(credential.metadata);
+    this.#validateCreationContract(credential);
+    if (existing?.lifecycleState === LifecycleState.REVOKED || existing?.lifecycleState === LifecycleState.DELETED) {
+      throw this.#lifecycleConflict(existing, 'Credential lifecycle is terminal');
+    }
+    if (existing) await this.#saveLifecycleIfCurrent(credential, { expectedVersion: existing.version });
+    else await this.#createIfAvailable(credential);
     return credential;
+  }
+
+  async importCredentialBatch(operations = [], { createdBy = 'system', onCommitted = null } = {}) {
+    this.#assertStore('importCredentialBatch');
+    if (!Array.isArray(operations)) {
+      throw new Error('CredentialManager.importCredentialBatch() requires an array');
+    }
+    if (typeof this.credentialStore.applyBatch !== 'function') {
+      const error = new Error('Credential import requires an atomic credential store');
+      error.code = 'CREDENTIAL_IMPORT_ATOMICITY_UNSUPPORTED';
+      error.statusCode = 500;
+      throw error;
+    }
+
+    const currentCredentials = (await this.credentialStore.list()).map((credential) => Credential.from(credential));
+    const currentById = new Map(currentCredentials.map((credential) => [credential.credentialId, credential]));
+    const planned = [];
+    const plannedTargets = new Set();
+
+    for (const operation of operations) {
+      if (!operation || !['create', 'overwrite'].includes(operation.action)) {
+        const error = new Error('Credential import operation is invalid');
+        error.code = 'CREDENTIAL_IMPORT_OPERATION_INVALID';
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (operation.action === 'create') {
+        const credential = this.#bindProviderProfile(Credential.from(operation.credential));
+        CredentialMetadata.assertWriteSafe(credential.metadata);
+        this.#validateCreationContract(credential);
+        planned.push({
+          mode: 'create',
+          credential,
+          versionReason: 'initial-import',
+          sourceCredentialId: operation.sourceCredentialId ?? credential.credentialId,
+          resultAction: operation.resultAction ?? 'created'
+        });
+        continue;
+      }
+
+      const targetCredentialId = operation.targetCredentialId;
+      if (plannedTargets.has(targetCredentialId)) {
+        const error = new Error('Credential import targets the same identity more than once');
+        error.code = 'CREDENTIAL_IMPORT_DUPLICATE_TARGET';
+        error.statusCode = 409;
+        throw error;
+      }
+      plannedTargets.add(targetCredentialId);
+
+      const existing = currentById.get(targetCredentialId);
+      if (!existing) {
+        throw this.#lifecycleConflict(null, 'Credential no longer exists', {
+          credentialId: targetCredentialId,
+          expectedVersion: operation.expectedVersion,
+          actualVersion: null,
+          reason: 'MISSING'
+        });
+      }
+      if (operation.expectedVersion !== undefined && existing.version !== operation.expectedVersion) {
+        throw this.#lifecycleConflict(existing, 'Credential changed before import overwrite', {
+          credentialId: targetCredentialId,
+          expectedVersion: operation.expectedVersion,
+          actualVersion: existing.version,
+          reason: 'VERSION_MISMATCH'
+        });
+      }
+
+      const imported = Credential.from(operation.credential).toJSON();
+      const credential = Credential.from({
+        ...existing.toJSON(),
+        ...imported,
+        credentialId: existing.credentialId,
+        credentialGeneration: existing.credentialGeneration,
+        credentialKey: existing.credentialKey,
+        createdAt: existing.createdAt,
+        updatedAt: new Date(),
+        version: existing.version + 1
+      });
+      CredentialMetadata.assertWriteSafe(credential.metadata);
+      this.#validateCreationContract(credential);
+      planned.push({
+        mode: 'update',
+        credential,
+        expectedVersion: operation.expectedVersion,
+        versionReason: 'credential-import-overwrite',
+        sourceCredentialId: operation.sourceCredentialId ?? imported.credentialId,
+        resultAction: 'overwritten'
+      });
+    }
+
+    const finalize = async ({ credentials }) => onCommitted?.({ credentials, operations: planned });
+    const afterCommit = async ({ credentials }) => {
+      const versionEntries = planned
+        .filter((operation) => operation.credential.secrets.length > 0)
+        .map((operation) => ({
+          credential: operation.credential,
+          reason: operation.versionReason,
+          createdBy
+        }));
+
+      if (versionEntries.length > 0 && this.secretVersioningService?.recordCredentialVersion
+        && typeof this.secretVersioningService.recordCredentialVersionsAtomically !== 'function') {
+        const error = new Error('Credential import requires atomic Secret-Version persistence');
+        error.code = 'CREDENTIAL_IMPORT_ATOMICITY_UNSUPPORTED';
+        error.statusCode = 500;
+        throw error;
+      }
+
+      if (versionEntries.length > 0 && typeof this.secretVersioningService?.recordCredentialVersionsAtomically === 'function') {
+        const versionResult = await this.secretVersioningService.recordCredentialVersionsAtomically(versionEntries, {
+          onCommitted: () => finalize({ credentials })
+        });
+        return versionResult.callbackResult;
+      }
+
+      return finalize({ credentials });
+    };
+
+    const committed = await this.credentialStore.applyBatch(
+      planned.map((operation) => ({
+        mode: operation.mode,
+        credential: operation.credential,
+        expectedVersion: operation.expectedVersion
+      })),
+      { afterCommit }
+    );
+
+    return {
+      credentials: committed.credentials,
+      operations: planned,
+      callbackResult: committed.callbackResult
+    };
+  }
+
+  #oauthCredentialMethodKeyFor(providerKey) {
+    const provider = this.#providerForUpdate(providerKey);
+    const methods = (provider?.credentialMethods ?? []).filter((method) => method.authenticationMethod === 'oauth2');
+    if (methods.length !== 1) {
+      throw this.#creationError('OAUTH_METHOD_REQUIRED', 'OAuth credential method is not uniquely bound to the provider', 400, 'credential.oauth.methodRequired');
+    }
+    return methods[0].key;
+  }
+
+  #providerProfileFor(providerKey) {
+    try {
+      return this.providerManager?.getProvider?.(providerKey)?.providerProfile ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  #bindProviderProfile(credential) {
+    const providerProfile = this.#providerProfileFor(credential.providerKey);
+    if (!providerProfile) return credential;
+    const metadata = credential.metadata.toJSON();
+    const custom = metadata.custom ?? {};
+    if (credential.providerProfile || custom.providerProfile) return credential;
+    return Credential.from({
+      ...credential.toJSON(),
+      providerProfile,
+      metadata: {
+        ...metadata,
+        custom
+      }
+    });
   }
 
   async refreshExpiredCredentials(options = {}) {
@@ -426,6 +627,10 @@ export class CredentialManager {
       throw new Error(`CredentialManager.updateCredential() could not find credential '${credentialId}'`);
     }
 
+    if (options.expectedVersion !== undefined && existingCredential.version !== options.expectedVersion) {
+      throw this.#lifecycleConflict(existingCredential, 'Credential changed before update');
+    }
+
     const normalizedUpdates = options.userUpdate
       ? this.#normalizeUserUpdate(existingCredential, updates)
       : updates;
@@ -451,7 +656,7 @@ export class CredentialManager {
     });
 
     this.#validateCreationContract(nextCredential);
-    await this.credentialStore.save(nextCredential);
+    await this.#saveLifecycleIfCurrent(nextCredential, { expectedVersion: existingCredential.version });
     if (!options.skipSecretVersionRecord && normalizedUpdates.secrets) {
       try {
         await this.#recordSecretVersion(nextCredential, {
@@ -478,7 +683,7 @@ export class CredentialManager {
   }
 
   async #rollbackFailedUpdate(existingCredential, nextCredential, versionError) {
-    if (!this.credentialStore?.save) {
+    if (!this.credentialStore?.save && !this.credentialStore?.saveConditional) {
       this.logger?.error?.('Credential secret versioning failed and update rollback is unavailable', {
         credentialId: nextCredential.credentialId,
         versioningCode: versionError?.code ?? 'SECRET_VERSIONING_FAILED',
@@ -488,7 +693,7 @@ export class CredentialManager {
     }
 
     try {
-      await this.credentialStore.save(existingCredential);
+      await this.#saveLifecycleIfCurrent(existingCredential, { expectedVersion: nextCredential.version });
       return true;
     } catch (rollbackError) {
       this.logger?.error?.('Credential secret versioning failed and update rollback did not complete', {
@@ -535,7 +740,7 @@ export class CredentialManager {
     const editableMetadataFields = new Map(editableFields.filter((field) => !field.secret).map((field) => [field.key, field]));
     const editableSecretFields = new Map(editableFields.filter((field) => field.secret).map((field) => [field.key, field]));
     const requestedMetadata = updates.metadata ?? {};
-    const allowedMetadata = new Set(['displayName', 'description', 'tags', 'scopes', 'custom']);
+    const allowedMetadata = new Set(['displayName', 'description', 'tags', 'scopes', 'custom', 'sensitiveMetadata']);
     const unexpectedMetadata = Object.keys(requestedMetadata).find((key) => !allowedMetadata.has(key));
     if (unexpectedMetadata) {
       throw this.#creationError('CREDENTIAL_FIELD_INVALID', `Credential metadata '${unexpectedMetadata}' is not editable`, 400, 'credential.update.fieldInvalid');
@@ -550,6 +755,10 @@ export class CredentialManager {
     if (unexpectedCustom) {
       throw this.#creationError('CREDENTIAL_FIELD_INVALID', `Credential metadata '${unexpectedCustom}' is not editable`, 400, 'credential.update.fieldInvalid');
     }
+    if (Object.hasOwn(requestedMetadata, 'sensitiveMetadata')
+      && (!requestedMetadata.sensitiveMetadata || typeof requestedMetadata.sensitiveMetadata !== 'object' || Array.isArray(requestedMetadata.sensitiveMetadata))) {
+      throw this.#creationError('CREDENTIAL_METADATA_INVALID', 'Credential metadata contains unsupported custom values', 400, 'credential.metadata.invalid');
+    }
     const methodChanged = requestedMethodKey !== existingCredential.credentialMethodKey;
     if (Object.keys(requestedCustom).length > 0 || methodChanged) {
       metadata.custom = {
@@ -559,6 +768,15 @@ export class CredentialManager {
           : existingCredential.metadata.toJSON().custom ?? {}),
         ...requestedCustom
       };
+    }
+    if (Object.hasOwn(requestedMetadata, 'sensitiveMetadata')) {
+      metadata.sensitiveMetadata = requestedMetadata.sensitiveMetadata;
+    }
+
+    try {
+      CredentialMetadata.assertWriteSafe(metadata);
+    } catch {
+      throw this.#creationError('CREDENTIAL_METADATA_INVALID', 'Credential metadata contains unsupported custom values', 400, 'credential.metadata.invalid');
     }
 
     for (const [key, field] of editableMetadataFields) {
@@ -615,7 +833,41 @@ export class CredentialManager {
         updatedAt: new Date(),
         version: credential.version + 1
       });
-      await this.credentialStore.save(next);
+      await this.#saveLifecycleIfCurrent(next, { expectedVersion: credential.version });
+      migrated.push(next.credentialId);
+    }
+    return migrated;
+  }
+
+  async migrateLegacyProviderProfiles() {
+    this.#assertStore('migrateLegacyProviderProfiles');
+    const credentials = await this.credentialStore.list();
+    const migrated = [];
+    for (const credential of credentials) {
+      if (credential.providerProfileMigration?.migrationComplete === true
+        && credential.providerProfileMigration?.migrationVerified === true) continue;
+      const providerProfile = this.#providerProfileFor(credential.providerKey);
+      if (!providerProfile) {
+        throw this.#creationError(
+          'CREDENTIAL_PROFILE_MIGRATION_UNAVAILABLE',
+          `Credential '${credential.credentialId}' cannot be migrated because provider '${credential.providerKey}' has no profile`,
+          409,
+          'credential.migration.profileUnavailable'
+        );
+      }
+      const next = Credential.from({
+        ...credential.toJSON(),
+        providerProfile,
+        providerProfileMigration: {
+          migrationComplete: true,
+          migrationVerified: true,
+          profileDigest: providerProfile.digest,
+          source: 'legacy-migration'
+        },
+        updatedAt: new Date(),
+        version: credential.version + 1
+      });
+      await this.#saveLifecycleIfCurrent(next, { expectedVersion: credential.version });
       migrated.push(next.credentialId);
     }
     return migrated;
@@ -655,7 +907,7 @@ export class CredentialManager {
       version: existingCredential.version + 1
     });
     this.#validateCreationContract(migrated);
-    await this.credentialStore.save(migrated);
+    await this.#saveLifecycleIfCurrent(migrated, { expectedVersion: existingCredential.version });
     return migrated;
   }
 
@@ -706,17 +958,36 @@ export class CredentialManager {
   }
 
   async delete(credentialOrId, context = {}) {
-    const credential = await this.#resolveCredential(credentialOrId);
+    let credential = await this.#resolveCredential(credentialOrId);
 
     if (this.providerManager?.revokeCredential && credential.lifecycleState !== LifecycleState.REVOKED) {
-      await this.revoke(credential, context);
+      const revoked = await this.revoke(credential, context);
+      if (!revoked.success) {
+        if (revoked.error?.classification === 'provider_contract_incompatible') {
+          // Providers without a revoke capability retain the established local
+          // delete semantics; a real remote revoke failure remains terminally
+          // blocked above this boundary.
+        } else {
+          const error = new Error('Provider revoke failed; credential remains available for retry');
+          error.code = revoked.error?.code ?? 'PROVIDER_REVOKE_FAILED';
+          if (revoked.error?.statusCode) error.statusCode = revoked.error.statusCode;
+          throw error;
+        }
+      } else {
+        credential = revoked.data.credential;
+      }
     }
 
     const deletedCredential = credential.withLifecycleState(LifecycleState.DELETED);
-    await this.#saveIfAvailable(deletedCredential);
+
+    await this.#invalidateSecretHistory(credential, 'credential-deleted');
 
     if (this.credentialStore?.delete) {
-      await this.credentialStore.delete(deletedCredential.credentialId);
+      if (typeof this.credentialStore.deleteConditional === 'function') {
+        await this.credentialStore.deleteConditional(deletedCredential.credentialId, { expectedVersion: credential.version });
+      } else {
+        await this.credentialStore.delete(deletedCredential.credentialId);
+      }
     }
 
     await this.#recordLifecycleAudit('credential.deleted', deletedCredential, context, {
@@ -728,6 +999,9 @@ export class CredentialManager {
 
   async validate(credentialOrId) {
     const credential = await this.#resolveCredential(credentialOrId);
+    if (this.#isTerminalLifecycle(credential)) {
+      return ProviderResult.failure(this.#lifecycleConflict(credential, 'Credential lifecycle is terminal'));
+    }
     let connectionCredential;
 
     try {
@@ -754,10 +1028,10 @@ export class CredentialManager {
       updatedAt: new Date(),
       version: credential.version + 1
     });
-    await this.#saveIfAvailable(validatedCredential);
+    const persistedCredential = await this.#saveLifecycleIfCurrent(validatedCredential, { expectedVersion: credential.version });
 
     return ProviderResult.success({
-      credential: validatedCredential,
+      credential: persistedCredential,
       provider: result.data
     });
   }
@@ -772,7 +1046,7 @@ export class CredentialManager {
       credential = await this.#prepareConnectionCredential(credential);
 
       const result = await this.providerManager.validateCredential(credential);
-      if (!result?.success) throw this.#connectionTestProviderError(result?.error, credential);
+      if (!result?.success) throw this.#connectionTestProviderError(result?.error, credential, provider);
 
       return Object.freeze({
         providerKey: provider.key ?? credential.providerKey,
@@ -787,13 +1061,17 @@ export class CredentialManager {
         'Credential connection test input is invalid',
         400,
         'credential.connectionTest.invalid',
-        error?.details?.field ? { field: error.details.field } : {}
+        error?.details?.field ? { field: error.details.field } : {},
+        this.#connectionFailureClassification(error)
       );
     }
   }
 
   async refresh(credentialOrId, context = {}) {
     const credential = await this.#resolveCredential(credentialOrId);
+    if (this.#isTerminalLifecycle(credential)) {
+      return ProviderResult.failure(this.#lifecycleConflict(credential, 'Credential lifecycle is terminal'));
+    }
     const result = await this.#executeProviderAction('refreshCredential', credential);
 
     if (!result.success) return result;
@@ -808,15 +1086,15 @@ export class CredentialManager {
         version: credential.version + 1
       });
 
-    await this.#saveIfAvailable(refreshedCredential);
-    await this.#recordSecretVersion(refreshedCredential, { reason: 'refresh' });
-    await this.#recordLifecycleAudit('credential.rotated', refreshedCredential, context, {
+    const persistedCredential = await this.#saveLifecycleIfCurrent(refreshedCredential, { expectedVersion: credential.version });
+    await this.#recordSecretVersion(persistedCredential, { reason: 'refresh' });
+    await this.#recordLifecycleAudit('credential.rotated', persistedCredential, context, {
       previousVersion: credential.version,
-      version: refreshedCredential.version
+      version: persistedCredential.version
     });
 
     return ProviderResult.success({
-      credential: refreshedCredential,
+      credential: persistedCredential,
       provider: result.data
     });
   }
@@ -847,10 +1125,14 @@ export class CredentialManager {
     const credential = await this.#resolveCredential(credentialOrId);
 
     if (credential.lifecycleState === LifecycleState.REVOKED) {
+      await this.#invalidateSecretHistory(credential, 'credential-revoked');
       await this.#recordLifecycleAudit('credential.revoke.noop', credential, context, {
         reason: 'already-revoked'
       });
       return ProviderResult.success({ credential, provider: null, idempotent: true });
+    }
+    if (credential.lifecycleState === LifecycleState.DELETED) {
+      return ProviderResult.failure(this.#lifecycleConflict(credential, 'Credential lifecycle is terminal'));
     }
 
     const result = await this.#executeProviderAction('revokeCredential', credential);
@@ -858,13 +1140,14 @@ export class CredentialManager {
     if (!result.success) return result;
 
     const revokedCredential = credential.withLifecycleState(LifecycleState.REVOKED);
-    await this.#saveIfAvailable(revokedCredential);
-    await this.#recordLifecycleAudit('credential.revoked', revokedCredential, context, {
+    await this.#invalidateSecretHistory(credential, 'credential-revoked');
+    const persistedCredential = await this.#saveLifecycleIfCurrent(revokedCredential, { expectedVersion: credential.version });
+    await this.#recordLifecycleAudit('credential.revoked', persistedCredential, context, {
       previousState: credential.lifecycleState
     });
 
     return ProviderResult.success({
-      credential: revokedCredential,
+      credential: persistedCredential,
       provider: result.data
     });
   }
@@ -895,14 +1178,14 @@ export class CredentialManager {
       ? input.secrets.map(({ name, value, metadata }) => ({ name, value, metadata }))
       : [];
 
-    return Credential.from({
+    return this.#bindProviderProfile(Credential.from({
       providerKey: input.providerKey,
       credentialMethodKey: input.credentialMethodKey ?? null,
       externalReference: input.externalReference ?? null,
       lifecycleState: LifecycleState.REGISTERED,
       metadata: input.metadata ?? {},
       secrets
-    });
+    }));
   }
 
   #connectionTestProvider(providerKey) {
@@ -965,7 +1248,7 @@ export class CredentialManager {
     });
   }
 
-  #connectionTestProviderError(error = {}, credential = null) {
+  #connectionTestProviderError(error = {}, credential = null, provider = null) {
     const code = String(error?.code ?? '').toUpperCase();
     const statusCode = Number(error?.statusCode ?? error?.status ?? 0);
     const name = String(error?.name ?? '');
@@ -979,7 +1262,8 @@ export class CredentialManager {
         'Credential connection test timed out',
         504,
         'credential.connectionTest.timeout',
-        targetField ? { field: targetField } : {}
+        targetField ? { field: targetField } : {},
+        'transport_failure'
       );
     }
 
@@ -989,7 +1273,8 @@ export class CredentialManager {
         'Credential connection target could not be resolved',
         422,
         'credential.connectionTest.dnsFailed',
-        targetField ? { field: targetField } : {}
+        targetField ? { field: targetField } : {},
+        'transport_failure'
       );
     }
 
@@ -999,7 +1284,8 @@ export class CredentialManager {
         'Credential connection host is unreachable',
         422,
         'credential.connectionTest.hostUnreachable',
-        targetField ? { field: targetField } : {}
+        targetField ? { field: targetField } : {},
+        'transport_failure'
       );
     }
 
@@ -1009,7 +1295,8 @@ export class CredentialManager {
         'Credential connection was refused',
         422,
         'credential.connectionTest.refused',
-        targetField ? { field: targetField } : {}
+        targetField ? { field: targetField } : {},
+        'transport_failure'
       );
     }
 
@@ -1019,7 +1306,8 @@ export class CredentialManager {
         'Credential connection host key could not be verified',
         422,
         'credential.connectionTest.hostKeyFailed',
-        { field: 'host' }
+        { field: 'host' },
+        'transport_failure'
       );
     }
 
@@ -1029,7 +1317,8 @@ export class CredentialManager {
         'Credential private key is invalid',
         422,
         'credential.connectionTest.invalidPrivateKey',
-        { field: 'privateKey' }
+        { field: 'privateKey' },
+        'transport_failure'
       );
     }
 
@@ -1039,7 +1328,8 @@ export class CredentialManager {
         'Credential connection TLS verification failed',
         422,
         'credential.connectionTest.tlsFailed',
-        field ? { field } : {}
+        field ? { field } : {},
+        'transport_failure'
       );
     }
 
@@ -1049,7 +1339,8 @@ export class CredentialManager {
         'Credential connection test is rate limited',
         429,
         'credential.connectionTest.rateLimited',
-        field ? { field } : {}
+        field ? { field } : {},
+        'validation_operation_failed'
       );
     }
 
@@ -1059,7 +1350,10 @@ export class CredentialManager {
         'Credential authentication was rejected',
         422,
         'credential.connectionTest.authenticationFailed',
-        field ? { field } : {}
+        field ? { field } : {},
+        this.#isAuthorizationRequired(provider, statusCode, code, message)
+          ? 'authorization_required'
+          : 'credential_invalid'
       );
     }
 
@@ -1069,7 +1363,12 @@ export class CredentialManager {
         'Credential permission was denied',
         422,
         'credential.connectionTest.permissionDenied',
-        field ? { field } : {}
+        field ? { field } : {},
+        code.includes('SCOPE') || message.includes('scope')
+          ? 'scope_insufficient'
+          : this.#isPolicyRejection(code, message)
+            ? 'policy_rejected'
+            : 'credential_invalid'
       );
     }
 
@@ -1079,7 +1378,8 @@ export class CredentialManager {
         'Credential provider is unavailable',
         503,
         'credential.connectionTest.providerUnavailable',
-        field ? { field } : {}
+        field ? { field } : {},
+        'validation_operation_failed'
       );
     }
 
@@ -1088,23 +1388,61 @@ export class CredentialManager {
       'Credential connection test failed',
       422,
       'credential.connectionTest.failed',
-      field ? { field } : {}
+      field ? { field } : {},
+      this.#connectionFailureClassification(error)
     );
   }
 
-  #connectionTestError(code, message, statusCode, messageKey, details = {}) {
+  #connectionTestError(code, message, statusCode, messageKey, details = {}, classification = 'validation_operation_failed') {
     const error = new Error(message);
     error.code = code;
     error.statusCode = statusCode;
     error.messageKey = messageKey;
     error.details = details;
+    error.classification = classification;
     return error;
   }
 
+  #isAuthorizationRequired(provider, statusCode, code, message) {
+    const capabilities = provider?.capabilities?.toArray?.() ?? provider?.capabilities ?? [];
+    return (statusCode === 401 && (provider?.authType === 'oauth2' || capabilities.includes('oauth')))
+      || code.includes('AUTHORIZATION_REQUIRED')
+      || message.includes('authorization required');
+  }
+
+  #isPolicyRejection(code, message) {
+    return code.includes('POLICY')
+      || code.includes('BLOCKED')
+      || message.includes('policy rejected')
+      || message.includes('not allowed');
+  }
+
+  #connectionFailureClassification(error = {}) {
+    const code = String(error?.code ?? '').toUpperCase();
+    if (code.includes('PLACEHOLDER')) return 'provider_configuration_invalid';
+    if (code.includes('PROFILE') || code.includes('CONTRACT') || code.includes('ENDPOINT') || code.includes('API_VERSION')) {
+      return 'provider_contract_incompatible';
+    }
+    if (code.includes('TARGET_BLOCKED') || code.includes('POLICY')) return 'policy_rejected';
+    if (code.includes('TIMEOUT') || code.includes('DNS') || code.includes('UNREACHABLE') || code.includes('REFUSED')
+      || code.includes('TLS') || code.includes('HOST_KEY') || code.includes('PRIVATE_KEY')) return 'transport_failure';
+    if (code.includes('SCOPE') || code.includes('PERMISSION') || code.includes('FORBIDDEN')) return 'scope_insufficient';
+    if (code.includes('AUTHORIZATION_REQUIRED')) return 'authorization_required';
+    if (code.includes('AUTHENTICATION') || code.includes('INVALID')) return 'credential_invalid';
+    if (code.includes('CONFIGURATION')) return 'provider_configuration_invalid';
+    return 'validation_operation_failed';
+  }
+
   async executeBulkAction({ credentialIds = [], action } = {}) {
-    if (!Array.isArray(credentialIds) || credentialIds.length === 0) {
+    if (!Array.isArray(credentialIds) || credentialIds.length === 0 || credentialIds.length > 100) {
       const error = new Error('CredentialManager.executeBulkAction() requires at least one credentialId');
       error.code = 'INVALID_BULK_CREDENTIAL_IDS';
+      throw error;
+    }
+    const normalizedIds = credentialIds.map((id) => typeof id === 'string' ? id.trim() : id);
+    if (new Set(normalizedIds).size !== normalizedIds.length) {
+      const error = new Error('CredentialManager.executeBulkAction() rejects duplicate credentialIds');
+      error.code = 'DUPLICATE_BULK_CREDENTIAL_IDS';
       throw error;
     }
 
@@ -1261,6 +1599,11 @@ export class CredentialManager {
     await this.secretVersioningService.recordCredentialVersion(credential, options);
   }
 
+  async #invalidateSecretHistory(credential, reason) {
+    if (!this.secretVersioningService?.invalidateHistoryForCredential) return;
+    await this.secretVersioningService.invalidateHistoryForCredential(credential.credentialId, { reason });
+  }
+
   #assertCredentialHistory(operation) {
     if (!this.credentialHistoryService) {
       throw new Error(`CredentialManager.${operation}() requires credentialHistoryService`);
@@ -1273,10 +1616,40 @@ export class CredentialManager {
     }
   }
 
-  async #saveIfAvailable(credential) {
-    if (this.credentialStore?.save) {
+  async #createIfAvailable(credential) {
+    if (this.credentialStore?.create) {
+      await this.credentialStore.create(credential);
+    } else if (this.credentialStore?.saveConditional) {
+      await this.credentialStore.saveConditional(credential, { requireExisting: false });
+    } else if (this.credentialStore?.save) {
       await this.credentialStore.save(credential);
     }
+  }
+
+  async #saveLifecycleIfCurrent(credential, { expectedVersion }) {
+    if (!this.credentialStore?.save) return credential;
+    if (typeof this.credentialStore.saveConditional === 'function') {
+      return this.credentialStore.saveConditional(credential, { expectedVersion, requireExisting: true });
+    }
+    await this.credentialStore.save(credential);
+    return credential;
+  }
+
+  #isTerminalLifecycle(credential) {
+    return credential?.lifecycleState === LifecycleState.REVOKED
+      || credential?.lifecycleState === LifecycleState.DELETED;
+  }
+
+  #lifecycleConflict(credential, message, details = {}) {
+    const error = new Error(message);
+    error.code = 'CREDENTIAL_LIFECYCLE_CONFLICT';
+    error.details = {
+      credentialId: credential?.credentialId ?? null,
+      lifecycleState: credential?.lifecycleState ?? null,
+      version: credential?.version ?? null,
+      ...details
+    };
+    return error;
   }
 
   async #recordLifecycleAudit(action, credential, context = {}, details = {}) {
@@ -1327,8 +1700,7 @@ export class CredentialManager {
 
   async #persistOAuthRefresh(credential, oauthResult) {
     const refreshedCredential = this.#credentialFromOAuthResult(credential, oauthResult);
-    await this.credentialStore.save(refreshedCredential);
-    return refreshedCredential;
+    return this.#saveLifecycleIfCurrent(refreshedCredential, { expectedVersion: credential.version });
   }
 
   #credentialFromOAuthResult(credential, oauthResult) {

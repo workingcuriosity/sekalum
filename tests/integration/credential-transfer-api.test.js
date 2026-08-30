@@ -46,6 +46,31 @@ function createCredentialManager(credentials) {
         version: current.version + 1
       });
       return credentials[index];
+    },
+    async importCredentialBatch(operations, { onCommitted = null } = {}) {
+      const snapshot = [...credentials];
+      try {
+        for (const operation of operations) {
+          if (operation.action === 'create') {
+            credentials.push(credential(operation.credential));
+            continue;
+          }
+          const index = credentials.findIndex((item) => item.toJSON().credentialId === operation.targetCredentialId);
+          if (index < 0) throw new Error('Credential not found');
+          const current = credentials[index].toJSON();
+          credentials[index] = credential({
+            ...current,
+            ...operation.credential,
+            credentialId: operation.targetCredentialId,
+            version: current.version + 1
+          });
+        }
+        await onCommitted?.({ credentials: [...credentials], operations });
+        return { credentials: [...credentials], operations };
+      } catch (error) {
+        credentials.splice(0, credentials.length, ...snapshot);
+        throw error;
+      }
     }
   };
 }
@@ -113,7 +138,7 @@ test('HTTP credential transfer import preview and import endpoints use transfer 
     const exportResponse = await fetch(`${source.baseUrl}/api/v1/credentials/export`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ all: true })
+      body: JSON.stringify({ all: true, encryptionPassword: 'safe export password' })
     });
     transfer = (await exportResponse.json()).data.payload;
   } finally {
@@ -130,7 +155,7 @@ test('HTTP credential transfer import preview and import endpoints use transfer 
     const previewResponse = await fetch(`${target.baseUrl}/api/v1/credentials/import/preview`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ transfer })
+      body: JSON.stringify({ transfer, encryptionPassword: 'safe export password' })
     });
     const preview = await previewResponse.json();
 
@@ -143,7 +168,7 @@ test('HTTP credential transfer import preview and import endpoints use transfer 
     const importResponse = await fetch(`${target.baseUrl}/api/v1/credentials/import`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ transfer, conflictStrategy: 'skip' })
+      body: JSON.stringify({ transfer, encryptionPassword: 'safe export password', conflictStrategy: 'skip' })
     });
     const imported = await importResponse.json();
 

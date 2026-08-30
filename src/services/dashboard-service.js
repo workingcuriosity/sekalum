@@ -619,7 +619,12 @@ async #safeSection(section, operation) {
 
 
   #providerCapabilitySummary(providers) {
-    return ProviderOperationCapabilities.reduce((counts, capability) => {
+    const capabilities = ProviderOperationCapabilities.filter((capability) =>
+      capability !== 'runtime-derivation' || providers.some((provider) =>
+        (provider.capabilities ?? []).includes(capability)
+      )
+    );
+    return capabilities.reduce((counts, capability) => {
       counts[capability] = providers.filter((provider) =>
         (provider.capabilities ?? []).includes(capability)
       ).length;

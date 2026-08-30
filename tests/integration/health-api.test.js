@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
+import {
+  createIsolatedRuntime,
+  sourcePath,
+  stopChild,
+  testEnvironment
+} from '../support/isolated-runtime.js';
 
 function waitForOutput(child, pattern, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
@@ -28,13 +36,12 @@ function waitForOutput(child, pattern, timeoutMs = 10000) {
 
 test('HTTP health endpoint returns UP status', async () => {
   const port = '3001';
-  const child = spawn(process.execPath, ['src/index.js'], {
+  const runtime = createIsolatedRuntime('sekalum-health-api-');
+  const child = spawn(process.execPath, [sourcePath('src/index.js')], {
+    cwd: runtime.cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      OAUTH_CALLBACK_PORT: port,
-    },
+    env: testEnvironment({ OAUTH_CALLBACK_PORT: port }),
   });
 
   try {
@@ -49,6 +56,8 @@ test('HTTP health endpoint returns UP status', async () => {
 
     assert.deepEqual(body, { status: 'UP' });
   } finally {
-    child.kill('SIGTERM');
+    await stopChild(child);
+    assert.equal(existsSync('storage'), false, 'application startup must not write publication storage');
+    runtime.cleanup();
   }
 });

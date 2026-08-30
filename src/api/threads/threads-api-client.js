@@ -32,14 +32,16 @@ export class ThreadsApiClient {
   }
 
   async exchangeForLongLivedToken({ shortLivedToken, providerConfiguration = null }) {
-    const response = await this.httpClient.get(
+    const body = new URLSearchParams({
+      grant_type: 'th_exchange_token',
+      client_secret: oauthConfigurationValue({ providerConfiguration, field: 'clientSecret', config: this.config, environmentKey: 'THREADS_CLIENT_SECRET' }),
+      access_token: shortLivedToken
+    });
+    const response = await this.httpClient.post(
       `${this.baseUrl}/access_token`,
+      body,
       {
-        query: {
-          grant_type: 'th_exchange_token',
-          client_secret: oauthConfigurationValue({ providerConfiguration, field: 'clientSecret', config: this.config, environmentKey: 'THREADS_CLIENT_SECRET' }),
-          access_token: shortLivedToken
-        }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       }
     );
 
@@ -47,13 +49,12 @@ export class ThreadsApiClient {
   }
 
   async refreshLongLivedToken({ accessToken }) {
-    const response = await this.httpClient.get(
+    const body = new URLSearchParams({ grant_type: 'th_refresh_token', access_token: accessToken });
+    const response = await this.httpClient.post(
       `${this.baseUrl}/refresh_access_token`,
+      body,
       {
-        query: {
-          grant_type: 'th_refresh_token',
-          access_token: accessToken
-        }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       }
     );
 
@@ -65,9 +66,9 @@ export class ThreadsApiClient {
       `${this.baseUrl}/${this.apiVersion}/me`,
       {
         query: {
-          fields: 'id,username',
-          access_token: accessToken
-        }
+          fields: 'id,username'
+        },
+        bearerToken: accessToken
       }
     );
 

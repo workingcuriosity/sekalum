@@ -1045,6 +1045,20 @@ test('HTTP credentials bulk endpoint rejects invalid requests', async () => {
     assert.equal(unsupportedActionBody.success, false);
     assert.equal(unsupportedActionBody.error.code, 'BAD_REQUEST');
     assert.match(unsupportedActionBody.error.message, /Unsupported bulk credential action/);
+
+    const duplicateResponse = await fetch(`${baseUrl}/api/v1/credentials/bulk`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'validate', credentialIds: ['credential-1', 'credential-1'] })
+    });
+    assert.equal(duplicateResponse.status, 400);
+
+    const oversizedResponse = await fetch(`${baseUrl}/api/v1/credentials/bulk`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'validate', credentialIds: Array.from({ length: 101 }, (_, index) => `credential-${index}`) })
+    });
+    assert.equal(oversizedResponse.status, 400);
   } finally {
     server.close();
   }

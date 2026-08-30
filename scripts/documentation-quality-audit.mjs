@@ -218,6 +218,10 @@ async function gitFileAt(root, ref, displayPath) {
 export async function auditDocumentation(root = process.cwd(), { publicProfile = false, baseRef = process.env.DOC_AUDIT_BASE, privateRoot = process.env.DOC_AUDIT_PRIVATE_ROOT } = {}) {
   const docsDirectory = path.join(root, 'docs');
   const markdownFiles = await listMarkdownFiles(docsDirectory);
+  const privateCanonicalSource = publicProfile && await exists(path.join(root, '.git'));
+  const resolvePublicationPath = privateCanonicalSource
+    ? (await import('./public-projection-contract.mjs')).resolvePublicationPath
+    : null;
   const allFiles = [...markdownFiles];
   const rootReadme = path.join(root, 'README.md');
 
@@ -294,7 +298,7 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
       } else {
         result.immutableExceptions.push({ file: displayPath, ...immutableRecord });
       }
-      if (publicProfile) {
+      if (publicProfile && !privateCanonicalSource) {
         result.projectionFindings.push({ code: 'DOC-PUB-002', file: displayPath, classification: immutableRecord.classification });
       }
     } else if (isCurrentGovernedPath(displayPath)) {
@@ -329,12 +333,17 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
         result.currentGermanDocumentCount += 1;
       }
       if (publicProfile) {
-        result.publicDocumentCount += 1;
-        if (classification.toLowerCase() !== 'public') {
-          result.projectionFindings.push({ code: 'DOC-PUB-002', file: displayPath, classification });
-        }
-        if (privateRoot && !(await exists(path.join(privateRoot, displayPath)))) {
-          result.projectionFindings.push({ code: 'DOC-PUB-001', file: displayPath, reason: 'No private source path.' });
+        const projectionClassification = privateCanonicalSource
+          ? resolvePublicationPath(displayPath, Buffer.from(content)).classification
+          : 'PUBLIC';
+        if (!privateCanonicalSource || projectionClassification === 'PUBLIC') {
+          result.publicDocumentCount += 1;
+          if (classification.toLowerCase() !== 'public') {
+            result.projectionFindings.push({ code: 'DOC-PUB-002', file: displayPath, classification });
+          }
+          if (privateRoot && !(await exists(path.join(privateRoot, displayPath)))) {
+            result.projectionFindings.push({ code: 'DOC-PUB-001', file: displayPath, reason: 'No private source path.' });
+          }
         }
       }
 
@@ -354,7 +363,7 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
       if (classification.toLowerCase() === 'public') {
         result.projectionFindings.push({ code: 'DOC-HIST-002', file: displayPath, reason: 'Historical documentation cannot be public.' });
       }
-      if (publicProfile) {
+      if (publicProfile && !privateCanonicalSource) {
         result.projectionFindings.push({ code: 'DOC-HIST-002', file: displayPath, reason: 'Public projection contains docs/history.' });
       }
     }
