@@ -7,6 +7,7 @@
 // See the LICENSE file for details.
 
 import { ConsumerApiClient } from '../shared/consumer-api.js';
+import { buildClientExample, listClientExampleFormats } from './client-generator.js';
 
 const ERROR_MESSAGES = new Map([
   [401, 'Connection failed. Check the Consumer API token and try again.'],
@@ -186,7 +187,8 @@ export function createConsumerController({ documentRef = globalThis.document, ap
     resolveState: 'initial',
     resolvedCredential: null,
     resolveRequestInFlight: false,
-    requestedSecretNames: []
+    requestedSecretNames: [],
+    clientExampleFormat: 'curl'
   };
   const form = documentRef.querySelector('#consumer-token-form');
   const tokenInput = documentRef.querySelector('#consumer-token');
@@ -195,6 +197,10 @@ export function createConsumerController({ documentRef = globalThis.document, ap
   const secretSelection = documentRef.querySelector('#consumer-secret-selection');
   const resolveResults = documentRef.querySelector('#consumer-resolve-results');
   const resolveResultList = documentRef.querySelector('#consumer-resolve-result-list');
+  const clientExamples = documentRef.querySelector('#consumer-client-examples');
+  const clientExampleFormat = documentRef.querySelector('#consumer-client-example-format');
+  const clientExampleOutput = documentRef.querySelector('#consumer-client-example-output');
+  const clientExampleStatus = documentRef.querySelector('#consumer-client-example-status');
   const submit = form?.querySelector('button[type="submit"]');
   let resolveGeneration = 0;
   const revealTimers = new Map();
@@ -215,6 +221,38 @@ export function createConsumerController({ documentRef = globalThis.document, ap
     clearRevealTimers();
     if (resolveResultList) resolveResultList.replaceChildren();
     if (resolveResults) resolveResults.hidden = true;
+  }
+
+  function renderClientExample() {
+    if (!clientExamples || !clientExampleOutput) return;
+    const credential = state.discoveredCredentials.find((entry) => entry.credentialKey === state.selectedCredentialKey);
+    const secretNames = state.requestedSecretNames.length > 0
+      ? state.requestedSecretNames
+      : secretNamesForCredential(credential).slice(0, 1);
+    clientExamples.hidden = !credential || secretNames.length === 0;
+    if (clientExamples.hidden) return;
+    clientExampleOutput.value = buildClientExample({
+      format: state.clientExampleFormat,
+      credentialKey: credential.credentialKey,
+      secretNames
+    });
+    if (clientExampleStatus) clientExampleStatus.textContent = 'Replace the marked placeholders before use. The example does not contain a real token or secret.';
+  }
+
+  function renderClientExampleFormats() {
+    if (!clientExampleFormat) return;
+    clientExampleFormat.replaceChildren();
+    for (const format of listClientExampleFormats()) {
+      const option = documentRef.createElement('option');
+      option.value = format.id;
+      option.textContent = format.label;
+      clientExampleFormat.append(option);
+    }
+    clientExampleFormat.value = state.clientExampleFormat;
+    clientExampleFormat.addEventListener('change', () => {
+      state.clientExampleFormat = clientExampleFormat.value;
+      renderClientExample();
+    });
   }
 
   function renderResolveResults(data, requestedSecretNames) {
@@ -278,6 +316,7 @@ export function createConsumerController({ documentRef = globalThis.document, ap
     state.discoveredCredentials = [];
     if (results) results.replaceChildren();
     clearSecretSelection();
+    if (clientExamples) clientExamples.hidden = true;
   }
 
   function renderSelectedSecretFields() {
@@ -291,6 +330,7 @@ export function createConsumerController({ documentRef = globalThis.document, ap
         : state.requestedSecretNames.filter((requestedName) => requestedName !== name);
       state.requestedSecretNames = allowedNames.filter((allowedName) => state.requestedSecretNames.includes(allowedName));
       renderSelectedSecretFields();
+      renderClientExample();
     }, resolve, state.resolveRequestInFlight);
   }
 
@@ -299,6 +339,7 @@ export function createConsumerController({ documentRef = globalThis.document, ap
     resetResolveState();
     state.selectedCredentialKey = credentialKey;
     renderSelectedSecretFields();
+    renderClientExample();
   }
 
   async function resolve() {
@@ -333,6 +374,7 @@ export function createConsumerController({ documentRef = globalThis.document, ap
       if (generation !== resolveGeneration) return;
       state.resolveRequestInFlight = false;
       renderSelectedSecretFields();
+      renderClientExample();
     }
   }
 
@@ -353,6 +395,7 @@ export function createConsumerController({ documentRef = globalThis.document, ap
     resetResolveState();
     if (results) results.replaceChildren();
     clearSecretSelection();
+    if (clientExamples) clientExamples.hidden = true;
     setLoading(true);
     setStatus('Testing connection and discovering credentials…');
     try {
@@ -366,6 +409,7 @@ export function createConsumerController({ documentRef = globalThis.document, ap
       state.discoveryState = list.length > 0 ? 'success' : 'empty';
       if (results) renderCredentials(documentRef, list, results, state.selectedCredentialKey, selectCredential);
       renderSelectedSecretFields();
+      renderClientExample();
       setStatus(list.length > 0 ? 'Connection successful.' : 'Connection successful. No credentials are currently available.');
     } catch (error) {
       reset();
@@ -378,6 +422,7 @@ export function createConsumerController({ documentRef = globalThis.document, ap
   }
 
   form?.addEventListener('submit', discover);
+  renderClientExampleFormats();
   return { state, discover, resolve, reset };
 }
 

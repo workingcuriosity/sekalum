@@ -1,4 +1,5 @@
 import { safeError } from '../utils/safe-diagnostics.js';
+import { authenticatedUserId } from '../utils/authenticated-user.js';
 
 export class ProviderController {
   constructor({ providerManager, customProviderService = null, oauthRuntimeDetails = null }) {
@@ -78,7 +79,32 @@ export class ProviderController {
     try {
       if (!this.customProviderService?.disable) throw new Error('Custom provider lifecycle is not configured');
       const result = await this.customProviderService.disable(req.params.providerKey, {
-        actorUserId: req.auth?.userId ?? req.headers?.['x-credential-hub-user'] ?? null
+        actorUserId: authenticatedUserId(req)
+      });
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      this.#sendError(res, error);
+    }
+  }
+
+  async update(req, res) {
+    try {
+      if (!this.customProviderService?.update) throw new Error('Custom provider management is not configured');
+      const result = await this.customProviderService.update(req.params.providerKey, req.body, {
+        actorUserId: authenticatedUserId(req)
+      });
+      const summary = await this.providerManager.getProvider(req.params.providerKey);
+      res.status(200).json({ success: true, data: this.#toProviderJSON(summary, req), classification: result.classification ?? null });
+    } catch (error) {
+      this.#sendError(res, error);
+    }
+  }
+
+  async delete(req, res) {
+    try {
+      if (!this.customProviderService?.delete) throw new Error('Custom provider management is not configured');
+      const result = await this.customProviderService.delete(req.params.providerKey, {
+        actorUserId: authenticatedUserId(req)
       });
       res.status(200).json({ success: true, data: result });
     } catch (error) {
@@ -90,7 +116,7 @@ export class ProviderController {
     try {
       if (!this.customProviderService?.enable) throw new Error('Custom provider lifecycle is not configured');
       const result = await this.customProviderService.enable(req.params.providerKey, {
-        actorUserId: req.auth?.userId ?? req.headers?.['x-credential-hub-user'] ?? null
+        actorUserId: authenticatedUserId(req)
       });
       res.status(200).json({ success: true, data: result });
     } catch (error) {

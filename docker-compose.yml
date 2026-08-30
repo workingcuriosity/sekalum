@@ -1,13 +1,13 @@
 services:
   credential-hub:
-    image: credential-hub:1.0.0-beta.1
+    image: credential-hub:1.0.0-rc.2
     build:
       context: .
       args:
-        APP_VERSION: 1.0.0-beta.1
+        APP_VERSION: 1.0.0-rc.2
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
       - .env
     volumes:

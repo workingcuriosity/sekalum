@@ -184,6 +184,21 @@ test('Custom Provider onboarding collects declarative methods and fields without
   assert.match(providersScript, /identity\.description\.trim\(\) \? \{ description: identity\.description\.trim\(\) \} : \{\}/);
 });
 
+test('Custom Provider management exposes bounded edit and delete actions', () => {
+  const providersScript = fs.readFileSync(path.resolve('public/admin/providers.js'), 'utf8');
+  const providersHtml = fs.readFileSync(path.resolve('public/admin/providers.html'), 'utf8');
+
+  assert.match(providersHtml, /id="managed-providers"/);
+  assert.match(providersHtml, /Edit declarative metadata or delete an unused custom provider/);
+  assert.match(providersScript, /function managedPayload\(provider, overrides = \{\}\)/);
+  assert.match(providersScript, /data-edit-provider/);
+  assert.match(providersScript, /data-delete-provider/);
+  assert.match(providersScript, /method: 'PUT'/);
+  assert.match(providersScript, /method: 'DELETE'/);
+  assert.match(providersScript, /providers\/\$\{encodeURIComponent\(key\)\}/);
+  assert.match(providersScript, /window\.confirm/);
+});
+
 test('Custom Provider onboarding preserves field edits when navigating back and locks referenced method IDs', () => {
   const providersScript = fs.readFileSync(path.resolve('public/admin/providers.js'), 'utf8');
 
@@ -213,6 +228,7 @@ test('Admin UI loads the shared internationalization layer on every scoped page'
 
 test('Consumer-grant management UI lists, filters, and updates grants without exposing secret values', () => {
   const script = fs.readFileSync(path.resolve('public/admin/consumer-grants.js'), 'utf8');
+  const profiles = fs.readFileSync(path.resolve('public/admin/consumer-profiles.js'), 'utf8');
   const html = fs.readFileSync(path.resolve('public/admin/consumer-grants.html'), 'utf8');
   const shell = fs.readFileSync(path.resolve('public/admin/admin-shell.js'), 'utf8');
 
@@ -255,6 +271,16 @@ test('Consumer-grant management UI lists, filters, and updates grants without ex
   assert.match(script, /providerLabel\(grant\.providerKey\)/);
   assert.match(script, /permissionSummaryText/);
   assert.match(script, /renderCreatePreview/);
+  assert.match(script, /buildConsumerProfileSuggestion/);
+  assert.match(script, /applyProfileSuggestions/);
+  assert.match(html, /consumer-grant-create-profile/);
+  assert.match(html, /consumer-grant-apply-profile/);
+  assert.match(profiles, /n8n/);
+  assert.match(profiles, /make/);
+  assert.match(profiles, /zapier/);
+  assert.match(profiles, /home-assistant/);
+  assert.match(profiles, /credentials:consume/);
+  assert.doesNotMatch(profiles, /secretValue|tokenValue|accessTokenValue|refreshTokenValue/);
   assert.match(script, /previewRuntimePublic/);
   assert.match(script, /previewState/);
   assert.match(script, /previewExcludedUnavailable/);
@@ -549,7 +575,7 @@ test('Credential Wizard renders accessible form field UX metadata', () => {
 
   assert.match(wizardScript, /function autocompleteForField/);
   assert.match(wizardScript, /autocompleteForField\(field\)/);
-  assert.match(wizardScript, /const id = `credential-field-\$\{field\.key\}`/);
+  assert.match(wizardScript, /const id = `credential-field-\$\{escapeHtml\(field\.key\)\}`/);
   assert.match(wizardScript, /<label for="\$\{id\}">/);
   assert.match(wizardScript, /required-badge/);
 

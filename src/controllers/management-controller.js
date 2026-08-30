@@ -1,4 +1,5 @@
 import { safeError } from '../utils/safe-diagnostics.js';
+import { authenticatedUserId } from '../utils/authenticated-user.js';
 
 export class ManagementController {
   constructor({ managementService }) {
@@ -90,7 +91,7 @@ export class ManagementController {
   }
 
   #userIdFromRequest(req) {
-    return req.headers?.['x-credential-hub-user'] ?? null;
+    return authenticatedUserId(req);
   }
 
   #assertManagementService(operation) {

@@ -32,6 +32,7 @@ export class ApiToken {
     tokenPrefix,
     tokenHash,
     userId,
+    principalGeneration = `legacy:${userId}`,
     scopes = [],
     createdAt = new Date(),
     expiresAt = null,
@@ -45,6 +46,9 @@ export class ApiToken {
     if (!tokenPrefix) throw new Error("ApiToken: 'tokenPrefix' is required");
     if (!tokenHash) throw new Error("ApiToken: 'tokenHash' is required");
     if (!userId) throw new Error("ApiToken: 'userId' is required");
+    if (typeof principalGeneration !== 'string' || principalGeneration.trim() === '') {
+      throw new Error("ApiToken: 'principalGeneration' is required");
+    }
     if (!createdBy) throw new Error("ApiToken: 'createdBy' is required");
 
     this.id = id;
@@ -52,6 +56,7 @@ export class ApiToken {
     this.tokenPrefix = tokenPrefix;
     this.tokenHash = tokenHash;
     this.userId = userId;
+    this.principalGeneration = principalGeneration.trim();
     this.scopes = normalizeScopes(scopes);
     this.createdAt = toDate(createdAt, 'createdAt');
     this.expiresAt = toDate(expiresAt, 'expiresAt');
@@ -108,6 +113,7 @@ export class ApiToken {
       tokenPrefix: this.tokenPrefix,
       tokenHash: this.tokenHash,
       userId: this.userId,
+      principalGeneration: this.principalGeneration,
       scopes: [...this.scopes],
       createdAt: this.createdAt.toISOString(),
       expiresAt: this.expiresAt ? this.expiresAt.toISOString() : null,

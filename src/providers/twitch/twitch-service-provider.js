@@ -55,7 +55,7 @@ export class TwitchServiceProvider extends ServiceProvider {
           ProviderCapability.HEALTH_CHECK
         ]),
         credentialFields: twitchCredentialFields(),
-        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', credentialFields: twitchCredentialFields(), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
+        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', authenticationMethod: 'oauth2', credentialFields: twitchCredentialFields(), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
         providerMethodBindings: [new ProviderMethodBinding({ methodKey: 'oauth2' })],
         metadata: {
           authType: 'oauth2',

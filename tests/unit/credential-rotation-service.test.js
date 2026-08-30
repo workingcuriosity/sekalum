@@ -78,6 +78,45 @@ test('CredentialRotationService rotates due credentials and records audit entrie
   ]);
 });
 
+test('CredentialRotationService distinguishes committed refresh from completion-audit failure', async () => {
+  const auditActions = [];
+  const service = new CredentialRotationService({
+    credentialManager: {
+      async listCredentials() { return [{ credentialId: 'cred-1', providerKey: 'twitch' }]; },
+      async refresh(credentialId) { return { success: true, data: { credential: { credentialId, providerKey: 'twitch', version: 2 } } }; }
+    },
+    credentialPolicyService: {
+      async evaluateCredential() {
+        return {
+          matchedPolicies: [{ policyId: 'rotation', name: 'Rotation', rotationIntervalDays: 30, criticality: 'high' }],
+          warnings: [],
+          violations: [{ policyId: 'rotation', type: 'rotation-overdue' }]
+        };
+      }
+    },
+    auditLogService: {
+      async record(entry) {
+        auditActions.push(entry.action);
+        if (entry.action === 'credential-rotation.completed') throw new Error('audit store unavailable');
+      }
+    },
+    lifecycleNotificationService: { async createForRotationResult() {} }
+  });
+
+  const result = await service.rotateDueCredentials();
+
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(result.results[0].success, true);
+  assert.equal(result.results[0].committed, true);
+  assert.equal(result.results[0].auditPersistenceFailed, true);
+  assert.deepEqual(auditActions, [
+    'credential-rotation.started',
+    'credential-rotation.completed',
+    'credential-rotation.audit-failed'
+  ]);
+});
+
 test('CredentialRotationService keeps batch running when one rotation fails', async () => {
   const service = new CredentialRotationService({
     credentialManager: {

@@ -73,8 +73,8 @@ export class BackupRestoreService {
         throw new Error('BackupRestoreService requires AuditLogService.replaceEntries()');
       }
 
+      const restoredAuditEntries = await this.auditLogService.replaceEntries(backup.data.auditLog);
       await this.accessManagementService.replaceUsers(backup.data.users, { skipAudit: true });
-      await this.auditLogService.replaceEntries(backup.data.auditLog);
       await this.#audit({
         action: 'backup.restored',
         targetId: normalizedBackupId,
@@ -88,7 +88,7 @@ export class BackupRestoreService {
         restoredAt: this.#timestamp(),
         restored: {
           users: backup.data.users.length,
-          auditLog: backup.data.auditLog.length
+          auditLog: restoredAuditEntries.length
         }
       };
     } catch (error) {

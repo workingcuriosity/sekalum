@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { SerializedMutationQueue } from './serialized-mutation-queue.js';
 
 export class ProviderConfigurationStore {
   constructor({ jsonStore, basePath }) {
@@ -8,6 +9,7 @@ export class ProviderConfigurationStore {
 
     this.jsonStore = jsonStore;
     this.filePath = path.join(basePath, 'provider-configurations.json');
+    this.mutationQueue = new SerializedMutationQueue();
   }
 
   async load(configurationId) {
@@ -25,29 +27,37 @@ export class ProviderConfigurationStore {
     return structuredClone(record);
   }
 
+  async list() {
+    return structuredClone((await this.#loadRaw()).configurations);
+  }
+
   async save(record) {
-    const data = await this.#loadRaw();
-    const index = data.configurations.findIndex(
-      (entry) => entry.configurationId === record.configurationId
-    );
-    const serialized = structuredClone(record);
+    return this.mutationQueue.run(async () => {
+      const data = await this.#loadRaw();
+      const index = data.configurations.findIndex(
+        (entry) => entry.configurationId === record.configurationId
+      );
+      const serialized = structuredClone(record);
 
-    if (index === -1) data.configurations.push(serialized);
-    else data.configurations[index] = serialized;
+      if (index === -1) data.configurations.push(serialized);
+      else data.configurations[index] = serialized;
 
-    await this.jsonStore.save(this.filePath, data);
-    return structuredClone(serialized);
+      await this.jsonStore.save(this.filePath, data);
+      return structuredClone(serialized);
+    });
   }
 
   async delete(configurationId) {
-    const data = await this.#loadRaw();
-    const configurations = data.configurations.filter(
-      (entry) => entry.configurationId !== configurationId
-    );
+    return this.mutationQueue.run(async () => {
+      const data = await this.#loadRaw();
+      const configurations = data.configurations.filter(
+        (entry) => entry.configurationId !== configurationId
+      );
 
-    if (configurations.length === data.configurations.length) return false;
-    await this.jsonStore.save(this.filePath, { configurations });
-    return true;
+      if (configurations.length === data.configurations.length) return false;
+      await this.jsonStore.save(this.filePath, { configurations });
+      return true;
+    });
   }
 
   async #loadRaw() {

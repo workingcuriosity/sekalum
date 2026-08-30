@@ -1,4 +1,6 @@
 import { ConsumerGrant } from '../models/consumer-grant.js';
+import { RuntimeDerivationContract } from '../models/runtime-derivation-contract.js';
+import { SerializedMutationQueue } from '../storage/serialized-mutation-queue.js';
 
 export class ConsumerGrantService {
   constructor({ store = null, auditLogService = null, apiTokenService = null, credentialStore = null, providerRegistry = null } = {}) {
@@ -12,71 +14,98 @@ export class ConsumerGrantService {
     this.credentialStore = credentialStore;
     this.providerRegistry = providerRegistry;
     this.grants = [];
+    this.mutationQueue = new SerializedMutationQueue();
   }
 
   async createGrant(input = {}, { actorUserId = 'system' } = {}) {
-    const grant = ConsumerGrant.from(input);
-    const grants = await this.#load();
-    if (grants.some((item) => item.grantId === grant.grantId)) {
-      throw this.#badRequest(`Consumer grant '${grant.grantId}' already exists`);
-    }
-    if (grants.some((item) => this.#sameBinding(item, grant))) {
-      throw this.#badRequest('A grant for this consumer and credential already exists', 'CONSUMER_GRANT_DUPLICATE');
-    }
-    await this.#validateGrant(grant);
-    grants.push(grant);
-    await this.#save(grants);
-    await this.#audit({
-      userId: actorUserId,
-      action: 'consumer-grant.created',
-      targetId: grant.grantId,
-      details: {
-        consumerId: grant.consumerId,
-        credentialId: grant.credentialId,
-        providerKey: grant.providerKey,
-        secretFieldCount: grant.secretNames.length
+    return this.mutationQueue.run(async () => {
+      const grant = await this.#bindProviderProfile(ConsumerGrant.from(input));
+      const state = await this.#loadState();
+      const grants = state.grants;
+      if (grants.some((item) => item.grantId === grant.grantId)) {
+        throw this.#badRequest(`Consumer grant '${grant.grantId}' already exists`);
       }
+      if (grants.some((item) => this.#sameBinding(item, grant))) {
+        throw this.#badRequest('A grant for this consumer and credential already exists', 'CONSUMER_GRANT_DUPLICATE');
+      }
+      await this.#validateGrant(grant);
+      grants.push(grant);
+      await this.#save(grants, state.revision);
+      await this.#audit({
+        userId: actorUserId,
+        action: 'consumer-grant.created',
+        targetId: grant.grantId,
+        details: {
+          consumerId: grant.consumerId,
+          credentialId: grant.credentialId,
+          providerKey: grant.providerKey,
+          secretFieldCount: grant.secretNames.length
+        }
+      });
+      return grant;
     });
-    return grant;
   }
 
   async updateGrant(grantId, input = {}, { actorUserId = 'system' } = {}) {
-    const normalizedGrantId = this.#requiredString(grantId, 'grantId');
-    const grants = await this.#load();
-    const index = grants.findIndex((item) => item.grantId === normalizedGrantId);
-    if (index === -1) throw this.#notFound(`Consumer grant '${normalizedGrantId}' not found`);
+    return this.mutationQueue.run(async () => {
+      const normalizedGrantId = this.#requiredString(grantId, 'grantId');
+      const state = await this.#loadState();
+      const grants = state.grants;
+      const index = grants.findIndex((item) => item.grantId === normalizedGrantId);
+      if (index === -1) throw this.#notFound(`Consumer grant '${normalizedGrantId}' not found`);
 
-    const current = grants[index];
-    const next = new ConsumerGrant({
-      ...current.toJSON(),
-      consumerId: input.consumerId ?? current.consumerId,
-      credentialId: input.credentialId ?? current.credentialId,
-      providerKey: input.providerKey ?? current.providerKey,
-      secretNames: input.secretNames ?? current.secretNames,
-      updatedAt: new Date()
-    });
-    if (grants.some((item, itemIndex) => itemIndex !== index && this.#sameBinding(item, next))) {
-      throw this.#badRequest('A grant for this consumer and credential already exists', 'CONSUMER_GRANT_DUPLICATE');
-    }
-    await this.#validateGrant(next);
-    grants[index] = next;
-    await this.#save(grants);
-    await this.#audit({
-      userId: actorUserId,
-      action: 'consumer-grant.updated',
-      targetId: next.grantId,
-      details: {
-        consumerId: next.consumerId,
-        credentialId: next.credentialId,
-        providerKey: next.providerKey,
-        secretFieldCount: next.secretNames.length
+      const current = grants[index];
+      const next = new ConsumerGrant({
+        ...current.toJSON(),
+        consumerId: input.consumerId ?? current.consumerId,
+        credentialId: input.credentialId ?? current.credentialId,
+        providerKey: input.providerKey ?? current.providerKey,
+        providerProfile: input.providerProfile ?? current.providerProfile,
+        secretNames: input.secretNames ?? current.secretNames,
+        updatedAt: new Date()
+      });
+      if (grants.some((item, itemIndex) => itemIndex !== index && this.#sameBinding(item, next))) {
+        throw this.#badRequest('A grant for this consumer and credential already exists', 'CONSUMER_GRANT_DUPLICATE');
       }
+      await this.#validateGrant(next);
+      grants[index] = next;
+      await this.#save(grants, state.revision);
+      await this.#audit({
+        userId: actorUserId,
+        action: 'consumer-grant.updated',
+        targetId: next.grantId,
+        details: {
+          consumerId: next.consumerId,
+          credentialId: next.credentialId,
+          providerKey: next.providerKey,
+          secretFieldCount: next.secretNames.length
+        }
+      });
+      return next;
     });
-    return next;
+  }
+
+  async deleteGrant(grantId, { actorUserId = 'system' } = {}) {
+    return this.mutationQueue.run(async () => {
+      const normalizedGrantId = this.#requiredString(grantId, 'grantId');
+      const state = await this.#loadState();
+      const grants = state.grants;
+      const index = grants.findIndex((item) => item.grantId === normalizedGrantId);
+      if (index === -1) throw this.#notFound(`Consumer grant '${normalizedGrantId}' not found`);
+      const [grant] = grants.splice(index, 1);
+      await this.#save(grants, state.revision);
+      await this.#audit({
+        userId: actorUserId,
+        action: 'consumer-grant.deleted',
+        targetId: grant.grantId,
+        details: { consumerId: grant.consumerId, credentialId: grant.credentialId, providerKey: grant.providerKey }
+      });
+      return grant;
+    });
   }
 
   async listGrants(filters = {}) {
-    const grants = await this.#load();
+    const grants = (await this.#loadState()).grants;
     return grants.filter((grant) =>
       (!filters.consumerId || grant.consumerId === filters.consumerId) &&
       (!filters.credentialId || grant.credentialId === filters.credentialId) &&
@@ -94,8 +123,18 @@ export class ConsumerGrantService {
     const credential = await this.#loadCredential(grant.credentialId);
     if (!credential) return;
 
+    const credentialGeneration = credential.credentialGeneration ?? `legacy:${credential.credentialId}`;
+    const grantGeneration = grant.credentialGeneration ?? `legacy:${grant.credentialId}`;
+    if (grantGeneration !== credentialGeneration) {
+      throw this.#badRequest(`Credential '${grant.credentialId}' generation does not match the grant`, 'CONSUMER_GRANT_GENERATION_MISMATCH');
+    }
+
     if (credential.providerKey !== grant.providerKey) {
       throw this.#badRequest(`Credential '${grant.credentialId}' does not belong to provider '${grant.providerKey}'`, 'CONSUMER_GRANT_PROVIDER_MISMATCH');
+    }
+    const credentialProfile = credential.providerProfile ?? credential.metadata?.custom?.providerProfile ?? null;
+    if (credentialProfile && grant.providerProfile && credentialProfile.digest !== grant.providerProfile.digest) {
+      throw this.#badRequest(`Credential '${grant.credentialId}' does not match the provider profile bound to the grant`, 'CONSUMER_GRANT_PROFILE_MISMATCH');
     }
 
     if (!credential.credentialMethodKey) {
@@ -112,9 +151,21 @@ export class ConsumerGrantService {
     const methodFields = new Map((method.credentialFields ?? []).map((field) => [field.key, field]));
     const credentialSecretNames = new Set((credential.secrets ?? []).map((secret) => secret.name));
     for (const name of grant.secretNames) {
-      if (methodFields.get(name)?.secret !== true || !credentialSecretNames.has(name)) {
+      if (!this.#isInjectableSecret({ field: methodFields.get(name), name, credentialSecretNames, provider })) {
         throw this.#badRequest(`Secret field '${name}' is not injectable for credential '${grant.credentialId}'`, 'CONSUMER_GRANT_SECRET_INVALID');
       }
+    }
+  }
+
+  #isInjectableSecret({ field, name, credentialSecretNames, provider }) {
+    if (field?.secret !== true) return false;
+    if (field.materialization !== 'derived') return credentialSecretNames.has(name);
+
+    try {
+      const contract = RuntimeDerivationContract.from(provider.runtimeDerivation ?? {});
+      return contract.supportsRuntimeDerivation && contract.derivedFields.includes(name);
+    } catch {
+      return false;
     }
   }
 
@@ -150,6 +201,23 @@ export class ConsumerGrantService {
     }
   }
 
+  async #bindProviderProfile(grant) {
+    const credential = await this.#loadCredential(grant.credentialId);
+    if (credential && !grant.credentialGeneration) {
+      return new ConsumerGrant({
+        ...grant.toJSON(),
+        credentialGeneration: credential.credentialGeneration ?? `legacy:${credential.credentialId}`
+      });
+    }
+    if (credential && grant.credentialGeneration !== (credential.credentialGeneration ?? `legacy:${credential.credentialId}`)) {
+      throw this.#badRequest(`Credential '${grant.credentialId}' generation does not match the grant`, 'CONSUMER_GRANT_GENERATION_MISMATCH');
+    }
+    const profile = credential?.providerProfile ?? credential?.metadata?.providerProfile
+      ?? credential?.metadata?.custom?.providerProfile ?? null;
+    if (!profile || grant.providerProfile) return grant;
+    return new ConsumerGrant({ ...grant.toJSON(), providerProfile: profile });
+  }
+
   #provider(providerKey) {
     if (!this.providerRegistry?.get) return { getCredentialMethod: () => null, getProviderMethodBinding: () => null };
     try {
@@ -159,18 +227,27 @@ export class ConsumerGrantService {
     }
   }
 
-  async #load() {
-    if (!this.store?.load) return this.grants.map((grant) => ConsumerGrant.from(grant));
-    const data = await this.store.load();
-    return data.grants.map((grant) => ConsumerGrant.from(grant));
+  async #loadState() {
+    const state = this.store?.load ? await this.store.load() : { revision: 0, grants: this.grants };
+    const rawGrants = state.grants;
+    const grants = rawGrants.map((grant) => ConsumerGrant.from(grant));
+    return { revision: state.revision ?? 0, grants: await Promise.all(grants.map(async (grant) => {
+      if (grant.credentialGeneration) return grant;
+      try {
+        return await this.#bindProviderProfile(grant);
+      } catch (error) {
+        if (error?.code === 'CREDENTIAL_NOT_FOUND') return grant;
+        throw error;
+      }
+    })) };
   }
 
-  async #save(grants) {
+  async #save(grants, expectedRevision = undefined) {
     if (!this.store?.save) {
       this.grants = grants.map((grant) => ConsumerGrant.from(grant));
       return;
     }
-    await this.store.save({ grants: grants.map((grant) => grant.toJSON()) });
+    await this.store.save({ grants: grants.map((grant) => grant.toJSON()) }, { expectedRevision });
   }
 
   #requiredString(value, name) {

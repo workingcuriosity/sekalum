@@ -44,7 +44,8 @@ export class CredentialFieldDefinition {
     visible = true,
     userConfigurable = true,
     systemManaged = false,
-    runtimePublic = false
+    runtimePublic = false,
+    materialization = 'stored'
   } = {}) {
     if (typeof key !== 'string' || key.trim() === '') {
       throw new Error("CredentialFieldDefinition: 'key' is required");
@@ -72,6 +73,12 @@ export class CredentialFieldDefinition {
 
     if (typeof runtimePublic !== 'boolean') {
       throw new Error(`CredentialFieldDefinition '${key}': runtimePublic must be a boolean`);
+    }
+    if (!['stored', 'derived'].includes(materialization)) {
+      throw new Error(`CredentialFieldDefinition '${key}': unsupported materialization '${materialization}'`);
+    }
+    if (materialization === 'derived' && (!secret || userConfigurable || !systemManaged)) {
+      throw new Error(`CredentialFieldDefinition '${key}': derived fields must be secret, system-managed and non-configurable`);
     }
 
     if (runtimePublic && section !== 'providerConfiguration') {
@@ -105,6 +112,7 @@ export class CredentialFieldDefinition {
     this.userConfigurable = Boolean(userConfigurable);
     this.systemManaged = Boolean(systemManaged);
     this.runtimePublic = runtimePublic;
+    this.materialization = materialization;
 
     Object.freeze(this);
   }
@@ -129,7 +137,8 @@ export class CredentialFieldDefinition {
       readonly: this.readonly,
       visible: this.visible,
       userConfigurable: this.userConfigurable,
-      systemManaged: this.systemManaged
+      systemManaged: this.systemManaged,
+      ...(this.materialization !== 'stored' ? { materialization: this.materialization } : {})
     };
   }
 

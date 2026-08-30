@@ -256,3 +256,32 @@ test('credential collection continues serializing after a failed mutation', asyn
 
   assert.deepEqual((await store.list()).map((credential) => credential.credentialId), ['ftp-main']);
 });
+
+test('credential lifecycle conditional persistence recovers after a failed write', async () => {
+  let data = null;
+  let failNextSave = false;
+  const jsonStore = {
+    async exists() { return data !== null; },
+    async load() { return structuredClone(data); },
+    async save(_path, value) {
+      if (failNextSave) {
+        failNextSave = false;
+        throw new Error('simulated conditional write failure');
+      }
+      data = structuredClone(value);
+    }
+  };
+  const store = new CredentialCollectionStoreAdapter({ jsonStore, basePath: '/data' });
+  await store.save(credentialInput);
+  const active = await store.load(credentialInput.credentialId);
+  const revoked = { ...active.toJSON(), lifecycleState: 'revoked', version: active.version + 1 };
+  failNextSave = true;
+
+  await assert.rejects(
+    () => store.saveConditional(revoked, { expectedVersion: active.version }),
+    /simulated conditional write failure/
+  );
+  await store.saveConditional(revoked, { expectedVersion: active.version });
+
+  assert.equal((await store.load(credentialInput.credentialId)).lifecycleState, 'revoked');
+});

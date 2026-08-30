@@ -282,6 +282,55 @@ test('EncryptedJsonStore can read existing plaintext JSON and rewrites encrypted
   assert.deepEqual(await store.load(filePath), { accessToken: 'new-secret' });
 });
 
+test('EncryptedJsonStore migrates supported storage before serving and rejects unknown legacy state', async () => {
+  const basePath = await fs.mkdtemp(path.join(os.tmpdir(), 'credential-startup-migration-'));
+  const jsonStore = new JsonStore();
+  const store = new EncryptedJsonStore({
+    jsonStore,
+    config: new Config({ TOKEN_ENCRYPTION_KEY: ENCRYPTION_KEY })
+  });
+  const supportedPath = path.join(basePath, 'credentials.json');
+  const unknownPath = path.join(basePath, 'api-tokens.json');
+
+  await jsonStore.save(supportedPath, { credentials: [], tombstones: [] });
+  const result = await store.migrateBeforeServing({
+    rootPath: basePath,
+    rootFiles: ['credentials.json']
+  });
+
+  assert.deepEqual(result.migrated, ['credentials.json']);
+  assert.equal((await store.getEncryptionMetadata(supportedPath)).encrypted, true);
+
+  await jsonStore.save(unknownPath, { unexpected: true });
+  await assert.rejects(
+    () => store.migrateBeforeServing({ rootPath: basePath, rootFiles: ['api-tokens.json'] }),
+    { code: 'ENCRYPTED_JSON_UNKNOWN_LEGACY_FORMAT' }
+  );
+});
+
+test('EncryptedJsonStore permits a fresh installation with no secure storage files', async () => {
+  const basePath = await fs.mkdtemp(path.join(os.tmpdir(), 'credential-fresh-install-'));
+  const store = new EncryptedJsonStore({
+    jsonStore: new JsonStore(),
+    config: new Config({ TOKEN_ENCRYPTION_KEY: ENCRYPTION_KEY })
+  });
+
+  assert.deepEqual(await store.migrateBeforeServing({
+    rootPath: basePath,
+    rootFiles: ['credentials.json'],
+    recursiveDirectories: ['tokens', 'backups']
+  }), { inspected: 0, migrated: [] });
+});
+
+test('EncryptedJsonStore rejects the development sentinel in production', async () => {
+  const store = new EncryptedJsonStore({
+    jsonStore: new JsonStore(),
+    config: new Config({ NODE_ENV: 'production', TOKEN_ENCRYPTION_KEY: 'DEV_ONLY_NOT_FOR_PRODUCTION_0000' })
+  });
+
+  assert.throws(() => store.assertConfigured(), { code: 'ENCRYPTED_JSON_DEVELOPMENT_KEY_REJECTED' });
+});
+
 test('EncryptedJsonStore writes keyVersion metadata for new encrypted payloads', async () => {
   const basePath = await fs.mkdtemp(path.join(os.tmpdir(), 'credential-secure-store-'));
   const filePath = path.join(basePath, 'secret.json');

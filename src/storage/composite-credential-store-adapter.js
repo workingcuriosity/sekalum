@@ -38,7 +38,7 @@ export class CompositeCredentialStoreAdapter {
     try {
       return await this.primary.load(credentialId);
     } catch (error) {
-      if (error.code !== 'NOT_FOUND' || !this.legacy) throw error;
+      if (error.code !== 'NOT_FOUND' || !this.legacy || await this.primary.isDeletedIdentity?.(credentialId)) throw error;
       return this.legacy.load(credentialId);
     }
   }
@@ -47,9 +47,38 @@ export class CompositeCredentialStoreAdapter {
     return this.primary.save(credential);
   }
 
+  async create(credential) {
+    if (typeof this.primary.create === 'function') return this.primary.create(credential);
+    return this.primary.saveConditional?.(credential, { requireExisting: false }) ?? this.primary.save(credential);
+  }
+
+  async saveConditional(credential, options = {}) {
+    if (typeof this.primary.saveConditional === 'function') {
+      return this.primary.saveConditional(credential, options);
+    }
+    return this.primary.save(credential);
+  }
+
+  async applyBatch(changes, options = {}) {
+    if (typeof this.primary.applyBatch !== 'function') {
+      throw new Error('CompositeCredentialStoreAdapter.applyBatch() requires an atomic primary adapter');
+    }
+    return this.primary.applyBatch(changes, options);
+  }
+
   async delete(credentialId) {
     if (await this.primary.delete(credentialId)) return true;
     return this.legacy?.delete?.(credentialId) ?? false;
+  }
+
+  async deleteConditional(credentialId, options = {}) {
+    if (typeof this.primary.deleteConditional === 'function') {
+      return this.primary.deleteConditional(credentialId, options);
+    }
+    if (await this.primary.delete(credentialId)) return true;
+    return this.legacy?.deleteConditional?.(credentialId, options)
+      ?? this.legacy?.delete?.(credentialId)
+      ?? false;
   }
 
   async exists(credentialId) {
@@ -60,7 +89,13 @@ export class CompositeCredentialStoreAdapter {
     const primary = await this.primary.list();
     const legacy = this.legacy?.list ? await this.legacy.list() : [];
     const seen = new Set(primary.map((credential) => credential.credentialId));
-    const combined = [...primary, ...legacy.filter((credential) => !seen.has(credential.credentialId))];
+    const tombstoned = new Set();
+    if (this.primary.isDeletedIdentity) {
+      for (const credential of legacy) {
+        if (await this.primary.isDeletedIdentity(credential.credentialId)) tombstoned.add(credential.credentialId);
+      }
+    }
+    const combined = [...primary, ...legacy.filter((credential) => !seen.has(credential.credentialId) && !tombstoned.has(credential.credentialId))];
     assertUniqueCredentialKeys(combined);
     return combined;
   }

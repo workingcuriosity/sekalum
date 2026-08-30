@@ -58,7 +58,7 @@ export class FacebookServiceProvider extends ServiceProvider {
         credentialFields: oauthCredentialFields({
           defaultScopes: ['public_profile', 'email']
         }),
-        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', credentialFields: oauthCredentialFields({ defaultScopes: ['public_profile', 'email'] }), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
+        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', authenticationMethod: 'oauth2', credentialFields: oauthCredentialFields({ defaultScopes: ['public_profile', 'email'] }), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
         providerMethodBindings: [new ProviderMethodBinding({ methodKey: 'oauth2' })],
         metadata: {
           authType: 'oauth2',

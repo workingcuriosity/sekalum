@@ -23,7 +23,33 @@ export class CredentialStore {
     return this.storageAdapter.save(credentialInput);
   }
 
+  async create(credentialInput) {
+    if (typeof this.storageAdapter.create === 'function') return this.storageAdapter.create(credentialInput);
+    return this.saveConditional(credentialInput, { requireExisting: false });
+  }
+
+  async saveConditional(credentialInput, options = {}) {
+    if (typeof this.storageAdapter.saveConditional === 'function') {
+      return this.storageAdapter.saveConditional(credentialInput, options);
+    }
+    return this.storageAdapter.save(credentialInput);
+  }
+
+  async applyBatch(changes, options = {}) {
+    if (typeof this.storageAdapter.applyBatch !== 'function') {
+      throw new Error('CredentialStore.applyBatch() requires an atomic storage adapter');
+    }
+    return this.storageAdapter.applyBatch(changes, options);
+  }
+
   async delete(credentialId) {
+    return this.storageAdapter.delete(credentialId);
+  }
+
+  async deleteConditional(credentialId, options = {}) {
+    if (typeof this.storageAdapter.deleteConditional === 'function') {
+      return this.storageAdapter.deleteConditional(credentialId, options);
+    }
     return this.storageAdapter.delete(credentialId);
   }
 

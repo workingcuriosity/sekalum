@@ -30,6 +30,7 @@ export class CustomProviderServiceProvider extends ServiceProvider {
         credentialMethods: [new CredentialMethod({
           key: definition.authType,
           displayName: definition.authType,
+          authenticationMethod: definition.authType,
           credentialFields: definition.credentialFields,
           operationCapabilities: []
         })],

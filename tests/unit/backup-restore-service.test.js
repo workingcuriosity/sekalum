@@ -63,3 +63,47 @@ test('BackupRestoreService rejects unsupported backup schema versions', async ()
 
   await assert.rejects(() => service.restoreBackup('backup-1'), /Unsupported backup schema version/);
 });
+
+test('BackupRestoreService converges an oversized restored audit log before canonical persistence', async () => {
+  let persisted = { entries: [] };
+  const now = new Date('2026-08-01T00:00:00.000Z');
+  const auditLogService = new AuditLogService({
+    clock: () => now,
+    logger: { warn() {} },
+    store: {
+      async load() { return persisted; },
+      async save(value) { persisted = value; }
+    }
+  });
+  const service = new BackupRestoreService({
+    accessManagementService: new AccessManagementService(),
+    auditLogService,
+    managementService: { async getStatus() { return {}; } },
+    store: {
+      async load() {
+        return {
+          backupId: 'oversized',
+          schemaVersion: 1,
+          data: {
+            users: [],
+            auditLog: Array.from({ length: 10_001 }, (_, index) => ({
+              entryId: `legacy-${index}`,
+              timestamp: '2026-07-31T00:00:00.000Z',
+              action: 'legacy.audit',
+              targetType: 'legacy',
+              targetId: `legacy-${index}`,
+              result: 'success',
+              details: null
+            }))
+          }
+        };
+      }
+    },
+    clock: () => now
+  });
+
+  await service.restoreBackup('oversized');
+  assert.equal(persisted.entries.length, 10_000);
+  assert.equal(persisted.entries[0].targetId, 'legacy-2');
+  assert.equal(persisted.entries.at(-1).action, 'backup.restored');
+});

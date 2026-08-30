@@ -8,9 +8,10 @@ import {
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
 export class OAuthSecurityService {
-  constructor({ ttlMs = DEFAULT_TTL_MS, random = crypto.randomBytes } = {}) {
+  constructor({ ttlMs = DEFAULT_TTL_MS, random = crypto.randomBytes, now = () => Date.now() } = {}) {
     this.ttlMs = ttlMs;
     this.random = random;
+    this.now = now;
     this.contexts = new Map();
   }
 
@@ -22,7 +23,11 @@ export class OAuthSecurityService {
     account = null,
     providerConfiguration = null,
     providerConfigurationId = null,
-    now = Date.now()
+    providerConfigurationTemporary = false,
+    actorUserId = null,
+    providerProfile = null,
+    credentialMethodKey = null,
+    now = this.now()
   } = {}) {
     if (!provider) {
       throw new Error('OAuth provider is required');
@@ -37,6 +42,10 @@ export class OAuthSecurityService {
       account,
       providerConfiguration: providerConfiguration ? { ...providerConfiguration } : null,
       providerConfigurationId,
+      providerConfigurationTemporary: Boolean(providerConfigurationTemporary),
+      actorUserId: actorUserId ?? null,
+      providerProfile: providerProfile?.identity?.() ?? providerProfile ?? null,
+      credentialMethodKey,
       scopes: Array.isArray(scopes) ? [...scopes] : null,
       state: finalState,
       nonce: null,
@@ -65,7 +74,13 @@ export class OAuthSecurityService {
     return this.#publicContext(context);
   }
 
-  consumeCallbackContext({ provider, state, now = Date.now() } = {}) {
+  consumeCallbackContext({
+    provider,
+    state,
+    providerProfile = null,
+    expectedActorUserId = null,
+    now = this.now()
+  } = {}) {
     if (!state) {
       return null;
     }
@@ -76,17 +91,36 @@ export class OAuthSecurityService {
       throw this.#stateError('OAuth state is unknown or expired');
     }
 
-    this.contexts.delete(state);
-
     if (context.provider !== provider) {
-      throw this.#stateError('OAuth state provider mismatch', context);
+      throw this.#stateError('OAuth state provider mismatch');
+    }
+
+    if (providerProfile && context.providerProfile
+      && providerProfile.digest !== context.providerProfile.digest) {
+      throw this.#stateError('OAuth state provider profile mismatch');
+    }
+
+    if (context.actorUserId !== null && context.actorUserId !== expectedActorUserId) {
+      throw this.#stateError('OAuth state actor mismatch');
     }
 
     if (context.expiresAt.getTime() <= now) {
       throw this.#stateError('OAuth state expired', context);
     }
 
+    this.contexts.delete(state);
     return this.#publicContext(context, { includeProviderConfiguration: true });
+  }
+
+  purgeExpiredContexts(now = this.now()) {
+    const expired = [];
+    for (const [state, context] of this.contexts.entries()) {
+      if (context.expiresAt.getTime() <= now) {
+        this.contexts.delete(state);
+        expired.push(this.#publicContext(context));
+      }
+    }
+    return expired;
   }
 
   discardAuthorizationContext(state) {
@@ -148,6 +182,9 @@ export class OAuthSecurityService {
       expiresAt: context.expiresAt,
       securityRequirements: context.securityRequirements,
       providerConfigurationId: context.providerConfigurationId,
+      providerConfigurationTemporary: context.providerConfigurationTemporary,
+      providerProfile: context.providerProfile,
+      credentialMethodKey: context.credentialMethodKey,
       ...(includeProviderConfiguration
         ? { providerConfiguration: Object.freeze({ ...(context.providerConfiguration ?? {}) }) }
         : {})

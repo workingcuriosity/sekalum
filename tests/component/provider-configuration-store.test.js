@@ -29,3 +29,58 @@ test('provider application secrets use the established encrypted JSON storage bo
   assert.equal(raw.includes('never-plaintext'), false);
   assert.match(raw, /credential-hub-encrypted-json/);
 });
+
+test('provider configuration mutations serialize concurrent create, update and delete operations', async () => {
+  let data = null;
+  const jsonStore = {
+    async exists() { return data !== null; },
+    async load() {
+      const snapshot = structuredClone(data);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return snapshot;
+    },
+    async save(_path, value) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      data = structuredClone(value);
+    }
+  };
+  const store = new ProviderConfigurationStore({ jsonStore, basePath: '/data' });
+  await store.save({ configurationId: 'remove-me', providerKey: 'x', configuration: { clientId: 'old' } });
+
+  await Promise.all([
+    store.save({ configurationId: 'create-me', providerKey: 'x', configuration: { clientId: 'created' } }),
+    store.save({ configurationId: 'remove-me', providerKey: 'x', configuration: { clientId: 'updated' } }),
+    store.delete('remove-me')
+  ]);
+
+  assert.deepEqual(await store.list(), [
+    { configurationId: 'create-me', providerKey: 'x', configuration: { clientId: 'created' } }
+  ]);
+});
+
+test('provider configuration mutation queue continues after a failed write without corruption', async () => {
+  let data = null;
+  let failNextSave = true;
+  const jsonStore = {
+    async exists() { return data !== null; },
+    async load() { return structuredClone(data); },
+    async save(_path, value) {
+      if (failNextSave) {
+        failNextSave = false;
+        throw new Error('simulated write failure');
+      }
+      data = structuredClone(value);
+    }
+  };
+  const store = new ProviderConfigurationStore({ jsonStore, basePath: '/data' });
+
+  await assert.rejects(
+    store.save({ configurationId: 'failed', providerKey: 'x', configuration: { clientId: 'failed' } }),
+    /simulated write failure/
+  );
+  await store.save({ configurationId: 'survives', providerKey: 'x', configuration: { clientId: 'survives' } });
+
+  assert.deepEqual(await store.list(), [
+    { configurationId: 'survives', providerKey: 'x', configuration: { clientId: 'survives' } }
+  ]);
+});

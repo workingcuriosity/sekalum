@@ -1,5 +1,6 @@
 import path from 'path';
 import { TokenRecord } from '../models/token-record.js';
+import { assertBackupPath, backupFilePath, backupPathError, validateBackupIdentifier } from './backup-path-policy.js';
 
 export class BackupStore {
   constructor({ jsonStore, basePath }) {
@@ -13,9 +14,12 @@ export class BackupStore {
     }
 
     const backupId = this.#createBackupId();
+    const directory = this.#directoryPath(tokenRecord.providerId);
+    const filePath = this.#filePath(tokenRecord.providerId, backupId);
+    await assertBackupPath(filePath, directory, { allowMissing: true });
 
     await this.jsonStore.save(
-      this.#filePath(tokenRecord.providerId, backupId),
+      filePath,
       this.#serialize(tokenRecord)
     );
 
@@ -23,7 +27,10 @@ export class BackupStore {
   }
 
   async restore(providerId, backupId, { existingCredentialKey } = {}) {
-    const data = await this.jsonStore.load(this.#filePath(providerId, backupId));
+    const directory = this.#directoryPath(providerId);
+    const filePath = this.#filePath(providerId, backupId);
+    await assertBackupPath(filePath, directory, { allowMissing: true });
+    const data = await this.jsonStore.load(filePath);
     const migratedData = Object.hasOwn(data, 'credentialKey')
       ? data
       : { ...data, ...(existingCredentialKey === undefined ? {} : { credentialKey: existingCredentialKey }) };
@@ -38,20 +45,32 @@ export class BackupStore {
     }
 
     const fs = await import('fs/promises');
-    const entries = await fs.readdir(directory);
+    await assertBackupPath(directory, directory, { kind: 'directory' });
+    const entries = await fs.readdir(directory, { withFileTypes: true });
 
     return entries
-      .filter(entry => entry.endsWith('.json'))
-      .map(entry => entry.replace(/\.json$/, ''))
+      .filter(entry => {
+        if (entry.isSymbolicLink()) throw backupPathError('Symlinks are not allowed in the backup directory');
+        return entry.name.endsWith('.json');
+      })
+      .map(entry => {
+        if (!entry.isFile()) throw backupPathError('Backup directory contains a non-regular file');
+        return entry.name.replace(/\.json$/, '');
+      })
       .sort();
   }
 
   async deleteBackup(providerId, backupId) {
-    return this.jsonStore.delete(this.#filePath(providerId, backupId));
+    const directory = this.#directoryPath(providerId);
+    const filePath = this.#filePath(providerId, backupId);
+    await assertBackupPath(filePath, directory, { allowMissing: true });
+    return this.jsonStore.delete(filePath);
   }
 
   #filePath(providerId, backupId) {
-    return path.join(this.#directoryPath(providerId), `${backupId}.json`);
+    validateBackupIdentifier(backupId);
+    const directory = this.#directoryPath(providerId);
+    return backupFilePath(directory, [`${backupId}.json`]);
   }
 
   #directoryPath(providerId) {
@@ -60,13 +79,14 @@ export class BackupStore {
   }
 
   #parseProviderId(providerId) {
-    const [provider, account] = String(providerId).split(':');
-
-    if (!provider || !account) {
-      throw new Error(
-        `Invalid providerId '${providerId}'. Expected format: provider:account`
-      );
+    const parts = typeof providerId === 'string' ? providerId.split(':') : [];
+    if (parts.length !== 2) {
+      throw backupPathError('providerId must contain one provider and one account identifier');
     }
+    const [provider, account] = parts;
+
+    validateBackupIdentifier(provider, 'providerId provider');
+    validateBackupIdentifier(account, 'providerId account');
 
     return { provider, account };
   }

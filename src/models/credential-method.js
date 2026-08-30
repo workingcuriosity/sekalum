@@ -6,7 +6,7 @@ import { isProviderOperationCapability } from './provider-capability.js';
  * Provider-specific presentation and operation adapters belong to a binding.
  */
 export class CredentialMethod {
-  constructor({ key, displayName = null, description = null, credentialFields = [], operationCapabilities = [] } = {}) {
+  constructor({ key, displayName = null, description = null, authenticationMethod = null, credentialFields = [], operationCapabilities = [], requiredScopes = [] } = {}) {
     if (typeof key !== 'string' || key.trim() === '') {
       throw new Error("CredentialMethod: 'key' is required");
     }
@@ -15,6 +15,9 @@ export class CredentialMethod {
     }
     if (!Array.isArray(operationCapabilities)) {
       throw new Error(`CredentialMethod '${key}': operationCapabilities must be an array`);
+    }
+    if (!Array.isArray(requiredScopes) || requiredScopes.some((scope) => typeof scope !== 'string' || scope.trim() === '')) {
+      throw new Error(`CredentialMethod '${key}': requiredScopes must contain non-empty strings`);
     }
 
     const fields = credentialFields
@@ -34,8 +37,10 @@ export class CredentialMethod {
     this.key = key.trim();
     this.displayName = displayName ?? this.key;
     this.description = description;
+    this.authenticationMethod = authenticationMethod;
     this.credentialFields = Object.freeze(fields);
     this.operationCapabilities = Object.freeze(capabilities);
+    this.requiredScopes = Object.freeze([...new Set(requiredScopes.map((scope) => scope.trim()))]);
     Object.freeze(this);
   }
 
@@ -48,8 +53,10 @@ export class CredentialMethod {
       key: this.key,
       displayName: this.displayName,
       description: this.description,
+      authenticationMethod: this.authenticationMethod,
       credentialFields: this.credentialFields.map((field) => field.toJSON()),
-      operationCapabilities: [...this.operationCapabilities]
+      operationCapabilities: [...this.operationCapabilities],
+      requiredScopes: [...this.requiredScopes]
     };
   }
 

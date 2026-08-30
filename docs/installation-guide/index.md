@@ -3,7 +3,7 @@ title: Installation Guide
 document_id: DOC-INSTALLATION-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.4.2
+version: 1.4.4
 status: Active
 category: Installation
 canonical: true
@@ -18,6 +18,12 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/operations-guide/index.md
 change_history:
+  - version: 1.4.4
+    date: 2026-08-29
+    change: Clarifies the separate high-entropy bootstrap token requirement in the configuration and first-start instructions.
+  - version: 1.4.3
+    date: 2026-08-26
+    change: Documents the configured Bootstrap proof, fixed First Administrator identity and terminal Bootstrap state.
   - version: 1.4.2
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -54,7 +60,7 @@ For local development, use a supported Node.js runtime and install the repositor
 npm ci
 ```
 
-For the Public Beta Docker path, install Docker Desktop or Docker Engine with the Compose plugin instead.
+For the RC2 Docker path, install Docker Desktop or Docker Engine with the Compose plugin instead.
 
 ## Configuration
 
@@ -64,23 +70,31 @@ Create a local environment file from the public template before starting Compose
 cp .env.example .env
 ```
 
-The template contains safe development defaults. Replace `TOKEN_ENCRYPTION_KEY` with a unique 32-character secret before storing real credentials, and never commit `.env`. Follow the [Configuration Reference](../configuration-reference/index.md) for encryption, OAuth, scheduler, and callback settings.
+The template contains safe development placeholders. Replace `TOKEN_ENCRYPTION_KEY` with a unique 32-character secret and set a separate high-entropy `ADMIN_BOOTSTRAP_TOKEN` of at least 32 bytes before storing real credentials; never commit `.env`. Follow the [Configuration Reference](../configuration-reference/index.md) for encryption, OAuth, scheduler, and callback settings.
 
 If declarative custom providers are required, validate `CUSTOM_PROVIDER_DEFINITIONS` as JSON before startup. Invalid custom-provider definitions stop registration and must be corrected before the application can start.
 
 ## First start and Bootstrap
 
-Beta 1 does not provide a username/password login. When the persisted user
-collection is empty, the service is in **Bootstrap** mode. Create the
-**First Administrator** through the local Management API while the service is
-still restricted to the local machine:
+RC2 does not provide a username/password login. When the persisted user
+collection is empty, the service is in **Bootstrap** mode, but the empty state
+alone does not authorize creation. Configure a high-entropy
+`ADMIN_BOOTSTRAP_TOKEN` with at least 32 bytes (separate from the encryption
+key) and create the **First
+Administrator** through the local Management API while the service is still
+restricted to the local machine:
 
 ```bash
 curl --request POST http://localhost:3000/api/v1/management/users \
   --header 'Content-Type: application/json' \
+  --header 'X-Admin-Bootstrap-Token: YOUR_HIGH_ENTROPY_BOOTSTRAP_TOKEN' \
   --data '{"userId":"admin","displayName":"First Administrator","roleKey":"admin"}'
 ```
 
+The Bootstrap token is a one-time proof of possession, not a Management Token
+and not an API token. It is never returned, logged, audited or persisted by
+Sekalum. Missing, weak or incorrect proof is rejected. Bootstrap accepts only
+an active `admin`; conflicting `roleKey` or `status` values are rejected.
 Bootstrap ends immediately after the **First Administrator** is persisted. The
 Admin UI then requires an authorized **Management Token**. Its login gate
 validates the token against the protected management API and uses
@@ -93,7 +107,7 @@ tests and must not be used in a deployed installation.
 
 ## Complete First Installation Workflow
 
-The following sequence is the canonical Beta-1 first-installation path. Use
+The following sequence is the canonical RC2 first-installation path. Use
 either the local Node.js start or the Docker Compose start above; do not expose
 the service publicly before the First Administrator and Management Token gate
 are in place.
@@ -114,19 +128,21 @@ The expected result is HTTP `200` with a response containing
 
 ### 2. Bootstrap the First Administrator
 
-When the persisted user collection is empty, Bootstrap is active. While the
-service is still restricted to the local machine, create exactly one First
-Administrator through the local Management API using the command above.
+When the persisted user collection is empty, Bootstrap is active only when a
+valid configured `ADMIN_BOOTSTRAP_TOKEN` is supplied. While the service is
+still restricted to the local machine, create exactly one First Administrator
+through the local Management API using the command above.
 
 The expected result is a successful creation response. The user is persisted
 and Bootstrap ends immediately; subsequent management requests require normal
-authentication. Do not repeat the creation request as a way to create a
-second bootstrap administrator.
+authentication. The Bootstrap proof cannot be reused after persistence, and
+the first user is always an active administrator. Do not repeat the creation
+request as a way to create a second bootstrap administrator.
 
 ### 3. Enter the Management Token
 
 Obtain an authorized Management Token through the configured operational
-mechanism. Beta 1 has no integrated password-login or first-token creation
+mechanism. RC2 has no integrated password-login or first-token creation
 dialog; the Admin UI accepts an already provisioned token. Open `/admin/` and
 enter the token in the Administrator access form.
 
@@ -223,7 +239,7 @@ Start a fresh clone with the canonical command:
 docker compose up --build
 ```
 
-The Compose configuration is self-contained: it builds the explicit `credential-hub:1.0.0-beta.1` image tag from the current package version, creates its own network, and uses repository-relative persistent directories. It does not require a pre-existing Docker network or local user paths. Stop the foreground process with `Ctrl+C`; use `docker compose down` to remove the container and network.
+The Compose configuration is self-contained: it builds the explicit `credential-hub:1.0.0-rc.2` image tag from the current package version, creates its own network, and uses repository-relative persistent directories. It does not require a pre-existing Docker network or local user paths. Stop the foreground process with `Ctrl+C`; use `docker compose down` to remove the container and network.
 
 For a new release, update the canonical package version and the Compose image/build argument together, then verify the rendered Compose configuration before deployment:
 

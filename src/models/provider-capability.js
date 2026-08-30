@@ -4,6 +4,7 @@ export const ProviderCapability = Object.freeze({
   HEALTH_CHECK: 'health-check',
   REVOKE: 'revoke',
   VALIDATION: 'validation',
+  RUNTIME_DERIVATION: 'runtime-derivation',
   BACKUP: 'backup',
   SCHEDULER: 'scheduler'
 });
@@ -13,7 +14,8 @@ export const ProviderOperationCapabilities = Object.freeze([
   ProviderCapability.REFRESH,
   ProviderCapability.HEALTH_CHECK,
   ProviderCapability.REVOKE,
-  ProviderCapability.VALIDATION
+  ProviderCapability.VALIDATION,
+  ProviderCapability.RUNTIME_DERIVATION
 ]);
 
 const providerOperationCapabilitySet = new Set(ProviderOperationCapabilities);

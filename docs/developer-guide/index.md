@@ -3,7 +3,7 @@ title: Developer Guide
 document_id: DOC-DEVELOPER-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.2.2
+version: 1.8.0
 status: Active
 category: Developer Guide
 canonical: false
@@ -23,6 +23,27 @@ dependent_documents:
   - docs/adr/ADR-021-Generic-Credential-Method-Model.md
   - docs/security-guide/index.md
 change_history:
+  - version: 1.8.0
+    date: 2026-08-27
+    change: Documents bounded, preflighted and atomic Credential transfer imports with lifecycle-safe CAS handling.
+  - version: 1.7.0
+    date: 2026-08-27
+    change: Documents the secret-safe Credential CLI output and protected stdin input contract.
+  - version: 1.6.1
+    date: 2026-08-26
+    change: Documents the unified public unavailable response for inaccessible Consumer Resolve targets.
+  - version: 1.6.0
+    date: 2026-08-25
+    change: Documents bounded Consumer Batch Resolve with independent per-Credential authorization and partial-failure handling.
+  - version: 1.5.0
+    date: 2026-08-25
+    change: Adds copyable Resolve client examples for curl, Node.js, Python, PowerShell and n8n without executing or persisting generated code.
+  - version: 1.4.0
+    date: 2026-08-25
+    change: Documents optional Consumer profile templates for n8n, Make, Zapier and Home Assistant without changing authority semantics.
+  - version: 1.3.0
+    date: 2026-08-25
+    change: Documents generic server-side Consumer Discovery filtering on authorized public metadata.
   - version: 1.2.2
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -82,6 +103,37 @@ This guide is the active entry point for development work. It organizes the exis
 ## Development rules and follow-up work
 
 Project-wide development rules are reflected in the published contributor and developer guidance. Historical architecture reviews and milestone records are evidence and do not replace the current public sources listed above.
+
+## Credential CLI
+
+The credential CLI is a local operational interface for metadata-safe
+Credential management:
+
+```text
+node src/cli/run-credentials.js <list|get|create|update|delete|validate|refresh|revoke|health-check>
+```
+
+Successful output is JSON on `stdout`. It uses Credential metadata only and
+never includes Secret values. Errors and diagnostics are JSON on `stderr` and
+are redacted through the safe diagnostic boundary.
+
+Credential creation and updates accept their JSON payload only through
+`stdin`. Positional JSON payloads are rejected; supported invocations therefore
+keep Secret values out of the process argument list and shell history:
+
+```bash
+<protected-secret-payload-source> \
+  | node src/cli/run-credentials.js create --stdin
+
+<protected-secret-payload-source> \
+  | node src/cli/run-credentials.js update <credential-id> --stdin
+```
+
+The optional `--credential-method <key>` flag remains a non-secret command
+option and may be used with either protected input form. Do not put Secret
+values in argv, environment variables, query strings or shell-interpolated
+commands. The protected `stdin` examples are suitable for CI only when the CI
+system provides a secret-safe input channel and does not echo the payload.
 
 ## Consumer Integration Foundation
 
@@ -223,6 +275,46 @@ Consumer, public metadata, the applicable Field Contract and an opaque public
 CredentialMethod details or Provider Adapter data. A valid Consumer with no
 matching grant receives an empty `credentials` array.
 
+Discovery can apply generic server-side filters to the already authorized
+public metadata set:
+
+```text
+GET /api/v1/consumer/credentials?displayName=<public-display-name>&tag=<public-tag>
+```
+
+`displayName` and `tag` use case-insensitive exact matching after trimming.
+Empty filters preserve unfiltered Discovery. Repeated or unsupported query
+parameters return `400 INVALID_DISCOVERY_FILTER`; the current contract does
+not accept `provider` because Provider routing data is not public Discovery
+metadata. Filtering is applied only after Consumer authentication, grant
+validation and lifecycle checks, so a match cannot reveal an inaccessible
+Credential. Discovery filtering selects a public `credentialKey`; it never
+performs Resolve or changes the existing Consumer Grant.
+
+### Optional Consumer profile templates
+
+The administration flow offers optional templates for `n8n`, `Make`, `Zapier`
+and `Home Assistant`. A template can suggest a Consumer identifier, the
+existing `credentials:consume` scope and Secret field names that are present
+on the selected Credential, together with platform documentation hints.
+
+Templates are convenience data only. They are not persisted as a new domain
+object, do not create or broaden authority, and do not configure an external
+platform. Applying a template only edits the current form; every suggested
+value remains editable, and saving still uses the existing explicit Consumer
+Grant path. Selecting no profile preserves the existing free configuration.
+
+### Copyable Resolve client examples
+
+The Consumer page can generate a copyable example for the existing Resolve
+operation in `curl`, Node.js, Python, PowerShell and n8n HTTP Request format.
+Each example uses the current `POST /api/v1/consumer/credentials/{credentialKey}/resolve`
+contract, includes the required headers and `secretNames` request body, and
+uses explicit placeholders for the Consumer token and Hub URL. The examples
+are documentation output only: Sekalum does not execute, deploy, persist or
+configure generated code, and generated examples must not be filled with real
+Secret values in source control or logs.
+
 #### 2. Select one public `credentialKey`
 
 Select exactly one Credential using public metadata and the Field Contract.
@@ -252,6 +344,26 @@ shape and must not broaden the field list or retry with a Management token
 after an error. The exact response and error envelope remain defined by the
 API Reference.
 
+#### 3a. Resolve several Credentials independently
+
+When an integration needs several Credentials, it may use the bounded Batch
+Resolve route with up to 20 entries:
+
+```http
+POST /api/v1/consumer/credentials/resolve-batch
+Content-Type: application/json
+
+{"requests":[{"credentialKey":"credential-a","secretNames":["apiKey"]},{"credentialKey":"credential-b","secretNames":["accessToken"]}]}
+```
+
+Each entry repeats the normal Resolve authorization and field checks. Results
+are returned independently by request index, so one missing grant or stale
+Credential does not hide successful entries. A valid batch can therefore
+contain both successful results and safe per-entry errors; all resolved values
+remain transient and must be disposed of under the same rules as single
+Resolve. Empty, malformed or oversized batches are rejected, and Batch Resolve
+does not change grants, Credential state or token lifecycle.
+
 #### 4. Use and dispose of the result
 
 Use the resolved values only for the immediate target operation. Treat them as
@@ -268,8 +380,7 @@ own secure disposal responsibilities.
 | Invalid Consumer token | `401` / `API_TOKEN_AUTH_FAILED`; stop and correct the Consumer authentication. |
 | Missing Consumer scope or denied access | `403` / `CONSUMER_SCOPE_MISSING` or `CONSUMER_ACCESS_DENIED`; do not retry with a Management token. |
 | No matching grant | Discovery succeeds with an empty `credentials` array; resolve is not possible until an administrator grants access. |
-| Credential not found | `404` / `CREDENTIAL_NOT_FOUND`; discard the stale `credentialKey` and run Discovery again. |
-| Credential not consumable | `409` / `CREDENTIAL_NOT_CONSUMABLE`; do not attempt to bypass the lifecycle state. |
+| Inaccessible Resolve target | `403` / `RESOLVE_NOT_AVAILABLE`; treat missing, inactive, revoked, profile-incompatible, ungranted and field-inaccessible targets identically, and use Discovery again when appropriate. |
 | Invalid Secret request | `400` / `INVALID_SECRET_REQUEST`; correct the field selection against the public Field Contract. |
 
 Consumers must treat unknown response shapes and other failures as errors and
@@ -619,6 +730,13 @@ data and must be discarded after the target operation. The [Security
 Guide](../security-guide/index.md#consumer-trust-boundary) defines the
 responsibility boundary after delivery.
 
+For the official n8n examples, connect Resolve directly to the immediate target
+HTTP Request. Read the authorized Secret in that request expression only, for
+example `$('Sekalum Resolve').first().json.data.secrets.apiKey`; do not route it
+through a Code, Set or Edit Fields node and do not return it as ordinary item
+JSON. The following result node must project only non-sensitive status or target
+response fields.
+
 The repository contains an internal OpenAI-specific n8n governance test
 artifact, but it is not a public product integration or a general-purpose
 quick-start workflow. The generic Consumer API procedure above is the
@@ -641,6 +759,24 @@ The active model separates an external Provider from its Credential Methods. A P
 
 R5 implements the Provider Registry, Wizard, Dashboard, REST, CSV, import/export, lifecycle dispatch, and Credential model around this contract. Method-aware creation rejects a missing or unbound method; startup persists an explicit compatible method key for deterministically migratable legacy records and rejects ambiguous records with `CREDENTIAL_METHOD_MIGRATION_AMBIGUOUS`. No legacy Provider-level runtime selection remains. The Discord webhook binding is the reference implementation only: it has declarative metadata and no declared operations. Do not add webhook or other method-specific special cases to the Core or Consumer API. See ADR-021 for the binding contract and migration boundary.
 
+## Credential transfer import boundary
+
+Credential transfer import is a bounded administrative operation. Validate the
+complete input before expensive cryptographic work: accept at most `5242880`
+UTF-8 bytes and `100` records. Encrypted imports retain AES-256-GCM with
+PBKDF2-SHA256 at exactly `210000` iterations; at most two import KDF
+operations run concurrently. Capacity failures are immediate and stable—there
+is no pending queue or automatic retry.
+
+After parsing, preflight every record before writing. Create and overwrite
+operations are committed through the atomic Credential store boundary. An
+overwrite must retain the target `credentialId`, `credentialKey` and
+`credentialGeneration`, and its preview version is a compare-and-swap guard;
+deletion, terminal lifecycle state, or a concurrent update rejects the whole
+batch. Secret-Version persistence and the aggregate success audit run only as
+post-commit finalization with compensation on failure. A fresh process reading
+the same store must observe no half-batch after a rejected or failed import.
+
 ## Admin internationalization baseline
 
 The Admin UI uses shared language resolution and translation catalogs under `public/admin/`. English is the complete fallback catalog. A stored `credentialHub.language` preference overrides browser detection; only browser languages beginning with `de` select German when no valid preference exists. User-controlled provider names, credential names, IDs, URLs, scopes, and technical identifiers are rendered as data and are not translated.
@@ -649,7 +785,7 @@ The UI displays localized known error codes or a generic localized fallback. It 
 
 ## OAuth provider configuration and Admin shell
 
-Built-in OAuth providers declare their application fields through the shared metadata model. `ProviderConfigurationService` validates and persists complete application configuration through `ProviderConfigurationStore`, which uses the existing encrypted JSON storage boundary. `ProviderManager` carries the configuration through the one-time OAuth state context and records only an internal configuration ID with the resulting credential so refresh can resolve the same encrypted configuration.
+Built-in OAuth providers declare their application fields through the shared metadata model. `ProviderConfigurationService` validates and persists complete application configuration through `ProviderConfigurationStore`, which uses the existing encrypted JSON storage boundary. `ProviderManager` carries the configuration through the one-time OAuth state context and records only an internal configuration ID with the resulting credential so refresh can resolve the same encrypted configuration. For the browser Wizard, the authenticated initiating actor is bound to the OAuth state through a state-specific HttpOnly/SameSite cookie and is required at callback consumption; provider/profile mismatches do not consume a live state. Expired state and flow-owned configuration are purged under the existing wizard TTL, while durable configuration referenced by a Credential survives cleanup and restart.
 
 The Admin pages share `public/admin/admin-shell.js` for BASE_PATH-aware navigation and public support/legal links. The Wizard consumes provider metadata and starts OAuth through the authorized API route. The callback page communicates with its opener through the versioned `credential-hub:oauth-result` message contract; the receiver must verify origin, source window, message type, version, and provider before acting.
 

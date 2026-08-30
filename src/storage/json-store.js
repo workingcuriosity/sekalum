@@ -11,10 +11,7 @@ export class JsonStore {
 }
 
   async save(filePath, data) {
-    await this.ensureDirectory(path.dirname(filePath));
-
-    const content = JSON.stringify(data, null, 2);
-    await fs.writeFile(filePath, `${content}\n`, 'utf8');
+    await this.saveAtomic(filePath, data);
   }
 
   async saveAtomic(filePath, data) {

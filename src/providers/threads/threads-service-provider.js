@@ -52,7 +52,7 @@ export class ThreadsServiceProvider extends ServiceProvider {
         credentialFields: oauthCredentialFields({
           defaultScopes: ['threads_basic']
         }),
-        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', credentialFields: oauthCredentialFields({ defaultScopes: ['threads_basic'] }), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
+        credentialMethods: [new CredentialMethod({ key: 'oauth2', displayName: 'OAuth 2.0', authenticationMethod: 'oauth2', credentialFields: oauthCredentialFields({ defaultScopes: ['threads_basic'] }), operationCapabilities: [ProviderCapability.REFRESH, ProviderCapability.HEALTH_CHECK] })],
         providerMethodBindings: [new ProviderMethodBinding({ methodKey: 'oauth2' })],
         metadata: {
           authType: 'oauth2',

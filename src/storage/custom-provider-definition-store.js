@@ -1,10 +1,12 @@
 import path from 'node:path';
+import { SerializedMutationQueue } from './serialized-mutation-queue.js';
 
 /** Stores declarative custom-provider definitions only; credentials remain in CredentialStore. */
 export class CustomProviderDefinitionStore {
   constructor({ jsonStore, basePath }) {
     this.jsonStore = jsonStore;
     this.filePath = path.join(basePath, 'custom-provider-definitions.json');
+    this.mutationQueue = new SerializedMutationQueue();
   }
 
   async list() {
@@ -19,6 +21,10 @@ export class CustomProviderDefinitionStore {
   }
 
   async save(definition) {
+    return this.mutationQueue.run(() => this.#save(definition));
+  }
+
+  async #save(definition) {
     const data = await this.#load();
     if (data.providers.some((entry) => entry.key === definition.key)) {
       const error = new Error(`Provider '${definition.key}' already exists`);
@@ -32,6 +38,10 @@ export class CustomProviderDefinitionStore {
   }
 
   async delete(key) {
+    return this.mutationQueue.run(() => this.#delete(key));
+  }
+
+  async #delete(key) {
     const data = await this.#load();
     const index = data.providers.findIndex((entry) => entry.key === key);
     if (index === -1) return false;
@@ -41,6 +51,10 @@ export class CustomProviderDefinitionStore {
   }
 
   async update(key, updater) {
+    return this.mutationQueue.run(() => this.#update(key, updater));
+  }
+
+  async #update(key, updater) {
     const data = await this.#load();
     const index = data.providers.findIndex((entry) => entry.key === key);
     if (index === -1) return null;

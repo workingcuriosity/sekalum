@@ -18,17 +18,28 @@ function keyIsSensitive(key) {
     || normalized.endsWith('apikey');
 }
 
-function redactUrl(value) {
+function queryKeyIsSensitive(key) {
+  if (keyIsSensitive(key)) return true;
+  const normalized = typeof key === 'string'
+    ? key.replaceAll('-', '_').replaceAll(' ', '').toLowerCase()
+    : '';
+  return normalized === 'code' || normalized === 'state';
+}
+
+export function redactUrl(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'string') return REDACTED;
+
   try {
     const url = new URL(value);
     url.username = '';
     url.password = '';
     for (const key of [...url.searchParams.keys()]) {
-      url.searchParams.set(key, REDACTED);
+      if (queryKeyIsSensitive(key)) url.searchParams.set(key, REDACTED);
     }
     return url.toString();
   } catch {
-    return value;
+    return REDACTED;
   }
 }
 

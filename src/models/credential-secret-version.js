@@ -9,7 +9,9 @@ export class CredentialSecretVersion {
     reason = 'manual-update',
     createdAt = new Date(),
     createdBy = 'system',
-    metadata = {}
+    metadata = {},
+    invalidatedAt = null,
+    invalidationReason = null
   }) {
     if (!versionId) throw new Error("CredentialSecretVersion: 'versionId' is required");
     if (!credentialId) throw new Error("CredentialSecretVersion: 'credentialId' is required");
@@ -28,6 +30,10 @@ export class CredentialSecretVersion {
     this.createdAt = createdAt instanceof Date ? createdAt : new Date(createdAt);
     this.createdBy = createdBy;
     this.metadata = Object.freeze({ ...metadata });
+    this.invalidatedAt = invalidatedAt === null || invalidatedAt === undefined
+      ? null
+      : (invalidatedAt instanceof Date ? invalidatedAt : new Date(invalidatedAt));
+    this.invalidationReason = invalidationReason;
 
     Object.freeze(this);
   }
@@ -41,7 +47,9 @@ export class CredentialSecretVersion {
       reason: this.reason,
       createdAt: this.createdAt.toISOString(),
       createdBy: this.createdBy,
-      metadata: this.metadata
+      metadata: this.metadata,
+      invalidatedAt: this.invalidatedAt?.toISOString() ?? null,
+      invalidationReason: this.invalidationReason
     };
   }
 

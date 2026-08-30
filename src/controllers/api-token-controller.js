@@ -1,4 +1,5 @@
 import { safeError } from '../utils/safe-diagnostics.js';
+import { authenticatedUserId } from '../utils/authenticated-user.js';
 
 export class ApiTokenController {
   constructor({ apiTokenService }) {
@@ -55,7 +56,7 @@ export class ApiTokenController {
   }
 
   #userIdFromRequest(req) {
-    return req.auth?.userId ?? req.headers?.['x-credential-hub-user'] ?? null;
+    return authenticatedUserId(req);
   }
 
   #sendSuccess(res, data, statusCode = 200) {

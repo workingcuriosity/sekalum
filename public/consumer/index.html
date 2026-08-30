@@ -35,6 +35,15 @@
       <h2 id="secret-selection-title">Select secret fields</h2>
     </section>
 
+    <section id="consumer-client-examples" class="consumer-panel" aria-labelledby="client-examples-title" hidden>
+      <h2 id="client-examples-title">Copy a client example</h2>
+      <p>Examples use the existing Resolve API and safe placeholders. They are documentation only and are not executed or stored.</p>
+      <label for="consumer-client-example-format">Format</label>
+      <select id="consumer-client-example-format"></select>
+      <textarea id="consumer-client-example-output" rows="20" readonly spellcheck="false" aria-label="Generated client example"></textarea>
+      <p id="consumer-client-example-status" class="consumer-status" role="status" aria-live="polite"></p>
+    </section>
+
     <section id="consumer-resolve-results" class="consumer-panel" aria-labelledby="resolve-results-title" hidden>
       <h2 id="resolve-results-title">Resolved secrets</h2>
       <div id="consumer-resolve-result-list"></div>

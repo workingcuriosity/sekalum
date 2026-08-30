@@ -21,11 +21,12 @@ function createLogger() {
   };
 }
 
-function createManager({ provider, capabilities }) {
+function createManager({ provider, capabilities, credentialMethods = [] }) {
   const logger = createLogger();
   const definition = {
     name: 'threads',
     provider,
+    credentialMethods,
     capabilities: new ProviderCapabilities(capabilities)
   };
 
@@ -53,7 +54,8 @@ test('ProviderManager delegates supported OAuth start and returns ProviderResult
 
   const { manager, logger } = createManager({
     provider,
-    capabilities: [ProviderCapability.OAUTH]
+    capabilities: [ProviderCapability.OAUTH],
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }]
   });
 
   const result = await manager.startOAuth('threads', { state: 'abc' });
@@ -94,6 +96,7 @@ test('ProviderManager never writes provider failure messages to logs', async () 
 
 test('ProviderManager carries encrypted provider configuration through start and callback', async () => {
   const calls = [];
+  let preparedOptions;
   const provider = {
     startOAuth(options) {
       calls.push(['start', options.providerConfiguration]);
@@ -113,6 +116,7 @@ test('ProviderManager carries encrypted provider configuration through start and
     name: 'threads',
     provider,
     capabilities: new ProviderCapabilities([ProviderCapability.OAUTH]),
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }],
     credentialFields: [
       { key: 'clientId', required: true, section: 'providerConfiguration' },
       { key: 'clientSecret', required: true, secret: true, section: 'providerConfiguration' },
@@ -123,7 +127,9 @@ test('ProviderManager carries encrypted provider configuration through start and
     providerRegistry: { get() { return definition; } },
     oauthSecurityService: new OAuthSecurityService(),
     providerConfigurationService: {
-      async prepare({ values }) {
+      async prepare(options) {
+        preparedOptions = options;
+        const { values } = options;
         return { configurationId: 'configuration-1', providerKey: 'threads', configuration: { ...values } };
       }
     },
@@ -139,6 +145,8 @@ test('ProviderManager carries encrypted provider configuration through start and
   const completed = await manager.handleOAuthCallback('threads', { state: 'state-1', code: 'code-1' });
 
   assert.equal(started.data.providerConfigurationId, 'configuration-1');
+  assert.equal(preparedOptions.temporary, true);
+  assert.match(preparedOptions.expiresAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.deepEqual(calls, [['start', configuration], ['callback', configuration]]);
   assert.equal(completed.data.metadata.providerConfigurationId, 'configuration-1');
 });
@@ -157,6 +165,7 @@ test('ProviderManager removes provider configuration after OAuth start and callb
     name: 'threads',
     provider,
     capabilities: new ProviderCapabilities([ProviderCapability.OAUTH]),
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }],
     credentialFields: [{ key: 'clientId', required: true, section: 'providerConfiguration' }]
   };
   const configurationService = {
@@ -215,6 +224,7 @@ test('ProviderManager removes provider configuration when OAuth is cancelled', a
     name: 'threads',
     provider,
     capabilities: new ProviderCapabilities([ProviderCapability.OAUTH]),
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }],
     credentialFields: [{ key: 'clientId', required: true, section: 'providerConfiguration' }]
   };
   const manager = new ProviderManager({
@@ -246,6 +256,7 @@ test('ProviderManager removes provider configuration when OAuth state creation f
     name: 'threads',
     provider: { startOAuth() { throw new Error('must not run'); } },
     capabilities: new ProviderCapabilities([ProviderCapability.OAUTH]),
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }],
     credentialFields: [{ key: 'clientId', required: true, section: 'providerConfiguration' }]
   };
   const manager = new ProviderManager({
@@ -282,6 +293,7 @@ test('ProviderManager removes provider configuration for an expired OAuth state'
       handleOAuthCallback() { throw new Error('must not run'); }
     },
     capabilities: new ProviderCapabilities([ProviderCapability.OAUTH]),
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }],
     credentialFields: [{ key: 'clientId', required: true, section: 'providerConfiguration' }]
   };
   const manager = new ProviderManager({
@@ -313,6 +325,91 @@ test('ProviderManager removes provider configuration for an expired OAuth state'
   assert.deepEqual(removed, [['configuration-expired', 'threads']]);
 });
 
+test('ProviderManager rejects a different actor without consuming or deleting the live OAuth flow', async () => {
+  let callbackCalled = false;
+  const removed = [];
+  const securityService = new OAuthSecurityService();
+  const definition = {
+    name: 'threads',
+    provider: {
+      startOAuth() { return ProviderResult.success({ authorizationUrl: 'https://provider.example.test/oauth' }); },
+      handleOAuthCallback() { callbackCalled = true; return ProviderResult.success({}); }
+    },
+    capabilities: new ProviderCapabilities([ProviderCapability.OAUTH]),
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }],
+    credentialFields: [{ key: 'clientId', required: true, section: 'providerConfiguration' }]
+  };
+  const manager = new ProviderManager({
+    providerRegistry: { get() { return definition; } },
+    oauthSecurityService: securityService,
+    providerConfigurationService: {
+      async prepare({ values }) {
+        return { configurationId: 'configuration-actor', providerKey: 'threads', configuration: { ...values } };
+      },
+      async remove(id) { removed.push(id); return true; }
+    },
+    logger: createLogger()
+  });
+
+  await manager.startOAuth('threads', {
+    state: 'actor-state',
+    actorUserId: 'actor-a',
+    providerConfiguration: { clientId: 'client-id' }
+  });
+  const result = await manager.handleOAuthCallback('threads', {
+    state: 'actor-state',
+    code: 'code'
+  }, { expectedActorUserId: 'actor-b' });
+
+  assert.equal(result.success, false);
+  assert.equal(result.error.code, 'OAUTH_STATE_INVALID');
+  assert.equal(callbackCalled, false);
+  assert.deepEqual(removed, []);
+  assert.equal(securityService.contexts.has('actor-state'), true);
+});
+
+test('ProviderManager preserves a durable provider configuration when its OAuth callback fails', async () => {
+  const removed = [];
+  let preparedOptions;
+  const definition = {
+    name: 'threads',
+    provider: {
+      startOAuth() { return ProviderResult.success({ authorizationUrl: 'https://provider.example.test/oauth' }); },
+      handleOAuthCallback() { return ProviderResult.failure({ code: 'OAUTH_CALLBACK_FAILED', message: 'failed' }); }
+    },
+    capabilities: new ProviderCapabilities([ProviderCapability.OAUTH]),
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }],
+    credentialFields: [{ key: 'clientId', required: true, section: 'providerConfiguration' }]
+  };
+  const manager = new ProviderManager({
+    providerRegistry: { get() { return definition; } },
+    oauthSecurityService: new OAuthSecurityService(),
+    providerConfigurationService: {
+      async prepare(options) {
+        preparedOptions = options;
+        const { values, configurationId } = options;
+        return { configurationId, providerKey: 'threads', configuration: { ...values } };
+      },
+      async remove(id) { removed.push(id); return true; }
+    },
+    logger: createLogger()
+  });
+
+  await manager.startOAuth('threads', {
+    state: 'durable-state',
+    providerConfigurationId: 'existing-configuration',
+    providerConfiguration: { clientId: 'client-id' }
+  });
+  const result = await manager.handleOAuthCallback('threads', {
+    state: 'durable-state',
+    code: 'code'
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(preparedOptions.temporary, false);
+  assert.deepEqual(removed, []);
+});
+
 test('ProviderManager rejects unsupported capabilities before provider call', async () => {
   let called = false;
   const provider = {
@@ -332,6 +429,45 @@ test('ProviderManager rejects unsupported capabilities before provider call', as
   assert.equal(logger.errorEntries.length, 1);
 });
 
+test('ProviderManager rejects a credential when the requested operation scope was removed', async () => {
+  let called = false;
+  const definition = {
+    name: 'threads',
+    provider: {
+      healthCheck() {
+        called = true;
+        return ProviderResult.success({ ok: true });
+      }
+    },
+    capabilities: new ProviderCapabilities([ProviderCapability.HEALTH_CHECK]),
+    credentialMethods: [{
+      key: 'oauth2',
+      authenticationMethod: 'oauth2',
+      requiredScopes: ['profile.read'],
+      operationCapabilities: [ProviderCapability.HEALTH_CHECK],
+      supportsOperation(capability) { return this.operationCapabilities.includes(capability); }
+    }],
+    providerMethodBindings: [{ methodKey: 'oauth2' }]
+  };
+  definition.getCredentialMethod = (key) => definition.credentialMethods.find((method) => method.key === key);
+  definition.getProviderMethodBinding = (key) => definition.providerMethodBindings.find((binding) => binding.methodKey === key);
+  const manager = new ProviderManager({
+    providerRegistry: { get() { return definition; } },
+    logger: createLogger()
+  });
+
+  const result = await manager.healthCheckCredential({
+    credentialId: 'credential-1',
+    providerKey: 'threads',
+    credentialMethodKey: 'oauth2',
+    metadata: { scopes: ['email.read'] }
+  });
+
+  assert.equal(result.success, false);
+  assert.match(result.error.message, /profile\.read/);
+  assert.equal(called, false);
+});
+
 test('ProviderManager converts provider contract violations into ProviderResult failure', async () => {
   const provider = {
     startOAuth() {
@@ -341,7 +477,8 @@ test('ProviderManager converts provider contract violations into ProviderResult 
 
   const { manager, logger } = createManager({
     provider,
-    capabilities: [ProviderCapability.OAUTH]
+    capabilities: [ProviderCapability.OAUTH],
+    credentialMethods: [{ key: 'oauth2', authenticationMethod: 'oauth2' }]
   });
 
   const result = await manager.startOAuth('threads');

@@ -76,6 +76,15 @@ export class ConnectionTargetPolicy {
     const value = this.#ipv6Value(normalized);
     if (value === null) return true;
 
+    // IPv4-mapped IPv6 addresses may be written in expanded hexadecimal form
+    // (for example 0:0:0:0:0:ffff:c0a8:0101), which net.isIP reports as IPv6.
+    // Apply the IPv4 policy to the embedded address before evaluating IPv6
+    // ranges so private/metadata targets cannot bypass the boundary.
+    if ((value >> 32n) === 0xffffn) {
+      const octets = [24n, 16n, 8n, 0n].map((shift) => Number((value >> BigInt(shift)) & 0xffn));
+      return this.#isBlockedIpv4(octets.join('.'));
+    }
+
     const uniqueLocalStart = 0xfc00n << 112n;
     const linkLocalStart = 0xfe80n << 112n;
     const linkLocalEnd = 0xfebfn << 112n;

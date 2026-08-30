@@ -1,4 +1,5 @@
 import { HttpError } from './http-error.js';
+import { redactUrl } from '../utils/safe-diagnostics.js';
 
 export class HttpClient {
 
@@ -62,6 +63,7 @@ export class HttpClient {
         method,
         headers: finalHeaders,
         body,
+        redirect: 'error',
         signal: controller.signal
       });
 
@@ -69,7 +71,7 @@ export class HttpClient {
 
       if (!response.ok) {
         throw new HttpError({
-          message: `${method} ${finalUrl} failed`,
+          message: `${method} ${redactUrl(finalUrl)} failed`,
           status: response.status,
           url: finalUrl,
           response,

@@ -50,6 +50,11 @@ h1, h2 { margin-top: 0; }
 .consumer-form input:focus-visible,
 .consumer-credential-selection input:focus-visible,
 .consumer-secret-selection-item input:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
+.consumer-panel select,
+.consumer-panel textarea { width: 100%; margin-top: .5rem; padding: .65rem; border: 1px solid #9ca9bd; border-radius: 8px; font: inherit; }
+.consumer-panel textarea { min-height: 18rem; background: #f8fafc; color: #182033; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.consumer-panel select:focus-visible,
+.consumer-panel textarea:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
 .consumer-status { color: #52627a; }
 .consumer-form button:disabled { cursor: wait; opacity: .65; }
 .consumer-empty { color: #52627a; }

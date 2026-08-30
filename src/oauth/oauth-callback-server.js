@@ -38,6 +38,7 @@ import {
   assertNoConflictingTrustedProxySignals,
   isInternalPublicOrigin,
   normalizeBasePath,
+  normalizeApplicationBindHost,
   normalizePublicBaseUrl,
   normalizeTrustedProxy,
   withBasePath
@@ -53,6 +54,7 @@ const PROJECT_DOCUMENTS = Object.freeze({
   [PROJECT_LINKS.thirdPartySoftware]: path.join(PROJECT_DIR, 'docs/project/THIRD_PARTY_SOFTWARE.md'),
   [PROJECT_LINKS.security]: path.join(PROJECT_DIR, 'SECURITY.md')
 });
+const OAUTH_BINDING_COOKIE_PREFIX = 'sekalum-oauth-actor-';
 
 export class OAuthCallbackServer {
   constructor({
@@ -148,16 +150,29 @@ export class OAuthCallbackServer {
     this.logger = logger;
     this.basePath = normalizeBasePath(config.get('BASE_PATH', '/'));
     this.trustedProxy = normalizeTrustedProxy(config.get('TRUSTED_PROXY', null));
+    const configuredHostedMode = config.get('HOSTED_MODE', false);
+    this.hostedMode = configuredHostedMode === true || String(configuredHostedMode).trim().toLowerCase() === 'true';
+    this.bindHost = normalizeApplicationBindHost(config.get('APP_BIND_HOST', null), { hosted: this.hostedMode });
     const configuredPublicBaseUrl = config.get('PUBLIC_BASE_URL', null);
     this.publicBaseUrl = typeof configuredPublicBaseUrl === 'string'
       ? normalizePublicBaseUrl(configuredPublicBaseUrl)
       : null;
-    const nodeEnv = config.get('NODE_ENV', 'development');
+    const configuredNodeEnv = config.get('NODE_ENV', process.env.NODE_ENV ?? 'development');
+    const nodeEnv = typeof configuredNodeEnv === 'string' && configuredNodeEnv.trim() !== ''
+      ? configuredNodeEnv
+      : (process.env.NODE_ENV ?? 'development');
+    this.nodeEnv = nodeEnv;
     if (nodeEnv === 'production' && !this.publicBaseUrl) {
       throw new Error('PUBLIC_BASE_URL is required in production');
     }
     if (nodeEnv === 'production' && this.publicBaseUrl && isInternalPublicOrigin(this.publicBaseUrl)) {
       throw new Error('PUBLIC_BASE_URL must not use an internal host in production');
+    }
+    if (this.hostedMode && this.trustedProxy === false) {
+      throw new Error('HOSTED_MODE requires explicit TRUSTED_PROXY configuration');
+    }
+    if (this.hostedMode && !this.publicBaseUrl?.startsWith('https://')) {
+      throw new Error('HOSTED_MODE requires an HTTPS PUBLIC_BASE_URL');
     }
     this.oauthWizardIntents = new Map();
     this.app = express();
@@ -168,6 +183,11 @@ export class OAuthCallbackServer {
     this.routes.use('/consumer', express.static(path.join(PUBLIC_DIR, 'consumer')));
     this.routes.use('/shared', express.static(path.join(PUBLIC_DIR, 'shared')));
     this.app.use(this.basePath, this.routes);
+    this.app.use((error, req, res, next) => {
+      if (res.headersSent) return next(error);
+      const status = error?.type === 'entity.parse.failed' || error instanceof SyntaxError ? 400 : 500;
+      res.status(status).json({ success: false, error: { code: status === 400 ? 'INVALID_JSON' : 'INTERNAL_ERROR', message: status === 400 ? 'Request body contains invalid JSON' : 'Internal server error' } });
+    });
     if (this.basePath !== '/') {
       this.app.get('/', (req, res) => res.redirect(this.#path('/admin/')));
     }
@@ -180,8 +200,8 @@ export class OAuthCallbackServer {
     const port = Number(this.config.get('OAUTH_CALLBACK_PORT', 3000));
 
     return new Promise((resolve, reject) => {
-      this.server = this.app.listen(port, () => {
-        this.logger.success(`OAuth callback server listening on port ${port}`);
+      this.server = this.app.listen(port, this.bindHost, () => {
+        this.logger.success(`OAuth callback server listening on ${this.bindHost}:${port}`);
         resolve();
       });
 
@@ -210,13 +230,9 @@ export class OAuthCallbackServer {
     });
   }
 
-  #authorized(permission, handler, { allowBootstrap = false } = {}) {
+  #authorized(permission, handler) {
     return async (req, res) => {
       try {
-        if (allowBootstrap && await this.accessManagementService.isAuthorizationRequired?.() === false) {
-          await handler(req, res);
-          return;
-        }
         if (this.#isTestCompatibilityMode() && await this.accessManagementService.isAuthorizationRequired?.() === false) {
           await handler(req, res);
           return;
@@ -234,6 +250,28 @@ export class OAuthCallbackServer {
       } catch (error) {
         this.#sendAuthorizationError(res, error);
       }
+    };
+  }
+
+  #bootstrapOrAuthorized(handler) {
+    return async (req, res) => {
+      const hasAuthorizationHeader = typeof req.headers?.authorization === 'string'
+        && req.headers.authorization.trim() !== '';
+      const hasTestCompatibilityIdentity = this.#isTestCompatibilityMode()
+        && typeof req.headers?.['x-credential-hub-user'] === 'string'
+        && req.headers['x-credential-hub-user'].trim() !== '';
+
+      if (hasAuthorizationHeader) {
+        await this.#authorized('users:manage', handler)(req, res);
+        return;
+      }
+
+      if (hasTestCompatibilityIdentity && await this.accessManagementService.isAuthorizationRequired?.() !== false) {
+        await this.#authorized('users:manage', handler)(req, res);
+        return;
+      }
+
+      await this.accessManagementController.bootstrapFirstAdministrator(req, res);
     };
   }
 
@@ -380,6 +418,13 @@ export class OAuthCallbackServer {
       await this.consumerCredentialController.resolve(req, res);
     }));
 
+    this.routes.post('/api/v1/consumer/credentials/resolve-batch', this.#consumerAuthorized(async (req, res) => {
+      if (!this.consumerCredentialController) {
+        throw this.#unauthorized('Consumer API is not configured', 'API_TOKEN_AUTH_FAILED');
+      }
+      await this.consumerCredentialController.batchResolve(req, res);
+    }));
+
     this.routes.post('/api/v1/management/consumer-grants', this.#authorized('consumer-grants:manage', async (req, res) => {
       if (!this.consumerGrantController) {
         throw this.#unauthorized('Consumer grant management is not configured', 'CONSUMER_GRANT_MANAGEMENT_UNAVAILABLE');
@@ -457,9 +502,9 @@ export class OAuthCallbackServer {
       await this.accessManagementController.users(req, res);
     }));
 
-    this.routes.post('/api/v1/management/users', this.#authorized('users:manage', async (req, res) => {
+    this.routes.post('/api/v1/management/users', this.#bootstrapOrAuthorized(async (req, res) => {
       await this.accessManagementController.createUser(req, res);
-    }, { allowBootstrap: true }));
+    }));
 
     this.routes.put('/api/v1/management/users/:userId', this.#authorized('users:manage', async (req, res) => {
       await this.accessManagementController.updateUser(req, res);
@@ -544,7 +589,7 @@ export class OAuthCallbackServer {
       await this.credentialController.bulk(req, res);
     }));
 
-    this.routes.post('/api/v1/credentials/export', this.#authorized('credentials:manage', async (req, res) => {
+    this.routes.post('/api/v1/credentials/export', this.#authorized('export:read', async (req, res) => {
       await this.credentialController.export(req, res);
     }));
 
@@ -603,6 +648,14 @@ export class OAuthCallbackServer {
       await this.providerController.create(req, res);
     }));
 
+    this.routes.put('/api/v1/providers/:providerKey', this.#authorized('providers:manage', async (req, res) => {
+      await this.providerController.update(req, res);
+    }));
+
+    this.routes.delete('/api/v1/providers/:providerKey', this.#authorized('providers:manage', async (req, res) => {
+      await this.providerController.delete(req, res);
+    }));
+
     this.routes.post('/api/v1/providers/:providerKey/disable', this.#authorized('providers:manage', async (req, res) => {
       await this.providerController.disable(req, res);
     }));
@@ -620,6 +673,7 @@ export class OAuthCallbackServer {
     }));
 
     this.routes.post('/api/v1/providers/:providerKey/oauth/start', this.#authorized('providers:manage', async (req, res) => {
+      this.#purgeExpiredOAuthWizardIntents();
       const { providerKey } = req.params;
       const requestOrigin = this.#publicOrigin(req);
       const callbackPath = this.#path(`/oauth/${encodeURIComponent(providerKey)}/callback`);
@@ -627,7 +681,9 @@ export class OAuthCallbackServer {
       const oauthState = crypto.randomUUID();
       const result = await this.providerManager.startOAuth(providerKey, {
         state: oauthState,
+        actorUserId: req.auth?.userId ?? null,
         scopes: Array.isArray(req.body?.scopes) ? req.body.scopes : null,
+        credentialMethodKey: req.body?.credentialMethodKey ?? null,
         providerConfiguration: {
           ...(req.body?.providerConfiguration ?? {}),
           redirectUri
@@ -641,18 +697,21 @@ export class OAuthCallbackServer {
         throw error;
       }
 
-      this.#rememberOAuthWizardIntent({
+      const bindingToken = this.#rememberOAuthWizardIntent({
         state: oauthState,
         providerKey,
         actorUserId: req.auth?.userId ?? null
       });
+      this.#setOAuthBindingCookie(req, res, oauthState, bindingToken);
 
       const authorizationRedirectUri = this.#oauthRedirectUri(result.data.authorizationUrl);
       if (authorizationRedirectUri !== redirectUri) {
         let cancelled = false;
         if (this.providerManager.cancelOAuth) {
           try {
-            await this.providerManager.cancelOAuth(providerKey, oauthState);
+            await this.providerManager.cancelOAuth(providerKey, oauthState, {
+              expectedActorUserId: req.auth?.userId ?? null
+            });
             cancelled = true;
           } catch {}
         }
@@ -700,10 +759,15 @@ export class OAuthCallbackServer {
       const callbackState = req.query.state;
       try {
         const { code, state, error, error_description } = req.query;
-        if (!this.#isTestCompatibilityMode()) this.#consumeOAuthWizardIntent({ state, providerKey: provider });
+        this.#purgeExpiredOAuthWizardIntents();
+        await this.providerManager.cleanupExpiredOAuthContexts?.();
+        const intent = !this.#isTestCompatibilityMode()
+          ? this.#consumeOAuthWizardIntent({ state, providerKey: provider, req, res })
+          : null;
+        const expectedActorUserId = intent?.actorUserId ?? null;
 
         if (error) {
-          await this.providerManager.cancelOAuth(provider, state);
+          await this.providerManager.cancelOAuth(provider, state, { expectedActorUserId });
           this.logger.info?.(`OAuth callback was not completed for provider '${provider}'`);
           const redirectUriMismatch = error === 'redirect_uri_mismatch';
           res.status(400).send(this.#oauthResultPage({
@@ -718,16 +782,17 @@ export class OAuthCallbackServer {
         }
 
         if (!code) {
-          await this.providerManager.cancelOAuth(provider, callbackState);
+          await this.providerManager.cancelOAuth(provider, callbackState, { expectedActorUserId });
           const missingCode = new Error('OAuth callback missing code');
           missingCode.code = 'OAUTH_CALLBACK_FAILED';
           throw missingCode;
         }
 
-        const result = await this.providerManager.handleOAuthCallback(provider, {
-          code,
-          state
-        });
+        const result = await this.providerManager.handleOAuthCallback(
+          provider,
+          { code, state },
+          { expectedActorUserId }
+        );
 
         if (!result.success) {
           const callbackError = new Error('OAuth callback failed');
@@ -764,22 +829,109 @@ export class OAuthCallbackServer {
   }
 
   #rememberOAuthWizardIntent({ state, providerKey, actorUserId }) {
-    const ttl = Number(this.config.get('OAUTH_WIZARD_INTENT_TTL_MS', 10 * 60 * 1000));
-    this.oauthWizardIntents.set(state, Object.freeze({ providerKey, actorUserId, expiresAt: Date.now() + ttl }));
+    this.#purgeExpiredOAuthWizardIntents();
+    const ttl = this.#oauthWizardIntentTtlMs();
+    const bindingToken = crypto.randomBytes(32).toString('base64url');
+    this.oauthWizardIntents.set(state, Object.freeze({
+      providerKey,
+      actorUserId,
+      bindingTokenDigest: this.#digestOAuthBindingToken(bindingToken),
+      expiresAt: Date.now() + ttl
+    }));
+    return bindingToken;
   }
 
-  #isTestCompatibilityMode() { return process.env.NODE_ENV === 'test'; }
+  #isTestCompatibilityMode() { return this.nodeEnv === 'test'; }
 
-  #consumeOAuthWizardIntent({ state, providerKey }) {
+  #purgeExpiredOAuthWizardIntents(now = Date.now()) {
+    for (const [state, intent] of this.oauthWizardIntents.entries()) {
+      if (intent.expiresAt <= now) this.oauthWizardIntents.delete(state);
+    }
+  }
+
+  #consumeOAuthWizardIntent({ state, providerKey, req, res }) {
     const intent = typeof state === 'string' ? this.oauthWizardIntents.get(state) : null;
-    if (!intent || intent.providerKey !== providerKey || intent.expiresAt < Date.now()) {
+    if (!intent || intent.providerKey !== providerKey || intent.expiresAt <= Date.now()) {
       const error = new Error('OAuth wizard intent is missing or expired');
       error.code = 'OAUTH_WIZARD_INTENT_REQUIRED';
       error.statusCode = 403;
       throw error;
     }
+    const bindingCookieName = this.#oauthBindingCookieName(state);
+    const bindingToken = this.#requestCookie(req, bindingCookieName);
+    if (!bindingToken || !this.#safeEqual(
+      this.#digestOAuthBindingToken(bindingToken),
+      intent.bindingTokenDigest
+    )) {
+      const error = new Error('OAuth wizard actor binding is missing or invalid');
+      error.code = 'OAUTH_WIZARD_ACTOR_MISMATCH';
+      error.statusCode = 403;
+      throw error;
+    }
     this.oauthWizardIntents.delete(state);
+    this.#clearOAuthBindingCookie(req, res, state);
     return intent;
+  }
+
+  #oauthWizardIntentTtlMs() {
+    const configured = Number(this.config.get('OAUTH_WIZARD_INTENT_TTL_MS', 10 * 60 * 1000));
+    return Number.isFinite(configured) && configured >= 0 ? configured : 10 * 60 * 1000;
+  }
+
+  #oauthBindingCookieName(state) {
+    return `${OAUTH_BINDING_COOKIE_PREFIX}${crypto.createHash('sha256').update(String(state)).digest('hex')}`;
+  }
+
+  #digestOAuthBindingToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  #requestCookie(req, name) {
+    const header = req.headers?.cookie;
+    if (typeof header !== 'string') return null;
+    for (const item of header.split(';')) {
+      const separator = item.indexOf('=');
+      if (separator < 0) continue;
+      const key = item.slice(0, separator).trim();
+      if (key !== name) continue;
+      try {
+        return decodeURIComponent(item.slice(separator + 1).trim());
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  #setOAuthBindingCookie(req, res, state, token) {
+    const parts = [
+      `${this.#oauthBindingCookieName(state)}=${encodeURIComponent(token)}`,
+      `Max-Age=${Math.max(1, Math.ceil(this.#oauthWizardIntentTtlMs() / 1000))}`,
+      `Path=${this.basePath}`,
+      'HttpOnly',
+      'SameSite=Lax'
+    ];
+    if (req.secure || this.publicBaseUrl?.startsWith('https://')) parts.push('Secure');
+    res.set('Set-Cookie', parts.join('; '));
+  }
+
+  #clearOAuthBindingCookie(req, res, state) {
+    const parts = [
+      `${this.#oauthBindingCookieName(state)}=`,
+      'Max-Age=0',
+      `Path=${this.basePath}`,
+      'HttpOnly',
+      'SameSite=Lax'
+    ];
+    if (req.secure || this.publicBaseUrl?.startsWith('https://')) parts.push('Secure');
+    res.append('Set-Cookie', parts.join('; '));
+  }
+
+  #safeEqual(left, right) {
+    if (typeof left !== 'string' || typeof right !== 'string') return false;
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+    return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
   }
 
   #oauthResultPage({ status, code, provider, credentialId = null, redirectUri = null }) {

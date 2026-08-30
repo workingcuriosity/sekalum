@@ -44,7 +44,7 @@ export class SftpServiceProvider extends ServiceProvider {
           ProviderCapability.HEALTH_CHECK
         ]),
         credentialFields: connectionCredentialFields({ defaultPort: 22 }),
-        credentialMethods: [new CredentialMethod({ key: 'username-password', displayName: 'Username and password', credentialFields: connectionCredentialFields({ defaultPort: 22 }), operationCapabilities: [ProviderCapability.VALIDATION, ProviderCapability.HEALTH_CHECK] })],
+        credentialMethods: [new CredentialMethod({ key: 'username-password', displayName: 'Username and password', authenticationMethod: 'username-password', credentialFields: connectionCredentialFields({ defaultPort: 22 }), operationCapabilities: [ProviderCapability.VALIDATION, ProviderCapability.HEALTH_CHECK] })],
         providerMethodBindings: [new ProviderMethodBinding({ methodKey: 'username-password' })],
         metadata: {
           authType: 'username-password',

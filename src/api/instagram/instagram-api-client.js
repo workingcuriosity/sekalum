@@ -29,11 +29,11 @@ export class InstagramApiClient {
   }
 
   async refreshAccessToken({ refreshToken }) {
-    const response = await this.httpClient.get(this.refreshUrl, {
-      query: {
-        grant_type: 'ig_refresh_token',
-        access_token: refreshToken
-      }
+    const response = await this.httpClient.post(this.refreshUrl, new URLSearchParams({
+      grant_type: 'ig_refresh_token',
+      access_token: refreshToken
+    }), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
 
     return response.data;

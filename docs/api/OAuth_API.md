@@ -29,4 +29,4 @@ change_history:
 
 The canonical, code-verified OAuth route reference is API Reference.
 
-OAuth login and callback routes are public HTTP routes. Provider-specific fields, redirect configuration, and capabilities are documented in their respective follow-up packages.
+OAuth login and callback routes are public HTTP routes. The authorized Wizard start route creates a one-time state bound to the initiating actor and returns a state-specific HttpOnly/SameSite browser binding cookie. The callback requires that binding cookie and the expected provider context before consuming state; actor values supplied by the callback request are ignored. Missing, mismatched, replayed, or expired state is rejected. Provider-specific fields, redirect configuration, and capabilities are documented in their respective follow-up packages.

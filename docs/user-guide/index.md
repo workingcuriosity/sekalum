@@ -3,7 +3,7 @@ title: User Guide
 document_id: DOC-USER-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.8.2
+version: 1.9.0
 status: Active
 category: User Guide
 canonical: true
@@ -18,6 +18,12 @@ dependent_documents:
   - docs/data-model-reference/index.md
   - docs/security-guide/index.md
 change_history:
+  - version: 1.9.0
+    date: 2026-08-27
+    change: Explains the fixed 24-hour internal Secret rollback window and immediate history invalidation on terminal Credential actions.
+  - version: 1.8.3
+    date: 2026-08-26
+    change: Documents the explicit Bootstrap proof, active-admin invariant and terminal transition to normal management authentication.
   - version: 1.8.2
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -70,15 +76,26 @@ listed in the [Provider overview](../providers/README.md).
 When authorization is enabled, `/api/v1` first authenticates the identity and
 then evaluates its RBAC permissions. Reading Credentials requires
 `credentials:read`; creating, changing, deleting, validating, refreshing,
-revoking, importing and exporting require `credentials:manage`. The complete
+revoking and importing require `credentials:manage`, while Credential Transfer
+export requires the dedicated `export:read` permission. The complete
 mapping is defined in the API Reference.
 
 ### Bootstrap and the First Administrator
 
 When the persisted user store is empty, Bootstrap permits the one-time
-`POST /api/v1/management/users` request for the First Administrator without an
-existing user authentication. Once that user is stored, Bootstrap ends and
-subsequent management requests are protected.
+`POST /api/v1/management/users` request for the First Administrator only when
+the configured `ADMIN_BOOTSTRAP_TOKEN` is supplied in
+`X-Admin-Bootstrap-Token`. An empty user collection alone is not authorization.
+
+The Bootstrap token must be high entropy and at least 32 bytes. It is distinct
+from the Management Token and API tokens, and is never returned, logged,
+audited or persisted by Sekalum. The first user is always an active
+administrator; conflicting role or status values are rejected. The empty-state
+check and first-user persistence are atomic, so exactly one concurrent valid
+Bootstrap request can succeed. Bootstrap ends permanently once that user is
+persisted. Subsequent management requests require normal Bearer
+authentication, scope validation and RBAC. Proxy or forwarding headers do not
+replace the Bootstrap proof.
 
 Beta 1 does not use username/password authentication for normal operation.
 The Admin UI starts with a Management Token gate, validates the token through
@@ -191,6 +208,12 @@ not imply that a production transport adapter is present.
 Choose **Delete** and confirm the display name and Provider. Deletion is
 irreversible. The UI removes the row only after the confirmed `204` response;
 on Provider, storage or network errors the row remains visible.
+
+After a successful Secret rotation, the previous Secret is available only to
+the authorized internal recovery path for up to 24 hours. Deleting or
+revoking a Credential invalidates historical Secret versions immediately. This
+does not change the current active Secret before the terminal action and does
+not imply physical erasure from existing offline backups.
 
 ## Credential Export and Import
 

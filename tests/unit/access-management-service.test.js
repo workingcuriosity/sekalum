@@ -104,3 +104,128 @@ test('AccessManagementService writes audit entries for user changes', async () =
   assert.deepEqual(entries.map((entry) => entry.targetId), ['user-1', 'user-1', 'user-1']);
   assert.equal(entries[0].userId, 'admin-1');
 });
+
+test('AccessManagementService requires a strong bootstrap proof and creates an active administrator', async () => {
+  const bootstrapSecret = 'b'.repeat(32);
+  const entries = [];
+  const service = new AccessManagementService({
+    config: { get(key) { return key === 'ADMIN_BOOTSTRAP_TOKEN' ? bootstrapSecret : null; } },
+    auditLogService: { async record(entry) { entries.push(entry); } }
+  });
+
+  await assert.rejects(
+    () => service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin' }),
+    { code: 'BOOTSTRAP_PROOF_INVALID' }
+  );
+  await assert.rejects(
+    () => service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin', roleKey: 'operator' }, bootstrapSecret),
+    { code: 'BAD_REQUEST' }
+  );
+  await assert.rejects(
+    () => service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin', status: 'disabled' }, bootstrapSecret),
+    { code: 'BAD_REQUEST' }
+  );
+
+  const created = await service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin' }, bootstrapSecret);
+  assert.equal(created.roleKey, 'admin');
+  assert.equal(created.status, 'active');
+  assert.equal(entries[0].userId, null);
+  assert.deepEqual(entries[0].details, { roleKey: 'admin', status: 'active', bootstrap: true });
+  assert.doesNotMatch(JSON.stringify(entries), new RegExp(bootstrapSecret));
+
+  await assert.rejects(
+    () => service.bootstrapFirstAdministrator({ userId: 'admin-2', displayName: 'Second Admin' }, bootstrapSecret),
+    { code: 'BOOTSTRAP_CLOSED' }
+  );
+});
+
+test('AccessManagementService atomically permits exactly one concurrent bootstrap', async () => {
+  const bootstrapSecret = 'b'.repeat(32);
+  const service = new AccessManagementService({ bootstrapSecret });
+  const results = await Promise.allSettled(Array.from({ length: 12 }, (_, index) => service.bootstrapFirstAdministrator({
+    userId: `admin-${index}`,
+    displayName: `Admin ${index}`
+  }, bootstrapSecret)));
+
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter((result) => result.status === 'rejected').length, 11);
+  assert.deepEqual((await service.listUsers()).map((user) => user.roleKey), ['admin']);
+});
+
+test('AccessManagementService rejects missing or weak bootstrap configuration', async () => {
+  for (const bootstrapSecret of [undefined, '', 'short', 'x'.repeat(31)]) {
+    const service = new AccessManagementService({ bootstrapSecret });
+    await assert.rejects(
+      () => service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin' }, 'x'.repeat(32)),
+      { code: 'BOOTSTRAP_UNAVAILABLE' }
+    );
+  }
+});
+
+test('AccessManagementService can retry bootstrap after a failed user write without opening a second path', async () => {
+  const bootstrapSecret = 'b'.repeat(32);
+  let saved = null;
+  let saveAttempts = 0;
+  const service = new AccessManagementService({
+    bootstrapSecret,
+    store: {
+      async load() { return saved ?? { users: [] }; },
+      async save(data) {
+        saveAttempts += 1;
+        if (saveAttempts === 1) throw new Error('simulated write failure');
+        saved = data;
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin' }, bootstrapSecret),
+    /simulated write failure/
+  );
+  const created = await service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin' }, bootstrapSecret);
+  assert.equal(created.roleKey, 'admin');
+  assert.equal((await service.listUsers()).length, 1);
+});
+
+test('AccessManagementService does not reopen bootstrap when audit persistence fails after the user write', async () => {
+  const bootstrapSecret = 'b'.repeat(32);
+  let auditAttempts = 0;
+  const service = new AccessManagementService({
+    bootstrapSecret,
+    auditLogService: {
+      async record() {
+        auditAttempts += 1;
+        if (auditAttempts === 1) throw new Error('simulated audit failure');
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin' }, bootstrapSecret),
+    /simulated audit failure/
+  );
+  assert.equal((await service.listUsers()).length, 1);
+  await assert.rejects(
+    () => service.bootstrapFirstAdministrator({ userId: 'admin-2', displayName: 'Second Admin' }, bootstrapSecret),
+    { code: 'BOOTSTRAP_CLOSED' }
+  );
+});
+
+test('AccessManagementService persists terminal bootstrap state after deleting the last administrator', async () => {
+  const bootstrapSecret = 'b'.repeat(32);
+  let saved = { users: [] };
+  const store = {
+    async load() { return saved; },
+    async save(data) { saved = structuredClone(data); }
+  };
+  const service = new AccessManagementService({ bootstrapSecret, store });
+  await service.bootstrapFirstAdministrator({ userId: 'admin-1', displayName: 'Admin' }, bootstrapSecret);
+  await service.deleteUser('admin-1');
+  assert.deepEqual(saved, { users: [], bootstrapCompleted: true });
+
+  const restarted = new AccessManagementService({ bootstrapSecret, store });
+  await assert.rejects(
+    () => restarted.bootstrapFirstAdministrator({ userId: 'admin-2', displayName: 'Second Admin' }, bootstrapSecret),
+    { code: 'BOOTSTRAP_CLOSED' }
+  );
+});

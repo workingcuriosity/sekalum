@@ -490,6 +490,7 @@ nodes:
     roles:
       - administrator
     permissions:
+      - export:read
       - credentials:manage
     entry_conditions:
       - admin authentication succeeds
@@ -1183,7 +1184,7 @@ nodes:
     roles:
       - administrator
     permissions:
-      - credentials:manage
+      - export:read
     entry_conditions:
       - transfer page loaded
     visible_when:
@@ -2203,7 +2204,7 @@ interactions:
     messages:
       - FB-SUCCESS
       - FB-SYSTEM-ERROR
-    security_boundary: credentials:manage authorization and export password
+    security_boundary: export:read authorization and export password
     capability_ids:
       - CAP-CREDENTIAL-EXPORT
     source_files:

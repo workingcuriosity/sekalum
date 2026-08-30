@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { ApiToken } from '../models/api-token.js';
+import { SerializedMutationQueue } from './serialized-mutation-queue.js';
 
 export class ApiTokenStore {
   constructor({ jsonStore, basePath }) {
@@ -10,6 +11,7 @@ export class ApiTokenStore {
 
     this.jsonStore = jsonStore;
     this.filePath = path.join(basePath, 'api-tokens.json');
+    this.mutationQueue = new SerializedMutationQueue();
   }
 
   async list() {
@@ -30,19 +32,22 @@ export class ApiTokenStore {
   }
 
   async save(apiTokenInput) {
-    const apiToken = ApiToken.from(apiTokenInput);
-    const data = await this.#loadRaw();
-    const index = data.tokens.findIndex((entry) => entry.id === apiToken.id);
-    const serialized = apiToken.toJSON();
+    return this.mutationQueue.run(async () => {
+      const apiToken = ApiToken.from(apiTokenInput);
+      const data = await this.#loadRaw();
+      const index = data.tokens.findIndex((entry) => entry.id === apiToken.id);
+      const current = index === -1 ? null : ApiToken.from(data.tokens[index]);
+      const serialized = this.#mergeTerminalRevocation(current, apiToken).toJSON();
 
-    if (index === -1) {
-      data.tokens.push(serialized);
-    } else {
-      data.tokens[index] = serialized;
-    }
+      if (index === -1) {
+        data.tokens.push(serialized);
+      } else {
+        data.tokens[index] = serialized;
+      }
 
-    await this.jsonStore.save(this.filePath, data);
-    return apiToken;
+      await this.jsonStore.save(this.filePath, data);
+      return ApiToken.from(serialized);
+    });
   }
 
   async delete(tokenId) {
@@ -63,6 +68,16 @@ export class ApiTokenStore {
 
   async findByPrefix(tokenPrefix) {
     return (await this.list()).filter((entry) => entry.tokenPrefix === tokenPrefix);
+  }
+
+  #mergeTerminalRevocation(current, incoming) {
+    if (!current?.revokedAt || incoming.revokedAt) return incoming;
+
+    return new ApiToken({
+      ...incoming.toJSON(),
+      revokedAt: current.revokedAt,
+      version: Math.max(current.version, incoming.version) + 1
+    });
   }
 
   async #loadRaw() {

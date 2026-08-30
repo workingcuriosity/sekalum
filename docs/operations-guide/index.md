@@ -3,7 +3,7 @@ title: Operations Guide
 document_id: DOC-OPERATIONS-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.3.2
+version: 1.5.0
 status: Active
 category: Operations
 canonical: true
@@ -17,6 +17,12 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/api-reference/index.md
 change_history:
+  - version: 1.5.0
+    date: 2026-08-27
+    change: Defines operational Audit retention convergence, UTC ordering, the 10,000-event cap and fail-closed Consumer Resolve audit persistence.
+  - version: 1.4.0
+    date: 2026-08-27
+    change: Documents operational enforcement of the fixed 24-hour Secret-Version window and immediate terminal invalidation.
   - version: 1.3.2
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -123,6 +129,22 @@ audit and Credential history according to the deployment's approved storage
 retention policy; do not export resolved values, token material, request bodies
 or provider response bodies.
 
+### Audit retention and finalization
+
+Audit persistence uses the approved combined policy: records are eligible only
+when their timestamp is less than 30 days old at the current UTC instant, then
+the newest 10,000 eligible records are retained. Persisted order is oldest to
+newest, with stable ordering for equal timestamps. A governed load or write
+converges legacy oversized state by excluding malformed records, removing
+expired records, applying the cap and persisting the canonical order. Malformed
+legacy records produce only a secret-free operational warning; malformed new
+audit records are rejected.
+
+Consumer Resolve performs its success audit persistence before returning any
+Secret values. If that audit write fails, Resolve fails closed with the safe
+internal error contract. A failure to audit an already committed mutation is
+reported explicitly and does not fabricate rollback or success.
+
 ### OAuth token rotation
 
 The scheduler checks active OAuth Credentials against their stored expiration
@@ -136,6 +158,20 @@ without refresh support are not refreshed. Refresh failures do not replace the
 stored Credential and are reported through the existing safe Resolve failure
 handling. Operators must not inspect or retain token values in logs,
 screenshots or deployment evidence.
+
+### Secret-Version retention
+
+Historical Secret versions are retained for a fixed maximum of 24 hours from
+their creation instant for internal rollback only. Expiry is deterministic:
+`now < createdAt + 24 hours` is required, and the exact boundary is rejected.
+Credential delete, terminal revoke, and terminal invalidation remove
+historical Secret material at the application level immediately. A failure to
+persist that invalidation must fail the terminal operation closed.
+
+This policy does not rewrite offline or legacy backups and does not promise
+physical media erasure. Management backups do not contain Secret-Version
+history; legacy OAuth backups may contain prior token material and require a
+separate backup-retention policy.
 
 Review encryption-key rotation through the [Configuration Reference](../configuration-reference/index.md) before removing historical keys. Automatic bulk re-encryption is not part of the active storage path.
 

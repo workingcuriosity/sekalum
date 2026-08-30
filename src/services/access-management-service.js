@@ -1,3 +1,9 @@
+import crypto from 'node:crypto';
+
+import { SerializedMutationQueue } from '../storage/serialized-mutation-queue.js';
+
+const BOOTSTRAP_SECRET_MIN_BYTES = 32;
+
 const DEFAULT_ROLES = Object.freeze([
   {
     roleKey: 'admin',
@@ -20,11 +26,18 @@ const DEFAULT_ROLES = Object.freeze([
 ]);
 
 export class AccessManagementService {
-  constructor({ store = null, auditLogService = null } = {}) {
+  constructor({ store = null, auditLogService = null, config = null, bootstrapSecret = undefined, apiTokenService = null } = {}) {
     this.store = store;
     this.auditLogService = auditLogService;
+    const configuredBootstrapSecret = bootstrapSecret === undefined
+      ? config?.get?.('ADMIN_BOOTSTRAP_TOKEN', null)
+      : bootstrapSecret;
+    this.bootstrapSecret = this.#normalizeBootstrapSecret(configuredBootstrapSecret);
+    this.apiTokenService = apiTokenService;
     this.roles = DEFAULT_ROLES.map((role) => ({ ...role, permissions: [...role.permissions] }));
     this.users = [];
+    this.bootstrapCompleted = false;
+    this.mutationQueue = new SerializedMutationQueue();
   }
 
   async listRoles() {
@@ -37,6 +50,49 @@ export class AccessManagementService {
   }
 
   async createUser(input = {}) {
+    return this.mutationQueue.run(() => this.#createUser(input));
+  }
+
+  async bootstrapFirstAdministrator(input = {}, proof = null) {
+    return this.mutationQueue.run(() => this.#bootstrapFirstAdministrator(input, proof));
+  }
+
+  async #bootstrapFirstAdministrator(input = {}, proof = null) {
+    const users = await this.#loadUsers();
+
+    if (this.bootstrapCompleted || users.length > 0) {
+      throw this.#bootstrapClosed();
+    }
+
+    if (!this.bootstrapSecret) {
+      throw this.#bootstrapUnavailable();
+    }
+
+    if (!this.#timingSafeSecretMatch(proof)) {
+      throw this.#bootstrapProofInvalid();
+    }
+
+    const user = this.#normalizeFirstAdministratorInput(input);
+    const now = new Date().toISOString();
+    const record = {
+      ...user,
+      principalGeneration: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    await this.#saveUsers([record], { bootstrapCompleted: true });
+    await this.#audit({
+      action: 'user.created',
+      targetId: record.userId,
+      result: 'success',
+      actorUserId: null,
+      details: { roleKey: record.roleKey, status: record.status, bootstrap: true }
+    });
+    return this.#userItem(record);
+  }
+
+  async #createUser(input = {}) {
     const user = this.#normalizeUserInput(input);
     const users = await this.#loadUsers();
 
@@ -49,13 +105,14 @@ export class AccessManagementService {
     const now = new Date().toISOString();
     const record = {
       ...user,
+      principalGeneration: crypto.randomUUID(),
       status: user.status ?? 'active',
       createdAt: now,
       updatedAt: now
     };
 
     users.push(record);
-    await this.#saveUsers(users);
+    await this.#saveUsers(users, { bootstrapCompleted: true });
     await this.#audit({
       action: 'user.created',
       targetId: record.userId,
@@ -67,6 +124,10 @@ export class AccessManagementService {
   }
 
   async updateUser(userId, input = {}) {
+    return this.mutationQueue.run(() => this.#updateUser(userId, input));
+  }
+
+  async #updateUser(userId, input = {}) {
     const normalizedUserId = this.#normalizeRequiredString(userId, 'userId');
     const users = await this.#loadUsers();
     const index = users.findIndex((user) => user.userId === normalizedUserId);
@@ -100,12 +161,20 @@ export class AccessManagementService {
   }
 
   async deleteUser(userId, options = {}) {
+    return this.mutationQueue.run(() => this.#deleteUser(userId, options));
+  }
+
+  async #deleteUser(userId, options = {}) {
     const normalizedUserId = this.#normalizeRequiredString(userId, 'userId');
     const users = await this.#loadUsers();
     const next = users.filter((user) => user.userId !== normalizedUserId);
 
     if (next.length === users.length) {
       throw this.#notFound(`User '${normalizedUserId}' not found`);
+    }
+
+    if (this.apiTokenService?.revokeTokensForUser) {
+      await this.apiTokenService.revokeTokensForUser(normalizedUserId, { revokedBy: options.actorUserId ?? 'system' });
     }
 
     await this.#saveUsers(next);
@@ -119,6 +188,10 @@ export class AccessManagementService {
 
 
   async replaceUsers(users = [], options = {}) {
+    return this.mutationQueue.run(() => this.#replaceUsers(users, options));
+  }
+
+  async #replaceUsers(users = [], options = {}) {
     if (!Array.isArray(users)) {
       throw this.#badRequest('users must be an array');
     }
@@ -128,13 +201,27 @@ export class AccessManagementService {
       this.#assertKnownRole(normalized.roleKey);
       return {
         ...normalized,
+        principalGeneration: this.#normalizePrincipalGeneration(user.principalGeneration, normalized.userId),
         status: normalized.status ?? 'active',
         createdAt: user.createdAt ?? new Date().toISOString(),
         updatedAt: user.updatedAt ?? new Date().toISOString()
       };
     });
 
-    await this.#saveUsers(records);
+    const previousUsers = await this.#loadUsers();
+    const nextById = new Map(records.map((user) => [user.userId, user]));
+    if (this.apiTokenService?.revokeTokensForUser) {
+      for (const previous of previousUsers) {
+        const next = nextById.get(previous.userId);
+        if (!next || next.principalGeneration !== previous.principalGeneration) {
+          await this.apiTokenService.revokeTokensForUser(previous.userId, {
+            revokedBy: options.actorUserId ?? 'system'
+          });
+        }
+      }
+    }
+
+    await this.#saveUsers(records, { bootstrapCompleted: this.bootstrapCompleted || records.length > 0 });
 
     if (!options.skipAudit) {
       await this.#audit({
@@ -158,6 +245,11 @@ export class AccessManagementService {
     }
 
     return [...role.permissions];
+  }
+
+  async getUserIdentity(userId) {
+    const user = await this.#findActiveUser(userId);
+    return { userId: user.userId, principalGeneration: user.principalGeneration };
   }
 
   async hasPermission(userId, permission) {
@@ -207,13 +299,14 @@ export class AccessManagementService {
 
   async #loadUsers() {
     if (!this.store?.load) {
-      return this.users.map((user) => ({ ...user }));
+      return this.users.map((user) => this.#normalizePersistedUser(user));
     }
 
     try {
       const data = await this.store.load();
       const users = Array.isArray(data?.users) ? data.users : [];
-      return users.map((user) => ({ ...user }));
+      this.bootstrapCompleted = this.bootstrapCompleted || data?.bootstrapCompleted === true || users.length > 0;
+      return users.map((user) => this.#normalizePersistedUser(user));
     } catch (error) {
       if (error?.code === 'ENOENT') {
         return [];
@@ -222,15 +315,17 @@ export class AccessManagementService {
     }
   }
 
-  async #saveUsers(users) {
+  async #saveUsers(users, { bootstrapCompleted = this.bootstrapCompleted || users.length > 0 } = {}) {
     const records = users.map((user) => ({ ...user }));
 
     if (!this.store?.save) {
       this.users = records;
+      this.bootstrapCompleted = bootstrapCompleted === true;
       return;
     }
 
-    await this.store.save({ users: records });
+    await this.store.save({ users: records, bootstrapCompleted: bootstrapCompleted === true });
+    this.bootstrapCompleted = bootstrapCompleted === true;
   }
 
 
@@ -274,6 +369,79 @@ export class AccessManagementService {
       roleKey: this.#normalizeRequiredString(input.roleKey, 'roleKey'),
       status: this.#normalizeStatus(input.status ?? 'active')
     };
+  }
+
+  #normalizePersistedUser(user) {
+    const normalized = { ...user };
+    normalized.principalGeneration = this.#normalizePrincipalGeneration(user.principalGeneration, normalized.userId);
+    return normalized;
+  }
+
+  #normalizePrincipalGeneration(value, userId) {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+    return `legacy:${userId}`;
+  }
+
+  #normalizeFirstAdministratorInput(input) {
+    const roleKey = input.roleKey === undefined
+      ? 'admin'
+      : this.#normalizeRequiredString(input.roleKey, 'roleKey');
+    if (roleKey !== 'admin') {
+      throw this.#badRequest('Bootstrap first user roleKey must be admin');
+    }
+
+    const status = input.status === undefined
+      ? 'active'
+      : this.#normalizeStatus(input.status);
+    if (status !== 'active') {
+      throw this.#badRequest('Bootstrap first user status must be active');
+    }
+
+    return {
+      userId: this.#normalizeRequiredString(input.userId, 'userId'),
+      displayName: this.#normalizeRequiredString(input.displayName, 'displayName'),
+      email: this.#normalizeOptionalString(input.email),
+      roleKey: 'admin',
+      status: 'active'
+    };
+  }
+
+  #normalizeBootstrapSecret(value) {
+    if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') < BOOTSTRAP_SECRET_MIN_BYTES) {
+      return null;
+    }
+    return value;
+  }
+
+  #timingSafeSecretMatch(candidate) {
+    if (typeof candidate !== 'string') {
+      return false;
+    }
+
+    const configuredDigest = crypto.createHash('sha256').update(this.bootstrapSecret, 'utf8').digest();
+    const candidateDigest = crypto.createHash('sha256').update(candidate, 'utf8').digest();
+    return crypto.timingSafeEqual(configuredDigest, candidateDigest);
+  }
+
+  #bootstrapUnavailable() {
+    const error = new Error('Bootstrap is not configured');
+    error.statusCode = 503;
+    error.code = 'BOOTSTRAP_UNAVAILABLE';
+    return error;
+  }
+
+  #bootstrapClosed() {
+    const error = new Error('Bootstrap is no longer available');
+    error.statusCode = 403;
+    error.code = 'BOOTSTRAP_CLOSED';
+    return error;
+  }
+
+  #bootstrapProofInvalid() {
+    const error = new Error('Bootstrap proof is invalid');
+    error.statusCode = 403;
+    error.code = 'BOOTSTRAP_PROOF_INVALID';
+    return error;
   }
 
   #normalizeUserPatch(input) {

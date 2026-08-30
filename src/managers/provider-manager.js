@@ -8,6 +8,7 @@
 
 import { ProviderCapability } from '../models/provider-capability.js';
 import { ProviderResult } from '../models/provider-result.js';
+import { isProviderProfileMigrationVerified } from '../models/credential.js';
 import { OAuthResult } from '../models/oauth-result.js';
 
 function compareCanonical(left, right) {
@@ -56,6 +57,8 @@ getProviderCapabilities(providerName) {
   }
 
   async startOAuth(providerName, options = {}) {
+    await this.cleanupExpiredOAuthContexts();
+    const { actorUserId: _actorUserId, ...providerOptions } = options;
     return this.#execute({
       providerName,
       operation: 'startOAuth',
@@ -64,31 +67,40 @@ getProviderCapabilities(providerName) {
         const configurationRecord = await this.#prepareProviderConfiguration({
           providerName,
           definition,
-          options
+          options: providerOptions
         });
         const configuredOptions = configurationRecord
           ? {
-              ...options,
+              ...providerOptions,
               providerConfiguration: configurationRecord.configuration,
-              providerConfigurationId: configurationRecord.configurationId
+              providerConfigurationId: configurationRecord.configurationId,
+              providerProfile: configurationRecord.providerProfile
             }
           : options;
+        const credentialMethodKey = this.#oauthCredentialMethodKey(definition, configuredOptions);
+        const boundOptions = { ...configuredOptions, credentialMethodKey };
         let securityContext = null;
         try {
           securityContext = this.#createOAuthSecurityContext({
             providerName,
             definition,
-            options: configuredOptions
+            options: {
+              ...boundOptions,
+              actorUserId: _actorUserId ?? null,
+              providerConfigurationTemporary: Boolean(
+                configurationRecord && !providerOptions.providerConfigurationId
+              )
+            }
           });
           const result = await provider.startOAuth({
-            ...configuredOptions,
+            ...boundOptions,
             ...this.#authorizationOptionsFromSecurityContext(securityContext),
             oauthSecurityContext: securityContext
           });
           if (!configurationRecord) return result;
           if (!result?.success) {
             this.oauthSecurityService?.discardAuthorizationContext?.(securityContext?.state);
-            await this.#removeProviderConfiguration(configurationRecord.configurationId, providerName);
+            await this.#removeOAuthFlowConfiguration(securityContext, providerName);
             return result;
           }
           return ProviderResult.success({
@@ -97,58 +109,98 @@ getProviderCapabilities(providerName) {
           });
         } catch (error) {
           this.oauthSecurityService?.discardAuthorizationContext?.(securityContext?.state);
-          await this.#removeProviderConfiguration(configurationRecord?.configurationId, providerName);
+          await this.#removeOAuthFlowConfiguration(
+            securityContext ?? {
+              providerConfigurationId: configurationRecord?.configurationId,
+              providerConfigurationTemporary: Boolean(
+                configurationRecord && !providerOptions.providerConfigurationId
+              )
+            },
+            providerName
+          );
           throw error;
         }
       }
     });
   }
 
-  async handleOAuthCallback(providerName, callbackData = {}) {
+  async handleOAuthCallback(providerName, callbackData = {}, { expectedActorUserId = null } = {}) {
+    await this.cleanupExpiredOAuthContexts();
+    const providerCallbackData = callbackData;
     return this.#execute({
       providerName,
       operation: 'handleOAuthCallback',
       capability: ProviderCapability.OAUTH,
-      action: async (provider) => {
+      action: async (provider, definition) => {
         let securityContext;
         try {
           securityContext = this.#consumeOAuthSecurityContext({
             providerName,
-            callbackData
+            callbackData,
+            providerProfile: definition.providerProfile,
+            expectedActorUserId: expectedActorUserId ?? null
           });
         } catch (error) {
-          await this.#removeProviderConfiguration(
-            error.providerConfigurationId,
-            error.providerKey ?? providerName
-          );
+          await this.#removeOAuthFlowConfiguration(error, error.providerKey ?? providerName);
           throw error;
         }
 
         try {
           const result = await provider.handleOAuthCallback({
-            ...callbackData,
+            ...providerCallbackData,
             ...this.#callbackOptionsFromSecurityContext(securityContext),
             oauthSecurityContext: securityContext
           });
           if (!result?.success) {
-            await this.#removeProviderConfiguration(securityContext?.providerConfigurationId, providerName);
+            await this.#removeOAuthFlowConfiguration(securityContext, providerName);
             return result;
+          }
+          if (result.data?.provider && result.data.provider !== providerName) {
+            const error = new Error('OAuth result provider does not match callback provider');
+            error.code = 'OAUTH_PROVIDER_MISMATCH';
+            error.statusCode = 400;
+            throw error;
           }
           return this.#attachProviderConfigurationReference(result, securityContext);
         } catch (error) {
-          await this.#removeProviderConfiguration(securityContext?.providerConfigurationId, providerName);
+          await this.#removeOAuthFlowConfiguration(securityContext, providerName);
           throw error;
         }
       }
     });
   }
 
-  async cancelOAuth(providerName, state) {
-    const securityContext = this.#consumeOAuthSecurityContext({
-      providerName,
-      callbackData: { state }
-    });
-    return this.#removeProviderConfiguration(securityContext?.providerConfigurationId, providerName);
+  async cancelOAuth(providerName, state, { expectedActorUserId = null } = {}) {
+    await this.cleanupExpiredOAuthContexts();
+    const definition = this.providerRegistry.get(providerName);
+    try {
+      const securityContext = this.#consumeOAuthSecurityContext({
+        providerName,
+        callbackData: { state },
+        providerProfile: definition.providerProfile,
+        expectedActorUserId
+      });
+      return this.#removeOAuthFlowConfiguration(securityContext, providerName);
+    } catch (error) {
+      await this.#removeOAuthFlowConfiguration(error, error.providerKey ?? providerName);
+      throw error;
+    }
+  }
+
+  async cleanupExpiredOAuthContexts() {
+    if (!this.oauthSecurityService?.purgeExpiredContexts) return [];
+    const expired = this.oauthSecurityService.purgeExpiredContexts();
+    for (const context of expired) {
+      try {
+        await this.#removeOAuthFlowConfiguration(context, context.provider);
+      } catch (error) {
+        this.logger?.error?.('OAuth flow cleanup failed', {
+          code: error.code ?? 'OAUTH_CLEANUP_FAILED',
+          provider: context.provider
+        });
+      }
+    }
+    return expired;
   }
 
   async discardProviderConfiguration(configurationId, providerName) {
@@ -177,6 +229,10 @@ getProviderCapabilities(providerName) {
     // them so API consumers do not need to infer support from missing keys.
     credentialMethods,
     providerMethodBindings,
+    ...(definition.providerProfile ? { providerProfile: definition.providerProfile.identity?.() ?? definition.providerProfile } : {}),
+    ...(definition.runtimeDerivation?.supportsRuntimeDerivation
+      ? { runtimeDerivation: definition.runtimeDerivation.toJSON() }
+      : {}),
     oauthSecurity: definition.oauthSecurityRequirements?.toJSON?.() ?? null,
     oauthTechnical: definition.oauthService
       ? {
@@ -212,7 +268,7 @@ getProviderCapabilities(providerName) {
         const providerConfiguration = await this.#configurationForCredential({
           ...credential,
           provider: credential.providerKey
-        });
+        }, this.providerRegistry.get(credential.providerKey));
         const configuredCredential = { ...credential, providerConfiguration };
         if (typeof provider.refreshCredential === 'function') {
           return provider.refreshCredential(configuredCredential);
@@ -232,6 +288,28 @@ getProviderCapabilities(providerName) {
           return provider.validateCredential(credential);
         }
         return provider.validateToken(credential);
+      }
+    });
+  }
+
+  async deriveRuntimeMaterial(credential, context = {}) {
+    return this.#executeCredentialOperation({
+      credential,
+      operation: 'deriveRuntimeMaterial',
+      capability: ProviderCapability.RUNTIME_DERIVATION,
+      operationContext: context,
+      action: (provider, definition, operationContext) => {
+        if (typeof provider.deriveRuntimeMaterial !== 'function') {
+          const error = new Error('Provider does not implement runtime derivation');
+          error.code = 'DERIVATION_CONFIGURATION_INVALID';
+          error.classification = 'provider_contract_incompatible';
+          return ProviderResult.failure(error);
+        }
+        return provider.deriveRuntimeMaterial({
+          credential,
+          context: operationContext,
+          providerProfile: definition.providerProfile
+        });
       }
     });
   }
@@ -266,7 +344,10 @@ getProviderCapabilities(providerName) {
       capability: ProviderCapability.REFRESH,
       action: async (provider) => provider.refreshToken({
         ...tokenRecord,
-        providerConfiguration: await this.#configurationForCredential(tokenRecord)
+        providerConfiguration: await this.#configurationForCredential(
+          tokenRecord,
+          this.providerRegistry.get(tokenRecord.provider)
+        )
       })
     });
   }
@@ -316,18 +397,29 @@ getProviderCapabilities(providerName) {
       scopes: options.scopes ?? null,
       account: options.account ?? null,
       providerConfiguration: options.providerConfiguration ?? null,
-      providerConfigurationId: options.providerConfigurationId ?? null
+      providerConfigurationId: options.providerConfigurationId ?? null,
+      providerConfigurationTemporary: options.providerConfigurationTemporary ?? false,
+      actorUserId: options.actorUserId ?? null,
+      providerProfile: definition.providerProfile,
+      credentialMethodKey: options.credentialMethodKey ?? this.#oauthCredentialMethodKey(definition, options)
     });
   }
 
-  #consumeOAuthSecurityContext({ providerName, callbackData }) {
+  #consumeOAuthSecurityContext({
+    providerName,
+    callbackData,
+    providerProfile = null,
+    expectedActorUserId = null
+  }) {
     if (!this.oauthSecurityService || !callbackData?.state) {
       return null;
     }
 
     return this.oauthSecurityService.consumeCallbackContext({
       provider: providerName,
-      state: callbackData.state
+      state: callbackData.state,
+      providerProfile,
+      expectedActorUserId
     });
   }
 
@@ -353,7 +445,9 @@ getProviderCapabilities(providerName) {
       codeVerifier: securityContext.codeVerifier,
       nonce: securityContext.nonce,
       providerConfiguration: securityContext.providerConfiguration ?? null,
-      providerConfigurationId: securityContext.providerConfigurationId ?? null
+      providerConfigurationId: securityContext.providerConfigurationId ?? null,
+      providerProfile: securityContext.providerProfile ?? null,
+      credentialMethodKey: securityContext.credentialMethodKey ?? null
     };
   }
 
@@ -370,16 +464,31 @@ getProviderCapabilities(providerName) {
       providerKey: providerName,
       fields: definition.credentialFields ?? [],
       values: options.providerConfiguration,
-      configurationId: options.providerConfigurationId ?? null
+      configurationId: options.providerConfigurationId ?? null,
+      providerProfile: definition.providerProfile,
+      temporary: !options.providerConfigurationId,
+      expiresAt: this.#oauthConfigurationExpiresAt()
     });
   }
 
-  async #configurationForCredential(credential) {
+  #oauthConfigurationExpiresAt() {
+    const configuredTtl = Number(this.oauthSecurityService?.ttlMs);
+    const ttlMs = Number.isFinite(configuredTtl) && configuredTtl >= 0
+      ? configuredTtl
+      : 10 * 60 * 1000;
+    return new Date(Date.now() + ttlMs).toISOString();
+  }
+
+  async #configurationForCredential(credential, definition = null) {
     const configurationId = credential?.metadata?.providerConfigurationId
       ?? credential?.metadata?.custom?.providerConfigurationId
       ?? null;
     if (!configurationId || !this.providerConfigurationService) return null;
-    return (await this.providerConfigurationService.load(configurationId, credential.provider)).configuration;
+    return (await this.providerConfigurationService.load(
+      configurationId,
+      credential.provider,
+      definition?.providerProfile ?? null
+    )).configuration;
   }
 
   async #removeProviderConfiguration(configurationId, providerName) {
@@ -387,10 +496,23 @@ getProviderCapabilities(providerName) {
     return this.providerConfigurationService.remove(configurationId, providerName);
   }
 
+  async #removeOAuthFlowConfiguration(context, providerName) {
+    if (!context?.providerConfigurationTemporary) return false;
+    return this.#removeProviderConfiguration(context.providerConfigurationId, providerName);
+  }
+
   #attachProviderConfigurationReference(result, securityContext) {
     const configurationId = securityContext?.providerConfigurationId;
-    if (!configurationId || !result?.success || !(result.data instanceof OAuthResult)) return result;
+    if (!result?.success || !(result.data instanceof OAuthResult)) return result;
     const data = result.data;
+    const returnedProfile = data.metadata?.providerProfile ?? null;
+    if (securityContext?.providerProfile && returnedProfile
+      && returnedProfile.digest !== securityContext.providerProfile.digest) {
+      const error = new Error('OAuth result provider profile does not match authorization context');
+      error.code = 'OAUTH_PROFILE_MISMATCH';
+      error.statusCode = 400;
+      throw error;
+    }
     return ProviderResult.success(new OAuthResult({
       providerId: data.providerId,
       provider: data.provider,
@@ -400,15 +522,43 @@ getProviderCapabilities(providerName) {
       refreshToken: data.refreshToken,
       expiresAt: data.expiresAt,
       scopes: data.scopes,
-      metadata: { ...data.metadata, providerConfigurationId: configurationId }
+      metadata: {
+        ...data.metadata,
+        ...(configurationId ? { providerConfigurationId: configurationId } : {}),
+        ...(securityContext.providerProfile ? { providerProfile: securityContext.providerProfile } : {}),
+        ...(securityContext.credentialMethodKey ? { credentialMethodKey: securityContext.credentialMethodKey } : {})
+      }
     }));
+  }
+
+  #oauthCredentialMethodKey(definition, options = {}) {
+    if (options.credentialMethodKey) {
+      const method = definition.getCredentialMethod?.(options.credentialMethodKey)
+        ?? definition.credentialMethods?.find((candidate) => candidate.key === options.credentialMethodKey);
+      if (!method || method.authenticationMethod !== 'oauth2') {
+        const error = new Error('OAuth credential method is not bound to the provider profile');
+        error.code = 'OAUTH_METHOD_INVALID';
+        error.statusCode = 400;
+        throw error;
+      }
+      return options.credentialMethodKey;
+    }
+    const methods = (definition.credentialMethods ?? []).filter((method) => method.authenticationMethod === 'oauth2');
+    if (methods.length !== 1) {
+      const error = new Error('OAuth credential method must be selected explicitly');
+      error.code = 'OAUTH_METHOD_REQUIRED';
+      error.statusCode = 400;
+      throw error;
+    }
+    return methods[0].key;
   }
 
   async #executeCredentialOperation({
     credential,
     operation,
     capability,
-    action
+    action,
+    operationContext = {}
   }) {
     if (!credential) {
       return this.#frameworkFailure({
@@ -422,7 +572,8 @@ getProviderCapabilities(providerName) {
     const methodContext = this.#credentialMethodContext({
       credential,
       operation,
-      capability
+      capability,
+      operationContext
     });
     if (!methodContext.success) return methodContext;
 
@@ -431,19 +582,67 @@ getProviderCapabilities(providerName) {
       operation,
       capability,
       action: (provider, definition) => {
+        const profileIdentity = credential.providerProfile ?? credential.metadata?.custom?.providerProfile ?? null;
+        if (definition.providerProfile && !profileIdentity) {
+          const error = new Error('Credential provider profile is missing; explicit migration is required');
+          error.code = 'CREDENTIAL_PROFILE_MISSING';
+          error.statusCode = 409;
+          error.classification = 'provider_contract_incompatible';
+          return this.#frameworkFailure({
+            providerName: credential.providerKey,
+            operation,
+            capability,
+            context: { credentialId: credential.credentialId ?? null },
+            error
+          });
+        }
+        if (definition.providerProfile && !isProviderProfileMigrationVerified(credential)) {
+          const error = new Error('Credential provider profile migration is incomplete or unverified');
+          error.code = 'CREDENTIAL_PROFILE_MIGRATION_UNVERIFIED';
+          error.statusCode = 409;
+          error.classification = 'provider_contract_incompatible';
+          return this.#frameworkFailure({
+            providerName: credential.providerKey,
+            operation,
+            capability,
+            context: { credentialId: credential.credentialId ?? null },
+            error
+          });
+        }
+        if (profileIdentity && definition.providerProfile
+          && profileIdentity.digest !== definition.providerProfile.digest) {
+          const error = new Error('Credential provider profile is stale or incompatible');
+          error.code = 'CREDENTIAL_PROFILE_MISMATCH';
+          error.statusCode = 409;
+          error.classification = 'provider_contract_incompatible';
+          return this.#frameworkFailure({
+            providerName: credential.providerKey,
+            operation,
+            capability,
+            context: { credentialId: credential.credentialId ?? null },
+            error
+          });
+        }
         const adapter = methodContext.data?.binding?.adapterFor?.(capability);
         if (adapter) {
-          return adapter({ credential, provider, definition });
+          return adapter({
+            credential,
+            provider,
+            definition,
+            providerProfile: definition.providerProfile,
+            context: operationContext
+          });
         }
-        return action(provider, definition);
+        return action(provider, definition, operationContext);
       },
       context: {
-        credentialId: credential.credentialId ?? null
+        credentialId: credential.credentialId ?? null,
+        ...(operationContext.auditContext ?? {})
       }
     });
   }
 
-  #credentialMethodContext({ credential, operation, capability }) {
+  #credentialMethodContext({ credential, operation, capability, operationContext = {} }) {
     let definition;
     try {
       definition = this.providerRegistry.get(credential.providerKey);
@@ -469,7 +668,10 @@ getProviderCapabilities(providerName) {
         operation,
         capability,
         context: { credentialId: credential.credentialId ?? null },
-        error: new Error(`Credential '${credential.credentialId ?? 'unknown'}' requires an explicit credential method migration`)
+        error: Object.assign(
+          new Error(`Credential '${credential.credentialId ?? 'unknown'}' requires an explicit credential method migration`),
+          { classification: 'provider_contract_incompatible' }
+        )
       });
     }
 
@@ -481,8 +683,11 @@ getProviderCapabilities(providerName) {
         operation,
         capability,
         context: { credentialId: credential.credentialId ?? null },
-        error: new Error(
-          `Credential method '${credential.credentialMethodKey}' is not bound to provider '${credential.providerKey}'`
+        error: Object.assign(
+          new Error(
+            `Credential method '${credential.credentialMethodKey}' is not bound to provider '${credential.providerKey}'`
+          ),
+          { classification: 'provider_contract_incompatible' }
         )
       });
     }
@@ -492,8 +697,25 @@ getProviderCapabilities(providerName) {
         operation,
         capability,
         context: { credentialId: credential.credentialId ?? null },
-        error: new Error(
-          `Credential method '${credential.credentialMethodKey}' does not support capability '${capability}'`
+        error: Object.assign(
+          new Error(
+            `Credential method '${credential.credentialMethodKey}' does not support capability '${capability}'`
+          ),
+          { classification: 'provider_contract_incompatible' }
+        )
+      });
+    }
+    const grantedScopes = new Set(operationContext.scopes ?? credential.metadata?.scopes ?? credential.metadata?.toJSON?.().scopes ?? []);
+    const missingScopes = (method.requiredScopes ?? []).filter((scope) => !grantedScopes.has(scope));
+    if (missingScopes.length > 0) {
+      return this.#frameworkFailure({
+        providerName: credential.providerKey,
+        operation,
+        capability,
+        context: { credentialId: credential.credentialId ?? null },
+        error: Object.assign(
+          new Error(`Credential is missing required provider scopes: ${missingScopes.join(', ')}`),
+          { classification: 'scope_insufficient' }
         )
       });
     }
@@ -618,7 +840,10 @@ getProviderCapabilities(providerName) {
         operation,
         capability,
         context,
-        error: new Error(`Provider '${providerName}' does not support capability '${capability}'`)
+        error: Object.assign(
+          new Error(`Provider '${providerName}' does not support capability '${capability}'`),
+          { code: 'PROVIDER_CAPABILITY_UNSUPPORTED', classification: 'provider_contract_incompatible' }
+        )
       });
     }
 

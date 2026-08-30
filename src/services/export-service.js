@@ -1,5 +1,6 @@
 const EXPORT_RESOURCES = Object.freeze(['audit-log', 'users', 'roles', 'providers', 'scheduler', 'status']);
 const EXPORT_FORMATS = Object.freeze(['json', 'csv']);
+const CSV_FORMULA_PREFIXES = /^[=+\-@\t\r]/;
 
 export class ExportService {
   constructor({ managementService, accessManagementService, auditLogService, clock = () => new Date() } = {}) {
@@ -133,7 +134,8 @@ export class ExportService {
   }
 
   #escapeCsv(value) {
-    const text = value === null || value === undefined ? '' : String(value);
+    const rawText = value === null || value === undefined ? '' : String(value);
+    const text = CSV_FORMULA_PREFIXES.test(rawText) ? `'${rawText}` : rawText;
     if (!/[",\n\r]/.test(text)) {
       return text;
     }

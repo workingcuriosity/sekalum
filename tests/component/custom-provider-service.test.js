@@ -8,7 +8,7 @@ import { ProviderManager } from '../../src/managers/provider-manager.js';
 import { ProviderDefinition } from '../../src/models/provider-definition.js';
 import { ProviderCapabilities } from '../../src/models/provider-capabilities.js';
 
-function createService(records = [], { auditLogService = null } = {}) {
+function createService(records = [], { auditLogService = null, credentialStore = null, consumerGrantStore = null } = {}) {
   const store = {
     async list() { return structuredClone(records); },
     async get(key) { return structuredClone(records.find((entry) => entry.key === key) ?? null); },
@@ -25,7 +25,7 @@ function createService(records = [], { auditLogService = null } = {}) {
     }
   };
   const registry = new ProviderRegistry({ logger: { info() {} } });
-  return { service: new CustomProviderService({ store, providerRegistry: registry, auditLogService }), registry, records, store };
+  return { service: new CustomProviderService({ store, providerRegistry: registry, credentialStore, consumerGrantStore, auditLogService }), registry, records, store };
 }
 
 function provider() {
@@ -54,6 +54,99 @@ test('CustomProviderService persists and immediately registers a declarative pro
   assert.deepEqual(registry.get('acme-service').providerMethodBindings[0].toJSON(), {
     methodKey: 'api-key', displayName: 'Acme API key', description: 'Use an API key', metadata: {}, operationCapabilities: []
   });
+});
+
+test('CustomProviderService edits metadata and replaces the registered definition', async () => {
+  const events = [];
+  const { service, registry, records } = createService([], {
+    auditLogService: { async record(entry) { events.push(entry); } }
+  });
+  await service.create(provider());
+
+  const updated = await service.update('acme-service', {
+    displayName: 'Acme Updated',
+    category: 'Operations',
+    description: 'Updated declarative provider'
+  }, { actorUserId: 'admin' });
+
+  assert.equal(updated.displayName, 'Acme Updated');
+  assert.equal(records[0].category, 'Operations');
+  assert.equal(registry.get('acme-service').displayName, 'Acme Updated');
+  assert.equal(events.at(-1).action, 'custom_provider_updated');
+  assert.equal(events.at(-1).details.classification, 'NON_BREAKING_METADATA_CHANGE');
+});
+
+test('CustomProviderService blocks profile-changing edits when credentials depend on the provider', async () => {
+  const events = [];
+  const { service, registry, records } = createService([provider()], {
+    credentialStore: { async listMetadata() { return [{ credentialId: 'credential-1', providerKey: 'acme-service' }]; } },
+    auditLogService: { async record(entry) { events.push(entry); } }
+  });
+  await service.hydrate();
+
+  await assert.rejects(
+    () => service.update('acme-service', {
+      credentialMethods: [{
+        ...provider().credentialMethods[0],
+        credentialFields: [{ ...provider().credentialMethods[0].credentialFields[0], key: 'replacementKey' }]
+      }],
+      providerMethodBindings: [{ methodKey: 'api-key' }],
+      credentialFields: [{ ...provider().credentialFields[0], key: 'replacementKey' }]
+    }, { actorUserId: 'admin' }),
+    { code: 'PROVIDER_EDIT_MIGRATION_REQUIRED' }
+  );
+  assert.equal(records[0].credentialFields[0].key, 'apiKey');
+  assert.equal(events.some((event) => event.action === 'custom_provider_updated' && event.result === 'blocked'), true);
+  assert.equal(registry.has('acme-service'), true);
+});
+
+test('CustomProviderService deletes an unused provider and records canonical audit actions', async () => {
+  const events = [];
+  const { service, registry, records } = createService([], {
+    auditLogService: { async record(entry) { events.push(entry); } }
+  });
+  await service.create(provider());
+
+  const deleted = await service.delete('acme-service', { actorUserId: 'admin' });
+
+  assert.equal(deleted.enabled, false);
+  assert.equal(records.length, 0);
+  assert.equal(registry.has('acme-service'), false);
+  assert.deepEqual(events.map((event) => event.action), [
+    'custom_provider_delete_attempted',
+    'custom_provider_deleted'
+  ]);
+});
+
+test('CustomProviderService blocks deletion when credentials reference the provider', async () => {
+  const events = [];
+  const { service, registry, records } = createService([provider()], {
+    credentialStore: { async listMetadata() { return [{ credentialId: 'credential-1', providerKey: 'acme-service' }]; } },
+    auditLogService: { async record(entry) { events.push(entry); } }
+  });
+  await service.hydrate();
+
+  await assert.rejects(() => service.delete('acme-service', { actorUserId: 'admin' }), { code: 'CUSTOM_PROVIDER_DEPENDENCIES' });
+  assert.equal(records.length, 1);
+  assert.equal(registry.has('acme-service'), true);
+  assert.equal(events.at(-1).action, 'custom_provider_delete_blocked');
+});
+
+test('CustomProviderService keeps built-in providers immutable for edit and delete', async () => {
+  const registry = new ProviderRegistry({ logger: { info() {} } });
+  registry.register(new ProviderDefinition({
+    name: 'threads',
+    provider: { startOAuth() {} },
+    apiClient: { kind: 'builtin-test' },
+    capabilities: new ProviderCapabilities([])
+  }));
+  const builtInService = new CustomProviderService({
+    store: { async get() { return null; } },
+    providerRegistry: registry
+  });
+
+  await assert.rejects(() => builtInService.update('threads', { displayName: 'Nope' }), { code: 'BUILTIN_PROVIDER_IMMUTABLE' });
+  await assert.rejects(() => builtInService.delete('threads'), { code: 'BUILTIN_PROVIDER_IMMUTABLE' });
 });
 
 test('a created custom provider is immediately available through the public ProviderManager contract', async () => {

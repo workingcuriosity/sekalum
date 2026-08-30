@@ -1,80 +1,119 @@
 import { sanitizeDiagnostic } from '../utils/safe-diagnostics.js';
+import { SerializedMutationQueue } from '../storage/serialized-mutation-queue.js';
+import { applyAuditRetentionPolicy } from './audit-retention-policy.js';
 
 const ACTOR_TYPES = Object.freeze(['user', 'consumer', 'api-token', 'service', 'legacy-ambiguous']);
 
 export class AuditLogService {
-  constructor({ store = null, clock = () => new Date() } = {}) {
+  constructor({ store = null, clock = () => new Date(), logger = console } = {}) {
     this.store = store;
     this.clock = clock;
+    this.logger = logger;
     this.entries = [];
+    this.mutationQueue = new SerializedMutationQueue();
   }
 
   async record(input = {}) {
+    return this.mutationQueue.run(() => this.#record(input));
+  }
+
+  async #record(input = {}) {
     const entry = this.#normalizeEntry(input);
     const entries = await this.#loadEntries();
-    entries.push(entry);
-    await this.#saveEntries(entries);
+    const records = await this.#saveEntries([...entries, entry]);
+    if (!records.some((record) => record.entryId === entry.entryId && record.timestamp === entry.timestamp)) {
+      throw this.#auditNotRetained();
+    }
     return this.#entryItem(entry);
   }
 
   async list(filters = {}) {
-    const entries = await this.#loadEntries();
-    return entries
-      .filter((entry) => this.#matchesFilters(entry, filters))
-      .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
-      .map((entry) => this.#entryItem(entry));
+    return this.mutationQueue.run(async () => {
+      const entries = await this.#loadEntries({ persistBounded: true });
+      return entries
+        .filter((entry) => this.#matchesFilters(entry, filters))
+        .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp))
+        .map((entry) => this.#entryItem(entry));
+    });
   }
 
   async get(entryId) {
-    const normalizedEntryId = this.#normalizeRequiredString(entryId, 'entryId');
-    const entries = await this.#loadEntries();
-    const entry = entries.find((item) => item.entryId === normalizedEntryId);
+    return this.mutationQueue.run(async () => {
+      const normalizedEntryId = this.#normalizeRequiredString(entryId, 'entryId');
+      const entries = await this.#loadEntries({ persistBounded: true });
+      const entry = entries.find((item) => item.entryId === normalizedEntryId);
 
-    if (!entry) {
-      throw this.#notFound(`Audit entry '${normalizedEntryId}' not found`);
-    }
+      if (!entry) {
+        throw this.#notFound(`Audit entry '${normalizedEntryId}' not found`);
+      }
 
-    return this.#entryItem(entry);
+      return this.#entryItem(entry);
+    });
   }
 
 
   async replaceEntries(entries = []) {
+    return this.mutationQueue.run(() => this.#replaceEntries(entries));
+  }
+
+  async #replaceEntries(entries = []) {
     if (!Array.isArray(entries)) {
       throw this.#badRequest('entries must be an array');
     }
 
-    const records = entries.map((entry) => this.#normalizeStoredEntry(entry));
-
-    await this.#saveEntries(records);
-    return records.map((entry) => this.#entryItem(entry));
+    const records = this.#normalizeStoredEntries(entries);
+    const bounded = await this.#saveEntries(records);
+    return bounded.map((entry) => this.#entryItem(entry));
   }
 
-  async #loadEntries() {
+  async #loadEntries({ persistBounded = false } = {}) {
+    let data;
     if (!this.store?.load) {
-      return this.entries.map((entry) => this.#normalizeStoredEntry(entry));
+      data = { entries: this.entries };
+    } else {
+      try {
+        data = await this.store.load();
+      } catch (error) {
+        if (error?.code === 'ENOENT') {
+          data = { entries: [] };
+        } else {
+          throw error;
+        }
+      }
     }
 
-    try {
-      const data = await this.store.load();
-      const entries = Array.isArray(data?.entries) ? data.entries : [];
-      return entries.map((entry) => this.#normalizeStoredEntry(entry));
-    } catch (error) {
-      if (error?.code === 'ENOENT') {
-        return [];
-      }
-      throw error;
+    const malformedEnvelope = data !== null
+      && data !== undefined
+      && !Array.isArray(data?.entries);
+    if (malformedEnvelope) {
+      this.#warnMalformedLegacyEnvelope();
     }
+    const rawEntries = Array.isArray(data?.entries) ? data.entries : [];
+    const records = this.#normalizeStoredEntries(rawEntries);
+    const bounded = applyAuditRetentionPolicy(records, { now: this.#clockDate() });
+    const changed = malformedEnvelope
+      || records.length !== rawEntries.length
+      || bounded.dropped > 0
+      || JSON.stringify(records) !== JSON.stringify(bounded.entries);
+
+    if (persistBounded && changed) {
+      await this.#saveEntries(bounded.entries);
+    }
+
+    return bounded.entries;
   }
 
-  async #saveEntries(entries) {
-    const records = entries.map((entry) => ({ ...entry, details: this.#cloneDetails(entry.details) }));
+  async #saveEntries(entries, { now = this.#clockDate() } = {}) {
+    const bounded = applyAuditRetentionPolicy(entries, { now, onMalformed: () => this.#warnMalformedLegacyRecord() });
+    const records = bounded.entries.map((entry) => ({ ...entry, details: this.#cloneDetails(entry.details) }));
 
     if (!this.store?.save) {
       this.entries = records;
-      return;
+      return records;
     }
 
     await this.store.save({ entries: records });
+    return records;
   }
 
   #normalizeEntry(input) {
@@ -82,7 +121,9 @@ export class AuditLogService {
     const actor = this.#normalizeActorFields(input);
 
     return {
-      entryId: input.entryId ?? this.#createEntryId(timestamp),
+      entryId: input.entryId === undefined || input.entryId === null
+        ? this.#createEntryId(timestamp)
+        : this.#normalizeRequiredString(input.entryId, 'entryId'),
       timestamp,
       ...actor,
       roleKey: this.#normalizeOptionalString(input.roleKey),
@@ -106,7 +147,7 @@ export class AuditLogService {
 
     return {
       entryId: this.#normalizeRequiredString(input.entryId, 'entryId'),
-      timestamp: this.#normalizeRequiredString(input.timestamp, 'timestamp'),
+      timestamp: this.#normalizeStoredTimestamp(input.timestamp),
       ...this.#normalizeActorFields(actorInput),
       roleKey: this.#normalizeOptionalString(input.roleKey),
       action,
@@ -115,6 +156,18 @@ export class AuditLogService {
       result: this.#normalizeResult(input.result),
       details
     };
+  }
+
+  #normalizeStoredEntries(entries) {
+    const records = [];
+    for (const entry of entries) {
+      try {
+        records.push(this.#normalizeStoredEntry(entry));
+      } catch {
+        this.#warnMalformedLegacyRecord();
+      }
+    }
+    return records;
   }
 
   #legacyActorInput(input) {
@@ -190,19 +243,22 @@ export class AuditLogService {
     if (filters.result && entry.result !== filters.result) {
       return false;
     }
-    if (filters.from && entry.timestamp < filters.from) {
+    if (filters.from && this.#filterTimestamp(entry.timestamp) < this.#filterTimestamp(filters.from)) {
       return false;
     }
-    if (filters.to && entry.timestamp > filters.to) {
+    if (filters.to && this.#filterTimestamp(entry.timestamp) > this.#filterTimestamp(filters.to)) {
       return false;
     }
     return true;
   }
 
   #timestamp() {
+    return this.#clockDate().toISOString();
+  }
+
+  #clockDate() {
     const value = this.clock();
-    const date = value instanceof Date ? value : new Date(value);
-    return date.toISOString();
+    return value instanceof Date ? new Date(value.getTime()) : new Date(value);
   }
 
   #createEntryId(timestamp) {
@@ -245,6 +301,19 @@ export class AuditLogService {
     return value.trim();
   }
 
+  #normalizeStoredTimestamp(value) {
+    const timestamp = this.#normalizeRequiredString(value, 'timestamp');
+    if (!Number.isFinite(new Date(timestamp).getTime())) {
+      throw this.#badRequest('timestamp must be a valid date');
+    }
+    return timestamp;
+  }
+
+  #filterTimestamp(value) {
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : Number.NaN;
+  }
+
   #normalizeOptionalString(value) {
     if (value === undefined || value === null || value === '') {
       return null;
@@ -282,5 +351,20 @@ export class AuditLogService {
     error.statusCode = 404;
     error.code = 'NOT_FOUND';
     return error;
+  }
+
+  #auditNotRetained() {
+    const error = new Error('Audit event was not retained under the active retention policy');
+    error.statusCode = 500;
+    error.code = 'AUDIT_EVENT_NOT_RETAINED';
+    return error;
+  }
+
+  #warnMalformedLegacyRecord() {
+    this.logger?.warn?.('Excluded malformed legacy audit record during retention convergence');
+  }
+
+  #warnMalformedLegacyEnvelope() {
+    this.logger?.warn?.('Replaced malformed legacy audit envelope during retention convergence');
   }
 }

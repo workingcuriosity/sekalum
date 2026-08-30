@@ -1,4 +1,5 @@
 import { safeError } from '../utils/safe-diagnostics.js';
+import { authenticatedUserId } from '../utils/authenticated-user.js';
 
 export class AccessManagementController {
   constructor({ accessManagementService }) {
@@ -43,6 +44,18 @@ export class AccessManagementController {
     }
   }
 
+  async bootstrapFirstAdministrator(req, res) {
+    try {
+      const data = await this.accessManagementService.bootstrapFirstAdministrator(
+        req.body ?? {},
+        req.get('x-admin-bootstrap-token')
+      );
+      this.#sendSuccess(res, data, 201);
+    } catch (error) {
+      this.#sendError(res, error);
+    }
+  }
+
   async updateUser(req, res) {
     try {
       const data = await this.accessManagementService.updateUser(req.params.userId, { ...(req.body ?? {}), actorUserId: this.#userIdFromRequest(req) });
@@ -71,7 +84,7 @@ export class AccessManagementController {
   }
 
   #userIdFromRequest(req) {
-    return req.auth?.userId ?? req.headers?.['x-credential-hub-user'] ?? null;
+    return authenticatedUserId(req);
   }
 
   #sendSuccess(res, data, statusCode = 200) {

@@ -18,12 +18,8 @@ export const ResolveDiagnosticCode = Object.freeze({
 
 export function resolveDiagnostic(code, { publicResponse = false } = {}) {
   if (publicResponse && code !== ResolveDiagnosticCode.INVALID_SECRET_REQUEST && code !== 'INTERNAL_ERROR') {
-    if (code === ResolveDiagnosticCode.CREDENTIAL_NOT_FOUND) {
-      return Object.freeze({ code, statusCode: 404, message: 'The selected credential is not available' });
-    }
-    if (code === ResolveDiagnosticCode.CREDENTIAL_NOT_CONSUMABLE) {
-      return Object.freeze({ code, statusCode: 409, message: 'The selected credential is not active' });
-    }
+    // Before a matching grant is established, credential existence and
+    // lifecycle state are not public information to a Consumer.
     return Object.freeze({ code: ResolveDiagnosticCode.NOT_AVAILABLE, statusCode: 403, message: 'The requested credential is not available to this consumer' });
   }
 

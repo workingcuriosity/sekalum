@@ -1,4 +1,8 @@
 import { safeError, safeErrorMessage, sanitizeDiagnostic } from '../utils/safe-diagnostics.js';
+import { authenticatedUserId } from '../utils/authenticated-user.js';
+import { CredentialMetadata, CredentialMetadataPolicy } from '../models/credential-metadata.js';
+
+export const MAX_BULK_CREDENTIAL_IDS = 100;
 
 export class CredentialController {
   constructor({ credentialManager, providerManager = null, credentialTransferService = null }) {
@@ -64,17 +68,19 @@ export class CredentialController {
 
       const { action, credentialIds } = req.body ?? {};
 
-      if (!Array.isArray(credentialIds) || credentialIds.length === 0) {
-        throw this.#badRequest('credentialIds must contain at least one credential id');
+      if (!Array.isArray(credentialIds) || credentialIds.length === 0 || credentialIds.length > MAX_BULK_CREDENTIAL_IDS) {
+        throw this.#badRequest(`credentialIds must contain between 1 and ${MAX_BULK_CREDENTIAL_IDS} credential ids`);
       }
 
       if (credentialIds.some((credentialId) => typeof credentialId !== 'string' || credentialId.trim() === '')) {
         throw this.#badRequest('credentialIds must only contain non-empty strings');
       }
 
+      const normalizedIds = [...new Set(credentialIds.map((credentialId) => credentialId.trim()))];
+      if (normalizedIds.length !== credentialIds.length) throw this.#badRequest('credentialIds must not contain duplicates');
       const result = await this.credentialManager.executeBulkAction({
         action,
-        credentialIds: credentialIds.map((credentialId) => credentialId.trim())
+        credentialIds: normalizedIds
       });
 
       res.status(200).json({
@@ -295,7 +301,7 @@ export class CredentialController {
 
       res.status(200).json({
         success: true,
-        data: this.#toJSON(result.data)
+        data: this.#toLifecycleResponseJSON(result.data)
       });
     } catch (error) {
       this.#sendError(res, this.#normalizeNotFoundError(error));
@@ -362,7 +368,7 @@ export class CredentialController {
 
   #contextFromRequest(req) {
     return {
-      userId: req.auth?.userId ?? req.headers?.['x-credential-hub-user'] ?? 'system',
+      userId: authenticatedUserId(req) ?? 'system',
       roleKey: req.auth?.roleKey ?? null,
       authMethod: req.auth?.authMethod ?? null
     };
@@ -625,10 +631,112 @@ export class CredentialController {
       results: result.results.map((entry) => ({
         credentialId: entry.credentialId,
         success: entry.success,
-        data: entry.success ? this.#toJSON(entry.data) : undefined,
+        data: entry.success ? this.#toLifecycleResponseJSON(entry.data) : undefined,
         error: entry.success ? undefined : entry.error
       }))
     };
+  }
+
+  #toLifecycleResponseJSON(value) {
+    if (this.#isCredentialValue(value)) {
+      return this.#toLifecycleCredentialJSON(value);
+    }
+
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return value;
+    }
+
+    const response = {};
+    if (value.action !== undefined) response.action = value.action;
+    if (value.credential !== undefined) response.credential = this.#toLifecycleCredentialJSON(value.credential);
+    if (value.credentialId !== undefined) response.credentialId = value.credentialId;
+    if (value.deleted !== undefined) response.deleted = Boolean(value.deleted);
+    if (value.idempotent !== undefined) response.idempotent = Boolean(value.idempotent);
+    if (value.provider !== undefined) {
+      const provider = this.#safeProviderOutcome(value.provider);
+      if (Object.keys(provider).length > 0) response.provider = provider;
+    }
+
+    if (Object.keys(response).length > 0) return response;
+    return this.#safeProviderOutcome(value);
+  }
+
+  #toLifecycleCredentialJSON(value) {
+    const raw = this.#toJSON(value) ?? {};
+    const metadata = raw.metadata ?? {};
+    const secretNames = Array.isArray(raw.secretNames)
+      ? raw.secretNames
+      : (Array.isArray(raw.secrets) ? raw.secrets.map((secret) => secret.name) : []);
+    const type = raw.credentialMethodKey
+      ?? metadata.type
+      ?? metadata.credentialType
+      ?? metadata.custom?.type
+      ?? this.#inferCredentialType({ ...raw, secretNames });
+    const safeMetadata = this.#safeMetadata(metadata);
+    const safe = {
+      credentialId: raw.credentialId,
+      credentialKey: raw.credentialKey,
+      providerKey: raw.providerKey,
+      credentialMethodKey: raw.credentialMethodKey ?? null,
+      externalReference: raw.externalReference ?? null,
+      lifecycleState: raw.lifecycleState ?? null,
+      status: raw.lifecycleState ?? null,
+      metadata: safeMetadata,
+      secretNames,
+      secretInventory: secretNames.map((name) => ({ name })),
+      providerName: raw.providerName ?? raw.providerKey,
+      credentialType: type,
+      expiresAt: safeMetadata.expiresAt,
+      createdAt: raw.createdAt ?? null,
+      updatedAt: raw.updatedAt ?? null,
+      version: raw.version ?? null,
+      supportedActions: this.#supportedActionsFor(type, raw.lifecycleState)
+    };
+
+    if (raw.providerProfile && typeof raw.providerProfile === 'object') {
+      safe.providerProfile = Object.fromEntries(
+        ['providerKey', 'version', 'providerKind', 'digest']
+          .filter((key) => raw.providerProfile[key] !== undefined)
+          .map((key) => [key, raw.providerProfile[key]])
+      );
+    }
+
+    return safe;
+  }
+
+  #isCredentialValue(value) {
+    if (!value || typeof value !== 'object') return false;
+    if (typeof value.toMetadataJSON === 'function') return true;
+    if (typeof value.toJSON === 'function') {
+      const raw = value.toJSON();
+      return raw && typeof raw === 'object'
+        && ('credentialId' in raw || 'secrets' in raw || 'lifecycleState' in raw);
+    }
+    return 'credentialId' in value
+      && ('providerKey' in value || 'secrets' in value || 'lifecycleState' in value);
+  }
+
+  #safeProviderOutcome(value) {
+    const raw = value && typeof value.toJSON === 'function' ? value.toJSON() : value;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+
+    const allowedKeys = [
+      'available',
+      'checkedAt',
+      'classification',
+      'code',
+      'healthy',
+      'healthStatus',
+      'latencyMs',
+      'messageKey',
+      'providerKey',
+      'status',
+      'validated'
+    ];
+
+    return Object.fromEntries(allowedKeys
+      .filter((key) => Object.hasOwn(raw, key) && (typeof raw[key] !== 'object' || raw[key] === null))
+      .map((key) => [key, raw[key]]));
   }
 
   #toDetailJSON(value) {
@@ -761,21 +869,49 @@ export class CredentialController {
 
   #toListJSON(value) {
     const data = this.#toJSON(value);
-    const { secrets: _secrets, ...publicData } = data;
     const metadata = data.metadata ?? {};
     const type = data.credentialMethodKey ?? metadata.type ?? metadata.credentialType ?? metadata.custom?.type ?? this.#inferCredentialType(data);
+    const safeMetadata = this.#safeMetadata(metadata);
 
     return {
-      ...publicData,
-      providerName: metadata.providerName ?? data.providerKey,
+      credentialId: data.credentialId,
+      credentialGeneration: data.credentialGeneration,
+      credentialKey: data.credentialKey,
+      providerKey: data.providerKey,
+      credentialMethodKey: data.credentialMethodKey ?? null,
+      externalReference: data.externalReference ?? null,
+      lifecycleState: data.lifecycleState ?? null,
+      metadata: safeMetadata,
+      ...(Array.isArray(data.secretNames) ? { secretNames: [...data.secretNames] } : {}),
+      ...(Array.isArray(data.secretInventory) ? { secretInventory: this.#secretInventory(data.secretInventory) } : {}),
+      createdAt: data.createdAt ?? null,
+      updatedAt: data.updatedAt ?? null,
+      version: data.version ?? null,
+      ...(data.providerProfile && typeof data.providerProfile === 'object'
+        ? { providerProfile: Object.fromEntries(['providerKey', 'version', 'providerKind', 'digest']
+          .filter((key) => data.providerProfile[key] !== undefined)
+          .map((key) => [key, data.providerProfile[key]])) }
+        : {}),
+      providerName: safeMetadata.providerName ?? data.providerKey,
       credentialType: type,
       status: data.lifecycleState,
-      expiresAt: metadata.expiresAt ?? null,
-      lastValidatedAt: metadata.lastValidatedAt ?? metadata.custom?.lastValidatedAt ?? null,
-      lastRefreshAt: metadata.lastRefreshAt ?? metadata.custom?.lastRefreshAt ?? null,
-      healthStatus: metadata.healthStatus ?? metadata.custom?.healthStatus ?? null,
+      expiresAt: safeMetadata.expiresAt ?? null,
+      lastValidatedAt: safeMetadata.lastValidatedAt ?? null,
+      lastRefreshAt: safeMetadata.lastRefreshAt ?? null,
+      healthStatus: safeMetadata.healthStatus ?? null,
       supportedActions: this.#supportedActionsFor(type, data.lifecycleState)
     };
+  }
+
+  #safeMetadata(metadata = {}) {
+    const raw = metadata && typeof metadata === 'object' ? metadata : {};
+    const custom = raw.custom && typeof raw.custom === 'object' ? raw.custom : {};
+    const flatCustom = Object.fromEntries(
+      [...CredentialMetadataPolicy.publicCustomKeys]
+        .filter((key) => Object.hasOwn(raw, key) && !Object.hasOwn(custom, key))
+        .map((key) => [key, raw[key]])
+    );
+    return CredentialMetadata.from({ ...raw, custom: { ...custom, ...flatCustom } }).toPublicJSON();
   }
 
   #inferCredentialType(data) {

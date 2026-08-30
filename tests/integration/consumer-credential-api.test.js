@@ -133,14 +133,22 @@ async function resolve(baseUrl, credentialKey, headers, secretNames) {
   });
 }
 
-async function discover(baseUrl, headers) {
-  return fetch(`${baseUrl}/api/v1/consumer/credentials`, { headers });
+async function batchResolve(baseUrl, headers, requests) {
+  return fetch(`${baseUrl}/api/v1/consumer/credentials/resolve-batch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ requests })
+  });
+}
+
+async function discover(baseUrl, headers, query = '') {
+  return fetch(`${baseUrl}/api/v1/consumer/credentials${query}`, { headers });
 }
 
 function assertSafeDiscoveryBody(body) {
   const serialized = JSON.stringify(body);
   assert.doesNotMatch(serialized, /credentialId|providerKey|credentialMethodKey|secretNames/);
-  assert.doesNotMatch(serialized, /consumer-(integration|refresh|openai)-secret|signingSecret|apiKey/);
+  assert.doesNotMatch(serialized, /consumer-(integration|refresh|openai)-secret|signingSecret/);
   assert.doesNotMatch(serialized, /Error:|stack|internal test detail/i);
 }
 
@@ -204,6 +212,91 @@ test('Consumer Discovery omits an empty Runtime-Public projection', async () => 
     assert.equal(Object.hasOwn(body.data.credentials[0], 'runtimePublic'), false);
     assert.doesNotMatch(JSON.stringify(body), /runtimePublic: \{\}|runtimePublic.*null/);
     assertSafeDiscoveryBody(body);
+  } finally {
+    server.close();
+  }
+});
+
+test('Consumer Discovery filters only the authorized public metadata and supports Discover-Select-Resolve', async () => {
+  const setupResult = await setup();
+  setupResult.credentials.set('threads-credential', new Credential({
+    ...setupResult.credentials.get('threads-credential').toJSON(),
+    metadata: { displayName: 'Shared Integration', tags: ['Primary', 'Social'] }
+  }));
+  setupResult.credentials.set('openai-credential', new Credential({
+    ...setupResult.credentials.get('openai-credential').toJSON(),
+    metadata: { displayName: 'Shared Integration', tags: ['Primary', 'AI'] }
+  }));
+  const token = await setupResult.apiTokenService.createToken({ name: 'Consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  const { server, baseUrl } = await listen(setupResult.server.app);
+
+  try {
+    const filtered = await discover(baseUrl, { authorization: `Bearer ${token.token}` }, '?displayName=shared%20integration&tag=primary');
+    const filteredBody = await filtered.json();
+    assert.equal(filtered.status, 200);
+    assert.deepEqual(filteredBody.data.credentials.map(({ credentialKey }) => credentialKey), ['threads-public-key']);
+    assert.deepEqual(filteredBody.data.credentials[0].metadata, { displayName: 'Shared Integration', tags: ['Primary', 'Social'] });
+    assertSafeDiscoveryBody(filteredBody);
+
+    const selected = filteredBody.data.credentials[0].credentialKey;
+    const resolved = await resolve(baseUrl, selected, { authorization: `Bearer ${token.token}` }, ['accessToken']);
+    const resolvedBody = await resolved.json();
+    assert.equal(resolved.status, 200);
+    assert.equal(resolvedBody.data.secrets.accessToken, 'consumer-integration-secret');
+    assert.doesNotMatch(JSON.stringify(filteredBody), /openai-public-key|openai-credential/);
+  } finally {
+    server.close();
+  }
+});
+
+test('Consumer Discovery filters support zero, one, multiple and unfiltered results', async () => {
+  const setupResult = await setup();
+  setupResult.credentials.set('threads-credential', new Credential({
+    ...setupResult.credentials.get('threads-credential').toJSON(),
+    metadata: { displayName: 'Threads Primary', tags: ['shared'] }
+  }));
+  setupResult.credentials.set('openai-credential', new Credential({
+    ...setupResult.credentials.get('openai-credential').toJSON(),
+    metadata: { displayName: 'OpenAI Primary', tags: ['shared'] }
+  }));
+  const token = await setupResult.apiTokenService.createToken({ name: 'Consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'openai-credential', providerKey: 'openai', secretNames: ['apiKey'] });
+  const { server, baseUrl } = await listen(setupResult.server.app);
+
+  try {
+    for (const [query, expected] of [
+      ['', 2],
+      ['?tag=shared', 2],
+      ['?displayName=threads%20primary', 1],
+      ['?displayName=not-found', 0]
+    ]) {
+      const response = await discover(baseUrl, { authorization: `Bearer ${token.token}` }, query);
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.data.credentials.length, expected);
+      assertSafeDiscoveryBody(body);
+    }
+  } finally {
+    server.close();
+  }
+});
+
+test('Consumer Discovery rejects unsupported and repeated filters without leaking query details', async () => {
+  const setupResult = await setup();
+  const token = await setupResult.apiTokenService.createToken({ name: 'Consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const { server, baseUrl } = await listen(setupResult.server.app);
+
+  try {
+    for (const query of ['?provider=threads', '?tag=one&tag=two']) {
+      const response = await discover(baseUrl, { authorization: `Bearer ${token.token}` }, query);
+      assert.equal(response.status, 400);
+      const body = await response.json();
+      assert.deepEqual(body.error, { code: 'INVALID_DISCOVERY_FILTER', message: 'Credential discovery filters are invalid' });
+      assertSafeDiscoveryBody(body);
+      assert.doesNotMatch(JSON.stringify(body), /threads|one|two/);
+    }
   } finally {
     server.close();
   }
@@ -485,6 +578,62 @@ test('Consumer REST API resolves with the public credentialKey', async () => {
   }
 });
 
+test('Consumer REST API batch Resolves independent entries and returns safe partial errors', async () => {
+  const setupResult = await setup();
+  const token = await setupResult.apiTokenService.createToken({ name: 'Consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'openai-credential', providerKey: 'openai', secretNames: ['apiKey'] });
+  const { server, baseUrl } = await listen(setupResult.server.app);
+
+  try {
+    const response = await batchResolve(baseUrl, { authorization: `Bearer ${token.token}` }, [
+      { credentialKey: 'threads-public-key', secretNames: ['accessToken'] },
+      { credentialKey: 'openai-public-key', secretNames: ['apiKey'] },
+      { credentialKey: 'missing-public-key', secretNames: ['apiKey'] },
+      { credentialKey: 'threads-public-key', secretNames: ['clientId'] }
+    ]);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(body.data.summary, { total: 4, succeeded: 2, failed: 2 });
+    assert.deepEqual(body.data.results.map(({ index, credentialKey, success, error }) => ({ index, credentialKey, success, code: error?.code })), [
+      { index: 0, credentialKey: 'threads-public-key', success: true, code: undefined },
+      { index: 1, credentialKey: 'openai-public-key', success: true, code: undefined },
+      { index: 2, credentialKey: 'missing-public-key', success: false, code: 'RESOLVE_NOT_AVAILABLE' },
+      { index: 3, credentialKey: 'threads-public-key', success: false, code: 'RESOLVE_NOT_AVAILABLE' }
+    ]);
+    assert.equal(body.data.results[0].data.secrets.accessToken, 'consumer-integration-secret');
+    assert.equal(body.data.results[1].data.secrets.apiKey, 'consumer-openai-secret');
+    assert.doesNotMatch(JSON.stringify(body.data.results.slice(2)), /consumer-(integration|openai|refresh)-secret/);
+  } finally {
+    server.close();
+  }
+});
+
+test('Consumer REST API batch Resolve returns all-failure results and rejects invalid envelopes', async () => {
+  const setupResult = await setup();
+  const token = await setupResult.apiTokenService.createToken({ name: 'Consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const { server, baseUrl } = await listen(setupResult.server.app);
+
+  try {
+    const failed = await batchResolve(baseUrl, { authorization: `Bearer ${token.token}` }, [
+      { credentialKey: 'missing-a', secretNames: ['apiKey'] },
+      { credentialKey: 'missing-b', secretNames: ['apiKey'] }
+    ]);
+    const failedBody = await failed.json();
+    assert.equal(failed.status, 200);
+    assert.deepEqual(failedBody.data.summary, { total: 2, succeeded: 0, failed: 2 });
+    assert.deepEqual(failedBody.data.results.map(({ error }) => error.code), ['RESOLVE_NOT_AVAILABLE', 'RESOLVE_NOT_AVAILABLE']);
+
+    const invalid = await batchResolve(baseUrl, { authorization: `Bearer ${token.token}` }, []);
+    const invalidBody = await invalid.json();
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(invalidBody.error, { code: 'INVALID_BATCH_REQUEST', message: 'Batch Resolve accepts between 1 and 20 requests' });
+  } finally {
+    server.close();
+  }
+});
+
 test('Consumer Resolve isolates same-provider credentials across sequential, iterative and concurrent reuse', async () => {
   const setupResult = await setup();
   const secondCredential = new Credential({
@@ -623,16 +772,22 @@ test('Consumer REST API denies header fallback, missing scope, missing grants, r
     assert.equal((await expiredResponse.json()).error.code, 'API_TOKEN_AUTH_FAILED');
 
     const inactive = await resolve(baseUrl, 'threads-credential', { authorization: `Bearer ${scoped.token}` }, ['accessToken']);
-    assert.equal(inactive.status, 409);
-    assert.equal((await inactive.json()).error.code, 'CREDENTIAL_NOT_CONSUMABLE');
+    assert.equal(inactive.status, 403);
+    const inactiveBody = await inactive.json();
+    assert.deepEqual(inactiveBody.error, {
+      code: 'RESOLVE_NOT_AVAILABLE',
+      message: 'The requested credential is not available to this consumer'
+    });
 
     const noGrant = await resolve(baseUrl, 'openai-credential', { authorization: `Bearer ${scoped.token}` }, ['apiKey']);
     assert.equal(noGrant.status, 403);
-    assert.equal((await noGrant.json()).error.code, 'RESOLVE_NOT_AVAILABLE');
+    const noGrantBody = await noGrant.json();
+    assert.deepEqual(noGrantBody.error, inactiveBody.error);
 
     const missingCredential = await resolve(baseUrl, 'missing-credential', { authorization: `Bearer ${scoped.token}` }, ['apiKey']);
-    assert.equal(missingCredential.status, 404);
-    assert.equal((await missingCredential.json()).error.code, 'CREDENTIAL_NOT_FOUND');
+    assert.equal(missingCredential.status, 403);
+    const missingCredentialBody = await missingCredential.json();
+    assert.deepEqual(missingCredentialBody.error, inactiveBody.error);
 
     await setupResult.apiTokenService.revokeToken(scoped.apiToken.id);
     const revoked = await resolve(baseUrl, 'threads-credential', { authorization: `Bearer ${scoped.token}` }, ['accessToken']);

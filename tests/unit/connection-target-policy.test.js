@@ -25,7 +25,7 @@ test('ConnectionTargetPolicy blocks loopback, link-local, and private targets by
     lookup: async () => [{ address: '127.0.0.1', family: 4 }]
   });
 
-  for (const host of ['127.0.0.1', '169.254.169.254', '10.0.0.8', '192.168.1.10', '::1', 'fe80::1']) {
+  for (const host of ['127.0.0.1', '169.254.169.254', '10.0.0.8', '192.168.1.10', '::1', 'fe80::1', '0:0:0:0:0:ffff:c0a8:0101']) {
     await assert.rejects(
       () => policy.resolveAllowedTarget(host),
       (error) => error.code === 'CREDENTIAL_CONNECTION_TARGET_BLOCKED'

@@ -1,4 +1,5 @@
 import { adminApi, managementTokenStore } from './auth.js';
+import { buildConsumerProfileSuggestion, listConsumerProfileTemplates } from './consumer-profiles.js';
 import { getLanguage, initI18n, onLanguageChange, t } from './i18n.js';
 import { mountAdminShell } from './admin-shell.js';
 
@@ -29,6 +30,9 @@ const createProvider = document.getElementById('consumer-grant-create-provider')
 const createSecrets = document.getElementById('consumer-grant-create-secrets');
 const createPreview = document.querySelector('#consumer-grant-create-preview .grant-preview-content');
 const editPreview = document.querySelector('#consumer-grant-edit-preview .grant-preview-content');
+const createProfile = document.getElementById('consumer-grant-create-profile');
+const profileDescription = document.getElementById('consumer-grant-profile-description');
+const profileSuggestion = document.getElementById('consumer-grant-profile-suggestion');
 
 let grants = [];
 let consumers = new Map();
@@ -52,10 +56,12 @@ document.getElementById('consumer-grant-create-open').addEventListener('click', 
 document.getElementById('consumer-grant-create-close').addEventListener('click', closeCreate);
 document.getElementById('consumer-grant-create-cancel').addEventListener('click', closeCreate);
 createCredential.addEventListener('change', renderCreateSecrets);
+createProfile.addEventListener('change', renderProfileSuggestion);
+document.getElementById('consumer-grant-apply-profile').addEventListener('click', applyProfileSuggestions);
 createSecrets.addEventListener('change', renderCreatePreview);
 createForm.addEventListener('submit', submitCreate);
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !editSubmit.disabled) closeEdit(); });
-onLanguageChange(() => { renderGrants(grants); renderCreatePreview(); if (editGrant) updateEditSummary(); });
+onLanguageChange(() => { renderGrants(grants); renderCreatePreview(); renderProfileSuggestion(); if (editGrant) updateEditSummary(); });
 void loadGrants();
 
 async function loadGrants({ preserveMessages = false } = {}) {
@@ -193,18 +199,53 @@ function renderCreateOptions() {
     createCredential.append(option);
   }
   if (entries.length) createCredential.value = entries[0].credentialId;
+  renderProfileOptions();
   renderCreateSecrets();
 }
 
-function renderCreateSecrets() {
+function renderProfileOptions() {
+  createProfile.replaceChildren();
+  for (const profile of listConsumerProfileTemplates()) {
+    const option = document.createElement('option');
+    option.value = profile.id;
+    option.textContent = profile.label;
+    createProfile.append(option);
+  }
+  createProfile.value = 'none';
+  renderProfileSuggestion();
+}
+
+function renderProfileSuggestion() {
+  const credential = credentials.get(createCredential.value);
+  const suggestion = buildConsumerProfileSuggestion(createProfile.value || 'none', credential);
+  profileDescription.textContent = suggestion.description;
+  profileSuggestion.replaceChildren();
+  const settings = document.createElement('p');
+  settings.textContent = `${t('consumerGrants.profileScope')}: ${suggestion.recommendedScopes.join(', ')}. ${t('consumerGrants.profileFields')}: ${suggestion.suggestedSecretFields.join(', ') || t('consumerGrants.previewNone')}.`;
+  const hint = document.createElement('p');
+  hint.textContent = suggestion.documentationHint;
+  profileSuggestion.append(settings, hint);
+}
+
+function applyProfileSuggestions() {
+  const credential = credentials.get(createCredential.value);
+  const suggestion = buildConsumerProfileSuggestion(createProfile.value || 'none', credential);
+  if (suggestion.suggestedConsumerId) createForm.elements.consumerId.value = suggestion.suggestedConsumerId;
+  renderCreateSecrets({ selectedNames: suggestion.suggestedSecretFields });
+  renderProfileSuggestion();
+}
+
+function renderCreateSecrets({ selectedNames = [] } = {}) {
   const credential = credentials.get(createCredential.value);
   createProvider.textContent = credential ? `${t('common.provider')}: ${providerLabel(credential.providerKey)}` : '';
   createSecrets.replaceChildren();
   for (const name of credential?.secretNames ?? credential?.secretInventory?.map((field) => field.name) ?? []) {
     const label = document.createElement('label'); label.className = 'checkbox-row';
     const input = document.createElement('input'); input.type = 'checkbox'; input.name = 'secretNames'; input.value = name; input.dataset.grantSecret = name;
+    input.checked = selectedNames.includes(name);
     label.append(input, document.createTextNode(` ${name}`)); createSecrets.append(label);
   }
+  renderProfileSuggestion();
   renderCreatePreview();
 }
 

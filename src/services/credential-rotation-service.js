@@ -69,6 +69,8 @@ export class CredentialRotationService {
     const results = [];
 
     for (const item of plan.items) {
+      let committedRotation = null;
+      let completionAuditFailure = null;
       try {
         await this.#recordAudit('credential-rotation.started', item, context, 'success');
         const frameworkResult = await this.#rotateWithProviderFramework(item, context);
@@ -81,7 +83,13 @@ export class CredentialRotationService {
           continue;
         }
 
-        await this.#recordAudit('credential-rotation.completed', item, context, 'success');
+        committedRotation = frameworkResult;
+        try {
+          await this.#recordAudit('credential-rotation.completed', item, context, 'success');
+        } catch (auditError) {
+          completionAuditFailure = auditError;
+          throw auditError;
+        }
         await this.#recordRotationNotification({ ...item, success: true }, context);
         results.push({
           credentialId: item.credentialId,
@@ -92,6 +100,39 @@ export class CredentialRotationService {
           credential: this.#toJSON(frameworkResult.credential)
         });
       } catch (error) {
+        if (committedRotation && completionAuditFailure) {
+          const auditFailure = {
+            code: 'AUDIT_PERSISTENCE_FAILED',
+            message: 'Credential rotation committed but completion audit persistence failed'
+          };
+          try {
+            await this.#recordAudit('credential-rotation.audit-failed', item, context, 'failure', completionAuditFailure, {
+              committed: true,
+              auditPersistenceFailed: true
+            });
+          } catch {
+            // Preserve the explicit committed-mutation outcome when audit storage remains unavailable.
+          }
+          await this.#recordRotationNotification({
+            ...item,
+            success: true,
+            committed: true,
+            auditPersistenceFailed: true,
+            error: auditFailure
+          }, context);
+          results.push({
+            credentialId: item.credentialId,
+            providerKey: item.providerKey,
+            success: true,
+            committed: true,
+            auditPersistenceFailed: true,
+            skipped: false,
+            findings: item.findings,
+            credential: this.#toJSON(committedRotation.credential),
+            error: auditFailure
+          });
+          continue;
+        }
         const safe = safeError(error, { fallbackMessage: 'Credential rotation failed' });
         await this.#recordAudit('credential-rotation.failed', item, context, 'failure', error);
         await this.#recordRotationNotification({

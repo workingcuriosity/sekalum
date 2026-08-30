@@ -3,7 +3,7 @@ title: Configuration Reference
 document_id: DOC-CONFIGURATION-REFERENCE-INDEX
 classification: PUBLIC
 language: en
-version: 1.0.5
+version: 1.0.6
 status: Active
 category: Configuration
 canonical: true
@@ -18,6 +18,9 @@ dependent_documents:
   - docs/api-reference/index.md
   - docs/providers/README.md
 change_history:
+  - version: 1.0.6
+    date: 2026-08-26
+    change: Adds the high-entropy ADMIN_BOOTSTRAP_TOKEN configuration and fail-closed Bootstrap semantics.
   - version: 1.0.5
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -51,9 +54,11 @@ This reference contains only global runtime configuration. FTP, SFTP, and OpenAI
 | Key | Required | Default | Purpose |
 |---|---|---:|---|
 | `OAUTH_CALLBACK_PORT` | No | `3000` | HTTP port for the callback and REST server. |
+| `OAUTH_WIZARD_INTENT_TTL_MS` | No | `600000` | Existing governed lifetime for OAuth state, browser wizard intent, and flow-owned cleanup. |
 | `BASE_PATH` | No | `/` | Public path prefix for the admin interface, REST API, health endpoint, and OAuth callbacks. |
 | `CHECK_INTERVAL_HOURS` | No | `12` | Interval for refresh and rotation scheduler jobs. |
 | `REFRESH_BEFORE_DAYS` | No | `14` | Threshold used by credential lifecycle refresh logic. |
+| `ADMIN_BOOTSTRAP_TOKEN` | Required for first setup | None | High-entropy, at least 32-byte proof required for the one-time First Administrator Bootstrap. |
 
 ## Encryption at rest
 
@@ -61,6 +66,7 @@ Use either the single-key form or the versioned-key form. Keys must contain exac
 
 ```env
 TOKEN_ENCRYPTION_KEY=YOUR_32_CHARACTER_ENCRYPTION_KEY
+ADMIN_BOOTSTRAP_TOKEN=YOUR_HIGH_ENTROPY_BOOTSTRAP_TOKEN
 ```
 
 ```env
@@ -70,13 +76,25 @@ TOKEN_ENCRYPTION_KEY=YOUR_32_CHARACTER_ENCRYPTION_KEY
 
 `TOKEN_ENCRYPTION_KEYS` must be a non-empty JSON object with numeric versions. `TOKEN_ENCRYPTION_KEY_VERSION` selects the key used for new writes; old versions must remain available while payloads still reference them. The Storage Developer Guide defines the persistence and rotation behavior.
 
+### Bootstrap configuration
+
+`ADMIN_BOOTSTRAP_TOKEN` is the explicit proof-of-possession secret for the
+one-time First Administrator operation. It must be a high-entropy value of at
+least 32 bytes. A missing, weak or invalidly supplied value fails closed; the
+empty user collection is not an authorization grant. The Bootstrap token is
+distinct from `TOKEN_ENCRYPTION_KEY`, a Management Token and an API token. It
+is never persisted as an API token, returned, logged, audited or serialized in
+application output. After the first active administrator is durably persisted,
+the Bootstrap operation is closed and normal management requests require
+Bearer authentication, scope validation and RBAC.
+
 ## OAuth provider application configuration
 
 Release 1.0 uses **Wizard-managed provider application configuration** as the normal OAuth path. The Wizard requests the provider's client ID, client secret where required, and scopes from public provider metadata. The redirect URI is system-managed metadata (`visible: false`, `userConfigurable: false`, `systemManaged: true`) and is never accepted as a user decision. The OAuth-start route derives it from `PUBLIC_BASE_URL` when configured, otherwise from the validated request origin, plus `BASE_PATH` and the provider key. The Wizard exposes the resulting redirect URI, authorization endpoint, callback path, and scopes as read-only technical details. These values are application credentials for the provider integration; they are distinct from the user credential created by a successful OAuth callback.
 
 Provider application secrets are never returned by the Provider API, OAuth-start response, callback result page, or browser message. The browser stores neither client IDs nor client secrets in local storage. The encrypted record is referenced by an internal configuration ID so refresh operations can reuse the same application configuration.
 
-The record becomes durable only as part of a successfully imported OAuth credential. Sekalum removes it after OAuth-start failure, provider cancellation, callback or token-exchange failure, and credential-import failure so failed attempts do not leave unreferenced application secrets behind.
+The browser callback is bound to the initiating authenticated actor with a short-lived, state-specific HttpOnly/SameSite cookie; the callback does not accept an actor supplied by query string, header, or form input. OAuth state and the wizard intent are one-shot and use the same governed `OAUTH_WIZARD_INTENT_TTL_MS` lifetime. Expired flow state is purged without extending its lifetime. The record becomes durable only as part of a successfully imported OAuth credential. Sekalum removes flow-owned records after OAuth-start failure, provider cancellation, callback or token-exchange failure, credential-import failure, or expiry. On restart, only provider-configuration records unreferenced by persisted Credentials are removed; referenced durable configuration is preserved.
 
 Environment variables remain a compatibility fallback for existing deployments and the legacy `GET /oauth/:provider/login` entry point. Resolution order is:
 

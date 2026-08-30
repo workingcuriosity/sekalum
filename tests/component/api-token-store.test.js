@@ -65,6 +65,20 @@ test('ApiTokenStore upserts existing tokens immutably', async () => {
   assert.equal(tokens[0].version, 2);
 });
 
+test('ApiTokenStore preserves a persisted revocation against a stale last-used write', async () => {
+  const { store } = await createTempStore();
+  const token = createToken();
+
+  await store.save(token);
+  const revoked = token.withRevokedAt('2026-07-10T08:00:00.000Z');
+  await store.save(revoked);
+  const staleLastUsed = token.withLastUsedAt('2026-07-10T08:01:00.000Z');
+  const persisted = await store.save(staleLastUsed);
+
+  assert.equal(persisted.revokedAt.toISOString(), '2026-07-10T08:00:00.000Z');
+  assert.equal((await store.load(token.id)).revokedAt.toISOString(), '2026-07-10T08:00:00.000Z');
+});
+
 test('ApiTokenStore finds tokens by prefix for future bearer authentication', async () => {
   const { store } = await createTempStore();
 

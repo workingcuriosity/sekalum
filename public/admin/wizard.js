@@ -288,9 +288,9 @@ function renderAuthOptions() {
     const count = providers.length;
     const preview = providers.slice(0, 4).map((provider) => provider.displayName ?? providerKey(provider)).join(' · ');
     return `
-      <article class="auth-type-row ${state.authType === authType ? 'selected' : ''}">
+      <article class="auth-type-row ${escapeHtml(authType)} ${state.authType === authType ? 'selected' : ''}">
         <div><h3>${escapeHtml(authTypeLabel(authType))}</h3><p>${t('wizard.provider.availableCount', { count })}</p><span>${escapeHtml(preview)}</span></div>
-        <button class="primary" type="button" data-auth-type="${authType}" aria-pressed="${state.authType === authType}">${t('wizard.auth.select')}</button>
+        <button class="primary" type="button" data-auth-type="${escapeHtml(authType)}" aria-pressed="${state.authType === authType}">${t('wizard.auth.select')}</button>
       </article>
   `;
   }).join('') || `<div class="empty-state"><h3>${t('wizard.provider.unavailable')}</h3><p>${t('wizard.provider.unavailableHelp')}</p></div>`;
@@ -312,7 +312,7 @@ function renderProviders() {
         </div>
         <p>${escapeHtml(providerDescription(provider))}</p>
         <details class="technical-details"><summary>${t('wizard.provider.technicalDetails')}</summary><span class="tags">${providerTechnicalTags(provider).map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</span>${oauthRegistrationDetails(provider, null)}</details>
-        <button class="primary provider-select" type="button" data-provider="${key}" aria-pressed="${providerKey(state.provider) === key}">${t('wizard.provider.select')}</button>
+        <button class="primary provider-select" type="button" data-provider="${escapeHtml(key)}" aria-pressed="${providerKey(state.provider) === key}">${t('wizard.provider.select')}</button>
       </article>
     `;
   }).join('') || `<div class="empty-state"><h3>${t('wizard.provider.none')}</h3><p>${t('wizard.provider.noneHelp')}</p></div>`;
@@ -378,27 +378,27 @@ function autocompleteForField(field) {
 
 function renderField(field) {
   const required = field.required ? 'required' : '';
-  const placeholder = field.placeholder ? `placeholder="${field.placeholder}"` : '';
-  const id = `credential-field-${field.key}`;
+  const placeholder = field.placeholder ? `placeholder="${escapeHtml(field.placeholder)}"` : '';
+  const id = `credential-field-${escapeHtml(field.key)}`;
   const value = fieldValue(field);
-  const autocomplete = `autocomplete="${autocompleteForField(field)}"`;
+  const autocomplete = `autocomplete="${escapeHtml(autocompleteForField(field))}"`;
   const label = translationOr(`field.${field.key}.label`, field.label ?? humanize(field.key));
   const help = translationOr(`field.${field.key}.help`, field.description ?? (field.secret ? t('wizard.secretHelp') : ''));
   let control;
 
   if (field.type === 'textarea') {
-    control = `<textarea id="${id}" name="${field.key}" ${required} ${placeholder} ${autocomplete}>${value}</textarea>`;
+    control = `<textarea id="${id}" name="${escapeHtml(field.key)}" ${required} ${placeholder} ${autocomplete}>${escapeHtml(value)}</textarea>`;
   } else if (field.type === 'select' && Array.isArray(field.options)) {
-    control = `<select id="${id}" name="${field.key}" ${required} ${autocomplete}>${field.options.map((option) => {
+    control = `<select id="${id}" name="${escapeHtml(field.key)}" ${required} ${autocomplete}>${field.options.map((option) => {
       const optionValue = option.value ?? option.key ?? option;
       const optionLabel = option.label ?? optionValue;
-      return `<option value="${optionValue}" ${String(optionValue) === String(value) ? 'selected' : ''}>${optionLabel}</option>`;
+      return `<option value="${escapeHtml(optionValue)}" ${String(optionValue) === String(value) ? 'selected' : ''}>${escapeHtml(optionLabel)}</option>`;
     }).join('')}</select>`;
   } else if (field.type === 'boolean') {
-    control = `<input id="${id}" name="${field.key}" type="checkbox" ${value ? 'checked' : ''} ${autocomplete}>`;
+    control = `<input id="${id}" name="${escapeHtml(field.key)}" type="checkbox" ${value ? 'checked' : ''} ${autocomplete}>`;
   } else {
     const scopeHint = field.type === 'oauth-scope' ? 'placeholder="scope-one scope-two"' : placeholder;
-    control = `<input id="${id}" name="${field.key}" type="${fieldInputType(field)}" value="${value}" ${required} ${scopeHint} ${autocomplete}>`;
+    control = `<input id="${id}" name="${escapeHtml(field.key)}" type="${escapeHtml(fieldInputType(field))}" value="${escapeHtml(value)}" ${required} ${scopeHint} ${autocomplete}>`;
   }
 
   return `<div class="field" data-field-key="${escapeHtml(field.key)}"><label for="${id}"><span>${escapeHtml(label)}</span>${field.required ? `<span class="required-badge">${t('wizard.requiredField')}</span>` : ''}</label>${control}${help ? `<small class="field-help">${escapeHtml(help)}</small>` : ''}</div>`;
@@ -408,15 +408,15 @@ function renderProviderContext() {
   const provider = state.provider;
   const security = provider?.oauthSecurity;
   const securityTags = security
-    ? Object.entries(security).map(([name, value]) => `<span class="tag">${name}: ${value}</span>`).join('')
+    ? Object.entries(security).map(([name, value]) => `<span class="tag">${escapeHtml(name)}: ${escapeHtml(value)}</span>`).join('')
     : '';
   $('#provider-context').innerHTML = `
     <article class="provider-context-card">
-      <h3>${provider?.displayName ?? providerKey(provider)}</h3>
+      <h3>${escapeHtml(provider?.displayName ?? providerKey(provider))}</h3>
       <p>${escapeHtml(providerDescription(provider))}</p>
-      <span class="provider-type-badge">${authTypeLabel(providerAuthType(provider))}</span>
+      <span class="provider-type-badge">${escapeHtml(authTypeLabel(providerAuthType(provider)))}</span>
       ${selectedCredentialMethod() ? `<span class="provider-type-badge">${escapeHtml(methodPresentation(selectedCredentialMethod()).displayName)}</span>` : ''}
-      <details class="technical-details"><summary>${t('wizard.provider.technicalDetails')}</summary><span class="tags">${providerCapabilities(provider).map((capability) => `<span class="tag">${capability}</span>`).join('')}${securityTags}</span>${oauthRegistrationDetails(provider)}</details>
+      <details class="technical-details"><summary>${t('wizard.provider.technicalDetails')}</summary><span class="tags">${providerCapabilities(provider).map((capability) => `<span class="tag">${escapeHtml(capability)}</span>`).join('')}${securityTags}</span>${oauthRegistrationDetails(provider)}</details>
     </article>`;
 }
 
@@ -432,7 +432,7 @@ function renderForm() {
   }
   const fields = getProviderFieldSet();
   $('#credential-form').innerHTML = Object.entries(groupFields(fields)).map(([section, groupFields]) => `
-    <fieldset class="field-group"><legend>${translationOr(`field.section.${section}`, humanize(section))}</legend>${groupFields.map(renderField).join('')}</fieldset>
+    <fieldset class="field-group"><legend>${escapeHtml(translationOr(`field.section.${section}`, humanize(section)))}</legend>${groupFields.map(renderField).join('')}</fieldset>
   `).join('') || `<div class="empty-state"><h3>${t('wizard.data.none')}</h3><p>${t('wizard.data.noneHelp')}</p></div>`;
   $('#credential-form').addEventListener('input', () => {
     state.hasUnsavedChanges = true;
@@ -630,12 +630,12 @@ function applyOAuthCallbackResult(result) {
 
 function renderOAuthAuthorizationStep() {
   const provider = state.provider;
-  $('#oauth-authorization').innerHTML = `<article class="provider-context-card"><h3>${t('wizard.authorize', { provider: provider?.displayName ?? providerKey() })}</h3><p>${t('wizard.oauth.securityProfile')}</p><details class="technical-details" open><summary>${t('wizard.provider.technicalDetails')}</summary>${oauthRegistrationDetails(provider)}</details><div class="oauth-actions"><button class="primary" id="oauth-authorize-start" type="button" data-oauth-login-start ${state.oauthPending ? 'disabled' : ''}>${state.oauthPending ? t('wizard.connecting') : t('wizard.oauth.start')}</button></div><p class="oauth-info">${t('wizard.oauth.wait')}</p></article>`;
+  $('#oauth-authorization').innerHTML = `<article class="provider-context-card"><h3>${t('wizard.authorize', { provider: escapeHtml(provider?.displayName ?? providerKey()) })}</h3><p>${t('wizard.oauth.securityProfile')}</p><details class="technical-details" open><summary>${t('wizard.provider.technicalDetails')}</summary>${oauthRegistrationDetails(provider)}</details><div class="oauth-actions"><button class="primary" id="oauth-authorize-start" type="button" data-oauth-login-start ${state.oauthPending ? 'disabled' : ''}>${state.oauthPending ? t('wizard.connecting') : t('wizard.oauth.start')}</button></div><p class="oauth-info">${t('wizard.oauth.wait')}</p></article>`;
 }
 
 function renderSummary() {
   const oauth = isOAuthProvider();
-  $('#summary').innerHTML = `<div class="summary-ready"><strong>${t('wizard.ready')}</strong><span>${t('wizard.readyHelp')}</span></div><div class="summary-row"><strong>${t('wizard.step.selectAuth')}</strong><span>${authTypeLabel(providerAuthType())}</span></div><div class="summary-row"><strong>${t('common.provider')}</strong><span>${state.provider?.displayName ?? providerKey()}</span></div><div class="summary-row"><strong>${t('common.name')}</strong><span>${state.formData.displayName ?? ''}</span></div>`;
+  $('#summary').innerHTML = `<div class="summary-ready"><strong>${t('wizard.ready')}</strong><span>${t('wizard.readyHelp')}</span></div><div class="summary-row"><strong>${t('wizard.step.selectAuth')}</strong><span>${escapeHtml(authTypeLabel(providerAuthType()))}</span></div><div class="summary-row"><strong>${t('common.provider')}</strong><span>${escapeHtml(state.provider?.displayName ?? providerKey())}</span></div><div class="summary-row"><strong>${t('common.name')}</strong><span>${escapeHtml(state.formData.displayName ?? '')}</span></div>`;
   const oauthStart = $('#oauth-start');
   const createButton = $('#create-credential');
   oauthStart.classList.add('hidden');
@@ -643,7 +643,7 @@ function renderSummary() {
 }
 
 function renderOAuthOutcome(result) {
-  const provider = state.provider?.displayName ?? result.provider ?? 'Provider';
+  const provider = escapeHtml(state.provider?.displayName ?? result.provider ?? 'Provider');
   const isSuccess = result.status === 'success';
   const isCancelled = result.status === 'cancelled';
   const title = isSuccess ? t('wizard.integration.credentialReady') : isCancelled ? t('wizard.cancelled') : t('wizard.failed');
@@ -690,7 +690,7 @@ function renderCreationOutcome() {
 
   if (outcome.success) {
     $('#summary').innerHTML = `
-      <div class="summary-ready"><strong>${t('wizard.integration.credentialReady')}</strong><span>${t('wizard.integration.credentialReadyHelp', { provider: state.provider?.displayName ?? providerKey() })}</span></div>
+      <div class="summary-ready"><strong>${t('wizard.integration.credentialReady')}</strong><span>${t('wizard.integration.credentialReadyHelp', { provider: escapeHtml(state.provider?.displayName ?? providerKey()) })}</span></div>
       <p class="grant-warning">${t('wizard.integration.grantRequired')}</p>`;
     showConsumerGrantPanel();
     return;

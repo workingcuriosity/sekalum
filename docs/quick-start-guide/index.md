@@ -3,7 +3,7 @@ title: Quick Start Guide
 document_id: DOC-QUICK-START-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.0.8
+version: 1.0.9
 status: Active
 category: Quick Start
 canonical: true
@@ -23,6 +23,9 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/project/THIRD_PARTY_SOFTWARE.md
 change_history:
+  - version: 1.0.9
+    date: 2026-08-26
+    change: Documents the configured proof-of-possession requirement and terminal First Administrator Bootstrap boundary.
   - version: 1.0.8
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -56,13 +59,14 @@ change_history:
 
 ## Purpose
 
-Sekalum manages the lifecycle of digital credentials, including provider credentials, OAuth connections, API tokens, encrypted import and export data, and lifecycle status. This guide is the English onboarding path for Release 1.0 Beta 1. It does not translate the complete product documentation.
+Sekalum manages the lifecycle of digital credentials, including provider credentials, OAuth connections, API tokens, encrypted import and export data, and lifecycle status. This guide is the English onboarding path for Release Candidate 1.0.0-rc.2. It does not translate the complete product documentation.
 
 ## Prerequisites
 
 - A supported Node.js runtime.
 - A checkout of this repository with its lockfile.
 - A 32-character encryption key for credential storage.
+- A configured high-entropy `ADMIN_BOOTSTRAP_TOKEN` of at least 32 bytes for the one-time First Administrator Bootstrap.
 - OAuth application registration details only for the providers you intend to use.
 
 ## Install and configure
@@ -77,6 +81,7 @@ Provide global runtime settings through the process environment. At a minimum, c
 
 ```env
 TOKEN_ENCRYPTION_KEY=YOUR_32_CHARACTER_ENCRYPTION_KEY
+ADMIN_BOOTSTRAP_TOKEN=YOUR_HIGH_ENTROPY_BOOTSTRAP_TOKEN
 ```
 
 `OAUTH_CALLBACK_PORT` defaults to `3000`. OAuth application credentials are normally entered in the Credential Wizard and stored encrypted by the backend. Provider-specific environment variables remain a compatibility fallback. The full precedence, settings, defaults, and encryption rotation rules are in the [Configuration Reference](../configuration-reference/index.md).
@@ -105,19 +110,26 @@ To run below a public prefix, set `BASE_PATH` to a value such as `/credential-hu
 
 ## Bootstrap and Admin access
 
-Beta 1 has no username/password login screen. On a new installation with an
-empty persisted user collection, **Bootstrap** is active. Create the
-**First Administrator** through the local Management API before exposing the
-service beyond the local machine:
+RC2 has no username/password login screen. On a new installation with an
+empty persisted user collection, **Bootstrap** is active but the empty state
+alone is not authorization. Configure a high-entropy `ADMIN_BOOTSTRAP_TOKEN`
+with at least 32 bytes, then create the **First Administrator** through the
+local Management API before exposing the service beyond the local machine:
 
 ```bash
 curl --request POST http://localhost:3000/api/v1/management/users \
   --header 'Content-Type: application/json' \
+  --header 'X-Admin-Bootstrap-Token: YOUR_HIGH_ENTROPY_BOOTSTRAP_TOKEN' \
   --data '{"userId":"admin","displayName":"First Administrator","roleKey":"admin"}'
 ```
 
-Bootstrap ends when the **First Administrator** is persisted. The Admin UI then opens
-with a **Management Token** gate. Enter an authorized **Management Token**;
+The Bootstrap proof is distinct from a **Management Token**, is never persisted
+as an API token, and is never returned, logged or audited. A missing, weak or
+incorrectly configured proof fails closed. Bootstrap accepts exactly one
+active administrator; a conflicting role or disabled status is rejected.
+Bootstrap ends permanently when the **First Administrator** is persisted. The
+Admin UI then opens with a **Management Token** gate. Enter an authorized
+**Management Token**;
 the Admin UI validates `Authorization: Bearer <management-token>` before it
 reveals the Dashboard and Admin navigation. The Consumer API uses a separate
 Consumer API token and does not use the Management Token.
@@ -139,9 +151,9 @@ Credential preparation, Consumer Grant setup and the first Resolve, see the
 
 The Admin UI starts in English. Use the visible EN / DE switch to change the local browser preference. The setting is stored only in browser local storage under `credentialHub.language` and is shared by all Admin pages.
 
-## Beta-1 product journey: real UI
+## RC2 product journey: real UI
 
-The following redacted screenshots were captured from the running Beta-1 UI.
+The following redacted screenshots were captured from the running RC2 UI.
 They show the real administrative setup before the Consumer Runtime begins.
 No token plaintext, Secret value or password is included.
 
@@ -152,12 +164,12 @@ surface for creating a Credential and preparing Consumer access.
 
 ![Real Credential Wizard entry](images/sekalum-admin-wizard-entry.jpg)
 
-*Real Beta-1 Admin entry: the Wizard is ready for the administrator without
+*Real RC2 Admin entry: the Wizard is ready for the administrator without
 exposing the saved Management Token.*
 
 ![Real Admin Dashboard](images/sekalum-admin-dashboard.jpg)
 
-*Real Beta-1 Dashboard: Credential status and management entry points are
+*Real RC2 Dashboard: Credential status and management entry points are
 visible without displaying Secret values.*
 
 ### 2. Credential and permission setup
@@ -168,20 +180,20 @@ specific Credential through a least-privilege grant.
 
 ![Real Credential management list](images/sekalum-admin-credential-management.jpg)
 
-*Real Beta-1 Credential management: public names, providers, types and status.*
+*Real RC2 Credential management: public names, providers, types and status.*
 
 ![Real redacted Credential detail](images/sekalum-admin-credential-detail.jpg)
 
-*Real Beta-1 Credential detail: identifier, provider, status and metadata only.*
+*Real RC2 Credential detail: identifier, provider, status and metadata only.*
 
 ![Real Consumer Grant overview](images/sekalum-admin-consumer-grants.jpg)
 
-*Real Beta-1 Consumer Grant overview: consumer, Credential, provider and named
+*Real RC2 Consumer Grant overview: consumer, Credential, provider and named
 granted fields; Secret values are not shown.*
 
 ![Real Consumer Grant permission form](images/sekalum-admin-grant-form.jpg)
 
-*Real Beta-1 Grant form: the administrator selects named Secret fields without
+*Real RC2 Grant form: the administrator selects named Secret fields without
 entering or viewing their values.*
 
 Before saving, the Grant form provides a read-only Permission Summary. It
@@ -206,12 +218,12 @@ plaintext token is not shown in this documentation capture.
 
 ![Real API Token setup form](images/sekalum-admin-token-form.jpg)
 
-*Real Beta-1 API Token form: token identity, optional expiry and scopes; no
+*Real RC2 API Token form: token identity, optional expiry and scopes; no
 plaintext token is visible.*
 
 ![Real Consumer entry surface](images/sekalum-consumer-entry.jpg)
 
-*Real Beta-1 Consumer entry: the separate Consumer context waits for a
+*Real RC2 Consumer entry: the separate Consumer context waits for a
 dedicated Consumer API token and keeps it in page memory only.*
 
 The existing Consumer screenshots below continue the story through Discovery,
@@ -223,7 +235,7 @@ Open **API Tokens** from the Dashboard. Create a token with a technical name, us
 
 ## Using the Consumer Interface (Advanced Integration Flow)
 
-This is the Beta-1-supported Advanced Integration Flow for applications that need to consume an already configured credential. It is technically complete and usable, but it is not the primary Consumer-first onboarding flow.
+This is the RC2-supported Advanced Integration Flow for applications that need to consume an already configured credential. It is technically complete and usable, but it is not the primary Consumer-first onboarding flow.
 
 ![Consumer integration overview from setup to secure disposal](../developer-guide/images/consumer-integration-overview.svg)
 
@@ -232,37 +244,37 @@ path after an administrator has prepared the grant.*
 
 **Prerequisites:** An administrator has already created and activated the credential, created a dedicated Consumer API token with the `credentials:consume` scope, and granted the Consumer access to the credential and the specific secret fields it may resolve. A Management Token is not a Consumer token.
 
-Consumer-first onboarding improvements are planned outside Beta 1 under Issue #141.
+Consumer-first onboarding improvements are planned outside RC2 under Issue #141.
 
 1. After a successful Consumer Grant setup and Resolve verification in the Credential Wizard, choose **Open Consumer interface**. You can also open the Consumer view directly at `/consumer/`. The link opens a separate Consumer context and does not transfer a Management Token. Enter the dedicated Consumer API token there and treat it as sensitive: use it only for the current session and do not put it in screenshots, logs, source code, or browser persistence.
 
    ![Consumer access with an empty Consumer API token field](images/consumer-access.jpg)
 
-   *Actual Beta-1 Consumer access view. The token field is intentionally empty.*
+   *Actual RC2 Consumer access view. The token field is intentionally empty.*
 
 2. Choose **Test connection** to start Discovery. The Consumer sees only active credentials for which it has a valid grant. Discovery provides public selection metadata, an opaque `credentialKey`, and the permitted field contract; it does not expose provider internals, CredentialMethod details, internal identifiers, or secret values.
 
    ![Successful Consumer Discovery showing available credentials](images/consumer-discovery.jpg)
 
-   *Actual Beta-1 Discovery result. It shows only public credential-selection metadata and field names.*
+   *Actual RC2 Discovery result. It shows only public credential-selection metadata and field names.*
 
 3. Select a credential using the public information and its `credentialKey`. Provide only the inputs described by the field contract. When an authorized Runtime-Public input is available, it is shown as a restricted, non-secret input; when it is absent, do not infer or substitute a value.
 
    ![Selected credential identified by its public credentialKey](images/credential-selection.jpg)
 
-   *Actual Beta-1 credential selection. The selected credential is identified through its public `credentialKey`.*
+   *Actual RC2 credential selection. The selected credential is identified through its public `credentialKey`.*
 
 4. Select only the secret field names required for the current operation and choose **Resolve**. Sekalum returns only explicitly requested, authorized fields. The Consumer cannot use wildcard selection or bypass the configured grant.
 
    ![Field contract and permitted secret field selection](images/field-contract.jpg)
 
-   *Actual Beta-1 field contract. This selected credential has no Runtime-Public input; only declared field names and the permitted secret-field choice are shown.*
+   *Actual RC2 field contract. This selected credential has no Runtime-Public input; only declared field names and the permitted secret-field choice are shown.*
 
 5. Review the result in the secure result display. Values are masked by default, revealed one at a time, automatically masked after five seconds, and cleared when the selection, request, or session changes. Do not save, log, transmit, or display resolved secrets beyond the protected Consumer workflow.
 
    ![Successful Resolve result with the secret value masked](images/secure-resolve-result.jpg)
 
-   *Actual Beta-1 Resolve result. The resolved value remains masked until an explicit, time-limited reveal action.*
+   *Actual RC2 Resolve result. The resolved value remains masked until an explicit, time-limited reveal action.*
 
 Sekalum enforces authentication, authorization, grants, credential lifecycle, and controlled resolution. Once a value is delivered to the Consumer, the Consumer is responsible for its own storage, logging, display, and transmission controls. For endpoint and field-contract details, see the API Reference and [Security Guide](../security-guide/index.md).
 
