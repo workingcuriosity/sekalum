@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { CredentialCollectionStoreAdapter } from '../../src/storage/credential-collection-store-adapter.js';
+import { withBindingCommitLock } from '../../src/storage/binding-commit-coordinator.js';
 import { CompositeCredentialStoreAdapter } from '../../src/storage/composite-credential-store-adapter.js';
 import { EncryptedJsonStore } from '../../src/storage/encrypted-json-store.js';
 import { JsonStore } from '../../src/storage/json-store.js';
@@ -82,6 +83,22 @@ test('metadata-first legacy migration persists one generated public key for late
   assert.equal(rawData.credentials[0].credentialKey, metadata[0].credentialKey);
 });
 
+test('legacy migration re-enters the binding lock without a lock-order deadlock', async () => {
+  let rawData = {
+    credentials: [{ credentialId: 'legacy-main', providerKey: 'openai', externalReference: 'main', secrets: [] }]
+  };
+  const jsonStore = {
+    async exists(filePath) { return filePath.endsWith('credentials.json'); },
+    async load() { return structuredClone(rawData); },
+    async save(filePath, value) { if (filePath.endsWith('credentials.json')) rawData = structuredClone(value); }
+  };
+  const store = new CredentialCollectionStoreAdapter({ jsonStore, metadataJsonStore: jsonStore, basePath: '/data' });
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('migration lock deadlock')), 100));
+  const metadata = await Promise.race([withBindingCommitLock(() => store.listMetadata()), timeout]);
+  assert.equal(metadata.length, 1);
+  assert.ok(rawData.credentials[0].credentialKey);
+});
+
 test('credential collection reports orphaned metadata instead of silently falling back', async () => {
   const rawData = { credentials: [] };
   const metadataData = {
@@ -156,6 +173,94 @@ test('generic credential collection rejects explicit invalid or changed public k
     () => store.save({ ...credentialInput, credentialId: 'credential-b', credentialKey: null }),
     /Credential: 'credentialKey' is required/
   );
+});
+
+test('credential collection applies the shared immutable binding guard to direct existing-record saves', async () => {
+  const store = new CredentialCollectionStoreAdapter({ jsonStore: createJsonStore(), basePath: '/data' });
+  const saved = await store.save({
+    ...credentialInput,
+    credentialId: 'guarded-credential',
+    credentialMethodKey: 'api-key'
+  });
+  const immutableChanges = [
+    { providerKey: 'other-provider' },
+    { externalReference: 'other-account' },
+    { credentialMethodKey: 'oauth2' },
+    { credentialGeneration: 'generation-2' },
+    { providerProfile: { providerKey: 'openai', version: '2.0.0', digest: 'profile-2' } },
+    { providerConfigurationId: 'configuration-2' },
+    {
+      oauthCredentialBinding: {
+        providerKey: 'openai',
+        credentialMethodKey: 'api-key',
+        clientBindingFingerprint: 'a'.repeat(64),
+        accountId: 'other-account',
+        grantedScopes: []
+      }
+    }
+  ];
+
+  for (const updates of immutableChanges) {
+    await assert.rejects(
+      () => store.save({ ...saved.toJSON(), metadata: { displayName: 'mutable-attempt' }, ...updates }),
+      (error) => error.code === 'CREDENTIAL_LIFECYCLE_CONFLICT'
+        && error.details.reason === 'IMMUTABLE_BINDING'
+        && !error.message.includes('other-account')
+    );
+  }
+
+  const persisted = await store.load(saved.credentialId);
+  assert.equal(persisted.providerKey, 'openai');
+  assert.equal(persisted.externalReference, 'main');
+  assert.equal(persisted.credentialMethodKey, 'api-key');
+  assert.equal(persisted.metadata.toJSON().displayName, 'OpenAI Main');
+});
+
+test('credential collection permits mutable-only partial saves while retaining binding fields', async () => {
+  const store = new CredentialCollectionStoreAdapter({ jsonStore: createJsonStore(), basePath: '/data' });
+  const saved = await store.save({ ...credentialInput, credentialId: 'partial-guarded', credentialMethodKey: 'api-key' });
+
+  const updated = await store.save({
+    credentialId: saved.credentialId,
+    metadata: { displayName: 'partial update' },
+    version: saved.version + 1
+  });
+
+  assert.equal(updated.metadata.toJSON().displayName, 'partial update');
+  assert.equal(updated.providerKey, saved.providerKey);
+  assert.equal(updated.externalReference, saved.externalReference);
+  assert.equal(updated.credentialMethodKey, saved.credentialMethodKey);
+  assert.equal(updated.credentialGeneration, saved.credentialGeneration);
+  assert.equal(updated.credentialKey, saved.credentialKey);
+});
+
+test('credential collection applies the shared immutable binding guard to batch updates', async () => {
+  const store = new CredentialCollectionStoreAdapter({ jsonStore: createJsonStore(), basePath: '/data' });
+  const saved = await store.save({ ...credentialInput, credentialId: 'batch-guarded', credentialMethodKey: 'api-key' });
+  const replacement = { ...saved.toJSON(), providerKey: 'other-provider', metadata: { displayName: 'must-not-persist' }, version: saved.version + 1 };
+
+  await assert.rejects(
+    () => store.applyBatch([{ mode: 'update', credential: replacement, expectedVersion: saved.version }]),
+    (error) => error.code === 'CREDENTIAL_LIFECYCLE_CONFLICT' && error.details.reason === 'IMMUTABLE_BINDING'
+  );
+  const persisted = await store.load(saved.credentialId);
+  assert.equal(persisted.providerKey, 'openai');
+  assert.equal(persisted.metadata.toJSON().displayName, 'OpenAI Main');
+});
+
+test('credential collection requires an explicit trusted option for binding migrations', async () => {
+  const store = new CredentialCollectionStoreAdapter({ jsonStore: createJsonStore(), basePath: '/data' });
+  const saved = await store.save({ ...credentialInput, credentialId: 'migration-guarded', credentialMethodKey: 'api-key' });
+
+  await assert.rejects(
+    () => store.saveConditional({ ...saved.toJSON(), credentialMethodKey: 'oauth2', version: saved.version + 1 }, { expectedVersion: saved.version }),
+    (error) => error.code === 'CREDENTIAL_LIFECYCLE_CONFLICT' && error.details.reason === 'IMMUTABLE_BINDING'
+  );
+  const migrated = await store.saveConditional(
+    { ...saved.toJSON(), credentialMethodKey: 'oauth2', version: saved.version + 1 },
+    { expectedVersion: saved.version, allowBindingChange: true }
+  );
+  assert.equal(migrated.credentialMethodKey, 'oauth2');
 });
 
 test('composite adapter combines generic credentials with legacy OAuth credentials', async () => {

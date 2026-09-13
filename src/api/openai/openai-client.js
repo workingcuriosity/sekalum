@@ -9,7 +9,7 @@ export class OpenAIClient {
     this.timeoutMs = timeoutMs;
   }
 
-  async validateApiKey({ apiKey, organizationId = null, projectId = null, timeoutMs = null } = {}) {
+  async validateApiKey({ apiKey, organizationId = null, projectId = null, timeoutMs = null, purpose = 'PROVIDER_VALIDATION' } = {}) {
     this.#validateOptions({ apiKey });
 
     const headers = this.#headers({ organizationId, projectId });
@@ -17,7 +17,8 @@ export class OpenAIClient {
     const response = await this.httpClient.get(`${this.baseUrl}/models`, {
       bearerToken: apiKey,
       headers,
-      timeout: timeoutMs ?? this.timeoutMs
+      timeout: timeoutMs ?? this.timeoutMs,
+      pathId: 'OPENAI-VALIDATE', purpose, providerKey: 'openai', credentialBearing: true
     });
 
     const models = Array.isArray(response.data?.data) ? response.data.data : [];

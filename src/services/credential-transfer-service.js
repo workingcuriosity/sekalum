@@ -1,7 +1,10 @@
 import crypto from 'node:crypto';
 
 import { Credential } from '../models/credential.js';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
 import { safeError } from '../utils/safe-diagnostics.js';
+import { RestoreAdmissionService } from './restore-admission-service.js';
+import { RestoreCommitCoordinator } from '../storage/restore-commit-coordinator.js';
 
 const TRANSFER_FORMAT = 'credential-hub-credential-transfer';
 const SCHEMA_VERSION = 1;
@@ -15,6 +18,7 @@ const EXPORT_ENCRYPTION_ITERATIONS = 210000;
 const EXPORT_ENCRYPTION_KEY_LENGTH = 32;
 const EXPORT_ENCRYPTION_SALT_LENGTH = 16;
 const EXPORT_ENCRYPTION_IV_LENGTH = 12;
+export const EXPORT_ENCRYPTION_PASSWORD_MIN_LENGTH = 8;
 
 export const MAX_IMPORT_PAYLOAD_BYTES = 5 * 1024 * 1024;
 export const MAX_IMPORT_RECORDS = 100;
@@ -23,7 +27,7 @@ export const MAX_PENDING_IMPORTS = 0;
 export const MAX_IMPORT_RETRIES = 0;
 
 export class CredentialTransferService {
-  constructor({ credentialManager, providerManager = null, auditLogService = null, clock = () => new Date(), idGenerator = () => crypto.randomUUID() } = {}) {
+  constructor({ credentialManager, providerManager = null, auditLogService = null, restoreAdmissionService = null, restoreCommitCoordinator = null, clock = () => new Date(), idGenerator = () => crypto.randomUUID() } = {}) {
     if (!credentialManager) {
       throw new Error('CredentialTransferService requires CredentialManager');
     }
@@ -31,6 +35,8 @@ export class CredentialTransferService {
     this.credentialManager = credentialManager;
     this.providerManager = providerManager;
     this.auditLogService = auditLogService;
+    this.restoreAdmissionService = restoreAdmissionService ?? new RestoreAdmissionService();
+    this.restoreCommitCoordinator = restoreCommitCoordinator ?? new RestoreCommitCoordinator();
     this.clock = clock;
     this.idGenerator = idGenerator;
     this.activeImportKdf = 0;
@@ -95,6 +101,13 @@ export class CredentialTransferService {
       const payload = await this.#parseTransferInput(transferInput, importOptions);
       const credentials = payload.credentials.map((credential) => this.#toCredential(credential));
       const existingCredentials = (await this.credentialManager.listCredentials()).map((credential) => this.#toCredential(credential));
+      const { tombstones } = await this.#credentialRestoreState(existingCredentials);
+      const admission = await this.restoreAdmissionService.preflightCredentialImport({
+        credentials,
+        existingCredentials,
+        tombstones,
+        strategy: importOptions.conflictStrategy ?? 'skip'
+      });
       const items = credentials.map((credential) => this.#previewCredential(credential, existingCredentials));
       const summary = this.#summarizePreview(items);
 
@@ -111,7 +124,8 @@ export class CredentialTransferService {
         schemaVersion: payload.schemaVersion,
         generatedAt: payload.generatedAt,
         summary,
-        items
+        items,
+        admission
       };
     } catch (error) {
       await this.#recordAudit({
@@ -130,11 +144,21 @@ export class CredentialTransferService {
 
     try {
       const payload = await this.#parseTransferInput(transferInput, options);
-      const existingCredentials = (await this.credentialManager.listCredentials()).map((credential) => this.#toCredential(credential));
+      const currentCredentials = (await this.credentialManager.listCredentials()).map((credential) => this.#toCredential(credential));
+      const existingCredentials = [...currentCredentials];
+      const inputCredentials = payload.credentials.map((credential) => this.#toCredential(credential));
+      const { tombstones } = await this.#credentialRestoreState(currentCredentials);
+      const admission = await this.restoreAdmissionService.preflightCredentialImport({
+        credentials: inputCredentials,
+        existingCredentials: currentCredentials,
+        tombstones,
+        strategy
+      });
       const results = [];
       const operations = [];
+      const skippedCredentialIds = [];
 
-      for (const inputCredential of payload.credentials.map((credential) => this.#toCredential(credential))) {
+      for (const inputCredential of inputCredentials) {
         const preview = this.#previewCredential(inputCredential, existingCredentials);
 
         if (preview.conflict && strategy === 'skip') {
@@ -144,6 +168,7 @@ export class CredentialTransferService {
             success: true,
             conflict: preview.conflict
           });
+          skippedCredentialIds.push(inputCredential.credentialId);
           continue;
         }
 
@@ -169,6 +194,17 @@ export class CredentialTransferService {
           ? this.#renameCredential(inputCredential, existingCredentials)
           : inputCredential;
 
+        if (credentialToRegister !== inputCredential
+          && await this.credentialManager.isDeletedIdentity?.(credentialToRegister.credentialId)) {
+          throw this.restoreAdmissionService.errorFromConflict({
+            class: 'HARD_SECURITY_BLOCK',
+            code: 'RESTORE_DELETED_IDENTITY_BARRIER',
+            resourceType: 'Credential',
+            resourceId: credentialToRegister.credentialId,
+            remediation: 'Use a new Credential identity that is not tombstoned.'
+          });
+        }
+
         operations.push({
           action: 'create',
           sourceCredentialId: inputCredential.credentialId,
@@ -186,7 +222,7 @@ export class CredentialTransferService {
       }
 
       const summary = {
-        requested: payload.credentials.length,
+        requested: inputCredentials.length,
         created: results.filter((result) => result.action === 'created').length,
         overwritten: results.filter((result) => result.action === 'overwritten').length,
         renamed: results.filter((result) => result.action === 'renamed').length,
@@ -199,18 +235,45 @@ export class CredentialTransferService {
         throw this.#atomicityError('CREDENTIAL_IMPORT_ATOMICITY_UNSUPPORTED', 'Credential import requires an atomic credential store', 500);
       }
 
-      await this.credentialManager.importCredentialBatch(operations, {
-        createdBy: context.userId ?? 'system',
-        onCommitted: () => this.#recordAudit({
-          action: 'credential-import.completed',
-          targetId: null,
-          result: 'success',
-          context,
-          details: summary
-        })
+      const commitAdmission = this.restoreAdmissionService.revalidateCredentialImport({
+        preflight: admission,
+        credentials: inputCredentials,
+        currentCredentials,
+        tombstones,
+        strategy,
+        skippedCredentialIds
+      });
+      this.restoreAdmissionService.assertCommitAllowed(commitAdmission, {
+        allowExplicitAdminResolution: true
       });
 
-      return { summary, results };
+      if (operations.length === 0) return { summary, results, admission: commitAdmission };
+
+      await this.restoreCommitCoordinator.run(() => this.credentialManager.importCredentialBatch(operations, {
+          createdBy: context.userId ?? 'system',
+          beforeCommit: ({ currentCredentials: finalCredentials = currentCredentials, currentTombstones = tombstones }) => {
+            const finalAdmission = this.restoreAdmissionService.revalidateCredentialImport({
+              preflight: admission,
+              credentials: inputCredentials,
+              currentCredentials: finalCredentials.map((credential) => this.#toCredential(credential)),
+              tombstones: currentTombstones,
+              strategy,
+              skippedCredentialIds
+            });
+            this.restoreAdmissionService.assertCommitAllowed(finalAdmission, {
+              allowExplicitAdminResolution: true
+            });
+          },
+          onCommitted: () => this.#recordAudit({
+            action: 'credential-import.completed',
+            targetId: null,
+            result: 'success',
+            context,
+            details: summary
+          })
+        }));
+
+      return { summary, results, admission: commitAdmission };
     } catch (error) {
       await this.#recordAudit({
         action: 'credential-import.completed',
@@ -311,6 +374,17 @@ export class CredentialTransferService {
       return Credential.from(value.toJSON());
     }
     return Credential.from(value);
+  }
+
+  async #credentialRestoreState(existingCredentials) {
+    if (typeof this.credentialManager.getRestoreState === 'function') {
+      const state = await this.credentialManager.getRestoreState();
+      return {
+        credentials: (state.credentials ?? existingCredentials).map((credential) => this.#toCredential(credential)),
+        tombstones: (state.tombstones ?? []).map((tombstone) => ({ ...tombstone }))
+      };
+    }
+    return { credentials: existingCredentials, tombstones: [] };
   }
 
   async #parseTransferInput(input, options = {}) {
@@ -433,7 +507,10 @@ export class CredentialTransferService {
       if (values.length !== headers.length) {
         throw this.#badRequest(`CSV row ${index + 2} must contain exactly ${headers.length} fields`);
       }
-      return Object.fromEntries(headers.map((header, valueIndex) => [header, String(values[valueIndex] ?? '').trim()]));
+      return Object.fromEntries(headers.map((header, valueIndex) => {
+        const value = String(values[valueIndex] ?? '');
+        return [header, this.#isIdentityHeader(header) ? value : value.trim()];
+      }));
     });
 
     if (rows.length > MAX_IMPORT_RECORDS) {
@@ -441,6 +518,10 @@ export class CredentialTransferService {
     }
 
     return { headers, rows };
+  }
+
+  #isIdentityHeader(header) {
+    return new Set(['providerKey', 'credentialId', 'credentialKey', 'credentialGeneration', 'credentialMethodKey', 'externalReference', 'providerConfigurationId']).has(header);
   }
 
   #validateCsvHeaders(headers) {
@@ -511,6 +592,19 @@ export class CredentialTransferService {
   #csvRowToCredential(row, rowNumber, options = {}, fields = []) {
     const providerKey = row.providerKey;
     const externalReference = row.externalReference;
+
+    try {
+      validateNamedIdentifier('providerKey', providerKey);
+      validateNamedIdentifier('externalReference', externalReference);
+      if (Object.hasOwn(row, 'credentialId')) validateNamedIdentifier('credentialId', row.credentialId);
+      if (Object.hasOwn(row, 'credentialKey')) validateNamedIdentifier('credentialKey', row.credentialKey);
+      if (Object.hasOwn(row, 'credentialGeneration')) validateNamedIdentifier('credentialGeneration', row.credentialGeneration);
+      if (Object.hasOwn(row, 'credentialMethodKey') && row.credentialMethodKey !== '') {
+        validateNamedIdentifier('credentialMethodKey', row.credentialMethodKey);
+      }
+    } catch (error) {
+      throw this.#badRequest(`CSV row ${rowNumber} contains an invalid authorization identifier`, error.code ?? 'IDENTIFIER_INVALID');
+    }
 
     if (!providerKey) {
       throw this.#badRequest(`CSV row ${rowNumber} requires providerKey`);
@@ -678,6 +772,9 @@ export class CredentialTransferService {
     const password = options.encryptionPassword ?? options.password;
     if (typeof password !== 'string' || password.trim() === '') {
       throw this.#badRequest('credential export requires a non-empty encryption password');
+    }
+    if (password.length < EXPORT_ENCRYPTION_PASSWORD_MIN_LENGTH) {
+      throw this.#badRequest(`credential export encryption password must be at least ${EXPORT_ENCRYPTION_PASSWORD_MIN_LENGTH} characters`);
     }
     return password;
   }

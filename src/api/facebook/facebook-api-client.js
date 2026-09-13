@@ -21,7 +21,8 @@ export class FacebookApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'FACEBOOK-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'facebook', credentialBearing: true
     });
 
     return response.data;
@@ -38,7 +39,8 @@ export class FacebookApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'FACEBOOK-TOKEN', purpose: 'OAUTH_REFRESH', providerKey: 'facebook', credentialBearing: true
     });
 
     return response.data;
@@ -49,7 +51,8 @@ export class FacebookApiClient {
       bearerToken: accessToken,
       query: {
         fields: 'id,name,email,picture'
-      }
+      },
+      pathId: 'FACEBOOK-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'facebook', credentialBearing: true
     });
 
     if (!response.data?.id) {

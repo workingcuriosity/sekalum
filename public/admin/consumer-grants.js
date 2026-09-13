@@ -30,9 +30,13 @@ const createProvider = document.getElementById('consumer-grant-create-provider')
 const createSecrets = document.getElementById('consumer-grant-create-secrets');
 const createPreview = document.querySelector('#consumer-grant-create-preview .grant-preview-content');
 const editPreview = document.querySelector('#consumer-grant-edit-preview .grant-preview-content');
+const createReferenceCheck = document.getElementById('consumer-grant-create-reference-check');
+const editReferenceCheck = document.getElementById('consumer-grant-edit-reference-check');
 const createProfile = document.getElementById('consumer-grant-create-profile');
 const profileDescription = document.getElementById('consumer-grant-profile-description');
 const profileSuggestion = document.getElementById('consumer-grant-profile-suggestion');
+const scopeConsumer = document.getElementById('consumer-access-scope-consumer');
+const scopeResult = document.getElementById('consumer-access-scope-result');
 
 let grants = [];
 let consumers = new Map();
@@ -44,6 +48,8 @@ document.getElementById('refresh-consumer-grants').addEventListener('click', () 
 document.getElementById('clear-consumer-grants-filter').addEventListener('click', () => { filterForm.reset(); loadGrants(); });
 filterForm.addEventListener('submit', (event) => { event.preventDefault(); loadGrants(); });
 tableBody.addEventListener('click', (event) => {
+  const remove = event.target.closest('button[data-remove-grant-id]');
+  if (remove) { void removeGrant(remove.dataset.removeGrantId); return; }
   const button = event.target.closest('button[data-grant-id]');
   if (!button) return;
   const grant = grants.find((item) => item.grantId === button.dataset.grantId);
@@ -56,8 +62,11 @@ document.getElementById('consumer-grant-create-open').addEventListener('click', 
 document.getElementById('consumer-grant-create-close').addEventListener('click', closeCreate);
 document.getElementById('consumer-grant-create-cancel').addEventListener('click', closeCreate);
 createCredential.addEventListener('change', renderCreateSecrets);
+createForm.elements.consumerId.addEventListener('input', renderCreatePreview);
+createCredential.addEventListener('change', renderCreatePreview);
 createProfile.addEventListener('change', renderProfileSuggestion);
 document.getElementById('consumer-grant-apply-profile').addEventListener('click', applyProfileSuggestions);
+document.getElementById('consumer-access-scope-load').addEventListener('click', loadAccessScope);
 createSecrets.addEventListener('change', renderCreatePreview);
 createForm.addEventListener('submit', submitCreate);
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !editSubmit.disabled) closeEdit(); });
@@ -153,12 +162,38 @@ function renderGrants(items) {
     row.append(detailCell(credentialLabel(grant.credentialId), technicalDetail(grant.credentialId)));
     row.append(detailCell(providerLabel(grant.providerKey)));
     row.append(secretNamesCell(grant.secretNames));
-    row.append(detailCell(grant.status));
+    const state = grantState(grant);
+    row.append(detailCell(state.label, state.reason));
     row.append(detailCell(formatDate(grant.updatedAt)));
     const actions = document.createElement('td');
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary small'; edit.dataset.grantId = grant.grantId; edit.textContent = t('consumerGrants.edit');
-    actions.append(edit); row.append(actions); tableBody.append(row);
+    const scope = document.createElement('button'); scope.type = 'button'; scope.className = 'secondary small'; scope.dataset.scopeConsumer = grant.consumerId; scope.textContent = t('consumerGrants.viewScope');
+    scope.addEventListener('click', () => { scopeConsumer.value = grant.consumerId; void loadAccessScope(); });
+    if (state.orphaned) {
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger small'; remove.dataset.removeGrantId = grant.grantId; remove.textContent = t('consumerGrants.removeGrant');
+      actions.append(remove);
+    } else actions.append(edit, scope);
+    row.append(actions); tableBody.append(row);
   }
+}
+
+async function loadAccessScope() {
+  const consumerId = String(scopeConsumer.value ?? '').trim();
+  if (!consumerId) return;
+  scopeResult.textContent = t('consumerGrants.scopeLoading');
+  try {
+    const response = await request(`/api/v1/management/consumer-grants/access-scope?consumerId=${encodeURIComponent(consumerId)}`);
+    const scope = response.data;
+    scopeResult.replaceChildren();
+    const summary = document.createElement('p');
+    summary.textContent = `${t('consumerGrants.scopeSummary')}: ${scope.summary.credentialCount} ${t('consumerGrants.scopeCredentials')}, ${scope.summary.providerCount} ${t('consumerGrants.scopeProviders')}, ${scope.summary.secretFieldAssignmentCount} ${t('consumerGrants.scopeFields')}, ${scope.summary.activeGrantCount} ${t('consumerGrants.scopeGrants')}`;
+    scopeResult.append(summary);
+    for (const credential of scope.credentials ?? []) {
+      const item = document.createElement('p');
+      item.textContent = `${credential.displayName} (${credential.providerKey}) — ${(credential.permittedSecretFields ?? []).join(', ')}`;
+      scopeResult.append(item);
+    }
+  } catch (error) { scopeResult.textContent = grantError(error, 'load'); }
 }
 
 function detailCell(value, detail = null) {
@@ -180,6 +215,23 @@ function credentialLabel(id) {
 }
 function providerLabel(providerKey) {
   return providerKey || t('common.unknown');
+}
+
+function grantState(grant) {
+  const credential = credentials.get(grant.credentialId);
+  if (!consumers.has(grant.consumerId)) return { label: t('consumerGrants.orphanConsumer'), reason: t('consumerGrants.noAuthority'), orphaned: true };
+  if (!credential) return { label: t('consumerGrants.orphanCredential'), reason: t('consumerGrants.noAuthority'), orphaned: true };
+  if (grant.credentialGeneration && grant.credentialGeneration !== credential.credentialGeneration) return { label: t('consumerGrants.staleBinding'), reason: t('consumerGrants.noAuthority'), orphaned: true };
+  if (credential.lifecycleState === 'revoked' || credential.lifecycleState === 'deleted') return { label: t('consumerGrants.inactiveCredential'), reason: t('consumerGrants.noAuthority'), orphaned: true };
+  return { label: t('consumerGrants.active'), reason: null, orphaned: false };
+}
+
+async function removeGrant(grantId) {
+  if (!window.confirm(t('consumerGrants.removeGrantConfirm'))) return;
+  try {
+    await request(`/api/v1/management/consumer-grants/${encodeURIComponent(grantId)}`, { method: 'DELETE' });
+    if (await loadGrants({ preserveMessages: true })) showSuccess(t('consumerGrants.removeGrantSuccess'));
+  } catch (error) { showError(errorBox, grantError(error, 'delete')); }
 }
 
 function secretNamesCell(names) {
@@ -218,7 +270,7 @@ function renderProfileOptions() {
 function renderProfileSuggestion() {
   const credential = credentials.get(createCredential.value);
   const suggestion = buildConsumerProfileSuggestion(createProfile.value || 'none', credential);
-  profileDescription.textContent = suggestion.description;
+  profileDescription.textContent = `${t('consumerGrants.profileClassification')}: ${suggestion.classification}. ${suggestion.description}`;
   profileSuggestion.replaceChildren();
   const settings = document.createElement('p');
   settings.textContent = `${t('consumerGrants.profileScope')}: ${suggestion.recommendedScopes.join(', ')}. ${t('consumerGrants.profileFields')}: ${suggestion.suggestedSecretFields.join(', ') || t('consumerGrants.previewNone')}.`;
@@ -287,7 +339,13 @@ function openEdit(grant) {
     summaryLine(t('consumerGrants.permissionSummary'), permissionSummary(grant.consumerId, grant.credentialId)),
     summaryLine(t('consumerGrants.secrets'), (grant.secretNames ?? []).join(', '))
   );
-  renderPreview(editPreview, previewState(grant.credentialId, grant.secretNames ?? []));
+  void renderAuthoritativePreview(editPreview, {
+    consumerId: grant.consumerId,
+    credentialId: grant.credentialId,
+    providerKey: grant.providerKey,
+    secretNames: grant.secretNames ?? [],
+    grantId: grant.grantId
+  });
   editPanel.classList.remove('hidden');
   editForm.elements.secretNames.focus();
 }
@@ -307,12 +365,23 @@ function updateEditSummary() {
     summaryLine(t('common.provider'), editProvider.textContent),
     summaryLine(t('consumerGrants.secrets'), String(editForm.elements.secretNames.value ?? '').split(/[\n,]/).map((name) => name.trim()).filter(Boolean).join(', '))
   );
-  renderPreview(editPreview, previewState(editGrant.credentialId, parseSecretNames(editForm.elements.secretNames.value)));
+  void renderAuthoritativePreview(editPreview, {
+    consumerId: editGrant.consumerId,
+    credentialId: editGrant.credentialId,
+    providerKey: editGrant.providerKey,
+    secretNames: parseSecretNames(editForm.elements.secretNames.value),
+    grantId: editGrant.grantId
+  });
 }
 
 function renderCreatePreview() {
   const selected = [...createForm.querySelectorAll('input[name="secretNames"]:checked')].map((input) => input.value);
-  renderPreview(createPreview, previewState(createForm.elements.credentialId.value, selected));
+  void renderAuthoritativePreview(createPreview, {
+    consumerId: createForm.elements.consumerId.value,
+    credentialId: createForm.elements.credentialId.value,
+    providerKey: credentials.get(createForm.elements.credentialId.value)?.providerKey,
+    secretNames: selected
+  });
 }
 
 function previewState(credentialId, selectedNames) {
@@ -346,6 +415,55 @@ function renderPreview(container, { allNames, selected, credential, hasInventory
   const notice = document.createElement('p'); notice.className = selected.length ? 'grant-preview-note' : 'grant-warning';
   notice.textContent = t(selected.length ? 'consumerGrants.previewSelectionWarning' : 'consumerGrants.previewEmptyWarning');
   container.append(notice);
+}
+
+async function renderAuthoritativePreview(container, input) {
+  if (!container) return;
+  const referenceContainer = input.grantId ? editReferenceCheck : createReferenceCheck;
+  const consumerId = String(input.consumerId ?? '').trim();
+  if (!consumerId || !input.credentialId || !input.providerKey) {
+    container.textContent = t('consumerGrants.scopePreviewUnavailable');
+    renderReferenceCheck(referenceContainer, { decision: 'NEEDS_RECHECK', reason: t('consumerGrants.referenceCheckIncomplete') });
+    return;
+  }
+  container.textContent = t('consumerGrants.scopeLoading');
+  renderReferenceCheck(referenceContainer, { decision: 'CHECKING' });
+  try {
+    const response = await request('/api/v1/management/consumer-grants/preview', { method: 'POST', body: JSON.stringify(input) });
+    const { current, proposed, delta, binding, referenceCheck } = response.data;
+    renderReferenceCheck(referenceContainer, binding ?? referenceCheck);
+    container.replaceChildren();
+    const summary = document.createElement('p');
+    summary.textContent = `${t('consumerGrants.scopeSummary')}: ${current.summary.credentialCount} → ${proposed.summary.credentialCount} ${t('consumerGrants.scopeCredentials')}; ${current.summary.secretFieldAssignmentCount} → ${proposed.summary.secretFieldAssignmentCount} ${t('consumerGrants.scopeFields')}; ${t(`consumerGrants.scopeDelta.${delta.status}`)}.`;
+    container.append(summary);
+    if (delta.added.length || delta.removed.length) {
+      const detail = document.createElement('p');
+      detail.textContent = `${t('consumerGrants.scopeAdded')}: ${delta.added.join(', ') || t('consumerGrants.previewNone')}; ${t('consumerGrants.scopeRemoved')}: ${delta.removed.join(', ') || t('consumerGrants.previewNone')}`;
+      container.append(detail);
+    }
+  } catch (error) {
+    container.textContent = t('consumerGrants.scopePreviewUnavailable');
+    renderReferenceCheck(referenceContainer, error?.binding ?? { decision: 'BLOCKED', reason: t('consumerGrants.referenceCheckBlocked') });
+  }
+}
+
+function renderReferenceCheck(container, result = {}) {
+  if (!container) return;
+  container.replaceChildren();
+  const state = result.decision ?? 'NEEDS_RECHECK';
+  const heading = document.createElement('strong');
+  heading.textContent = t(`consumerGrants.referenceCheck.${state}`);
+  container.append(heading);
+  if (result.reason) {
+    const reason = document.createElement('p'); reason.textContent = result.reason; container.append(reason);
+  }
+  if (result.reasonCode) {
+    const code = document.createElement('p'); code.className = 'technical-detail';
+    code.textContent = `${t('consumerGrants.referenceCheckReason')}: ${result.reasonCode}`; container.append(code);
+  }
+  if (result.remediationHint) {
+    const hint = document.createElement('p'); hint.textContent = result.remediationHint; container.append(hint);
+  }
 }
 
 function parseSecretNames(value) {

@@ -43,8 +43,8 @@ export class CompositeCredentialStoreAdapter {
     }
   }
 
-  async save(credential) {
-    return this.primary.save(credential);
+  async save(credential, options = {}) {
+    return this.primary.save(credential, options);
   }
 
   async create(credential) {
@@ -56,7 +56,7 @@ export class CompositeCredentialStoreAdapter {
     if (typeof this.primary.saveConditional === 'function') {
       return this.primary.saveConditional(credential, options);
     }
-    return this.primary.save(credential);
+    return this.primary.save(credential, options);
   }
 
   async applyBatch(changes, options = {}) {
@@ -64,6 +64,15 @@ export class CompositeCredentialStoreAdapter {
       throw new Error('CompositeCredentialStoreAdapter.applyBatch() requires an atomic primary adapter');
     }
     return this.primary.applyBatch(changes, options);
+  }
+
+  async isDeletedIdentity(credentialId) {
+    return this.primary.isDeletedIdentity?.(credentialId) ?? false;
+  }
+
+  async getRestoreState() {
+    if (typeof this.primary.getRestoreState === 'function') return this.primary.getRestoreState();
+    return { credentials: await this.list(), tombstones: [] };
   }
 
   async delete(credentialId) {

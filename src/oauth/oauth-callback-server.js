@@ -44,6 +44,8 @@ import {
   withBasePath
 } from '../config/base-path.js';
 import { PROJECT_LINKS } from '../../public/admin/project-links.js';
+import { AbuseAdmission, AbuseAdmissionResult, AbusePolicyClass } from '../security/abuse-admission.js';
+import { resolveTrustedSourceIdentity } from '../security/trusted-source-identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_DIR = path.resolve(__dirname, '../..');
@@ -55,8 +57,13 @@ const PROJECT_DOCUMENTS = Object.freeze({
   [PROJECT_LINKS.security]: path.join(PROJECT_DIR, 'SECURITY.md')
 });
 const OAUTH_BINDING_COOKIE_PREFIX = 'sekalum-oauth-actor-';
+const DEFAULT_OAUTH_STATE_MAX_ENTRIES = 10_000;
+const DEFAULT_OAUTH_STATE_MAX_PER_ACTOR = 2_000;
+const DEFAULT_OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 1000;
 
 export class OAuthCallbackServer {
+  #canonicalServer = null;
+
   constructor({
     providerManager,
     importTokenCommand,
@@ -72,9 +79,18 @@ export class OAuthCallbackServer {
     apiTokenService = null,
     consumerCredentialService = null,
     credentialTransferService = null,
+    restoreAdmissionService = null,
+    restoreCommitCoordinator = null,
     customProviderService = null,
+    abuseAdmission = null,
     config,
-    logger
+    logger,
+    oauthStateClock = () => Date.now(),
+    oauthStateMaxEntries = null,
+    oauthStateMaxPerActor = null,
+    oauthStateCleanupIntervalMs = null,
+    schedule = setInterval,
+    cancelSchedule = clearInterval
   }) {
     this.providerManager = providerManager;
     this.importTokenCommand = importTokenCommand;
@@ -87,7 +103,9 @@ export class OAuthCallbackServer {
     this.credentialTransferService = credentialTransferService ?? new CredentialTransferService({
       credentialManager,
       providerManager,
-      auditLogService: this.auditLogService
+      auditLogService: this.auditLogService,
+      restoreAdmissionService,
+      restoreCommitCoordinator
     });
     this.credentialController = new CredentialController({
       credentialManager,
@@ -141,13 +159,28 @@ export class OAuthCallbackServer {
       ? new ConsumerCredentialController({ consumerCredentialService })
       : null;
     this.consumerGrantController = consumerCredentialService?.consumerGrantService
-      ? new ConsumerGrantController({ consumerGrantService: consumerCredentialService.consumerGrantService })
+      ? new ConsumerGrantController({ consumerGrantService: consumerCredentialService.consumerGrantService, consumerCredentialService })
       : null;
     this.accessManagementController = new AccessManagementController({
       accessManagementService: this.accessManagementService
     });
     this.config = config;
     this.logger = logger;
+    this.abuseAdmission = abuseAdmission ?? new AbuseAdmission();
+    this.oauthStateClock = oauthStateClock;
+    this.cancelSchedule = cancelSchedule;
+    this.oauthWizardIntentMaxEntries = this.#positiveInteger(
+      oauthStateMaxEntries,
+      this.#positiveInteger(this.abuseAdmission.maxTotalKeys, DEFAULT_OAUTH_STATE_MAX_ENTRIES)
+    );
+    this.oauthWizardIntentMaxPerActor = this.#positiveInteger(
+      oauthStateMaxPerActor,
+      this.#positiveInteger(this.abuseAdmission.domainQuotas?.actor, DEFAULT_OAUTH_STATE_MAX_PER_ACTOR)
+    );
+    this.oauthWizardIntentCleanupIntervalMs = this.#positiveInteger(
+      oauthStateCleanupIntervalMs,
+      this.#positiveInteger(this.abuseAdmission.cleanupIntervalMs, DEFAULT_OAUTH_STATE_CLEANUP_INTERVAL_MS)
+    );
     this.basePath = normalizeBasePath(config.get('BASE_PATH', '/'));
     this.trustedProxy = normalizeTrustedProxy(config.get('TRUSTED_PROXY', null));
     const configuredHostedMode = config.get('HOSTED_MODE', false);
@@ -165,6 +198,9 @@ export class OAuthCallbackServer {
     if (nodeEnv === 'production' && !this.publicBaseUrl) {
       throw new Error('PUBLIC_BASE_URL is required in production');
     }
+    if (nodeEnv === 'production' && !this.publicBaseUrl?.startsWith('https://')) {
+      throw new Error('PUBLIC_BASE_URL must use HTTPS in production');
+    }
     if (nodeEnv === 'production' && this.publicBaseUrl && isInternalPublicOrigin(this.publicBaseUrl)) {
       throw new Error('PUBLIC_BASE_URL must not use an internal host in production');
     }
@@ -175,9 +211,25 @@ export class OAuthCallbackServer {
       throw new Error('HOSTED_MODE requires an HTTPS PUBLIC_BASE_URL');
     }
     this.oauthWizardIntents = new Map();
+    this.oauthWizardIntentEvictionTimer = schedule(
+      () => this.#purgeExpiredOAuthWizardIntents(),
+      this.oauthWizardIntentCleanupIntervalMs
+    );
+    this.oauthWizardIntentEvictionTimer?.unref?.();
     this.app = express();
     this.app.set('trust proxy', this.trustedProxy);
     this.routes = express.Router();
+    this.app.use((req, res, next) => {
+      const existing = res.getHeader('Content-Security-Policy');
+      const directives = typeof existing === 'string'
+        ? existing.split(';').map((directive) => directive.trim()).filter(Boolean)
+        : [];
+      const preserved = directives.filter((directive) => !directive.toLowerCase().startsWith('frame-ancestors'));
+      res.set('Content-Security-Policy', [...preserved, "frame-ancestors 'none'"].join('; '));
+      res.set('X-Frame-Options', 'DENY');
+      next();
+    });
+    this.app.use((req, res, next) => this.#preParserAdmission(req, res, next));
     this.app.use(express.json({ limit: '1mb' }));
     this.routes.use('/admin', express.static(path.join(PUBLIC_DIR, 'admin')));
     this.routes.use('/consumer', express.static(path.join(PUBLIC_DIR, 'consumer')));
@@ -200,21 +252,28 @@ export class OAuthCallbackServer {
     const port = Number(this.config.get('OAUTH_CALLBACK_PORT', 3000));
 
     return new Promise((resolve, reject) => {
-      this.server = this.app.listen(port, this.bindHost, () => {
+      const server = this.app.listen(port, this.bindHost, () => {
         this.logger.success(`OAuth callback server listening on ${this.bindHost}:${port}`);
         resolve();
       });
+      this.server = server;
+      this.#canonicalServer = server;
 
-      this.server.once('error', reject);
+      server.once('error', reject);
     });
   }
 
   async stop() {
-    if (!this.server) {
+    if (this.oauthWizardIntentEvictionTimer) {
+      this.cancelSchedule(this.oauthWizardIntentEvictionTimer);
+      this.oauthWizardIntentEvictionTimer = null;
+    }
+    if (!this.#canonicalServer) {
       return;
     }
 
-    const server = this.server;
+    const server = this.#canonicalServer;
+    this.#canonicalServer = null;
     this.server = null;
 
     await new Promise((resolve, reject) => {
@@ -232,32 +291,46 @@ export class OAuthCallbackServer {
 
   #authorized(permission, handler) {
     return async (req, res) => {
+      let leaseId = null;
       try {
-        if (this.#isTestCompatibilityMode() && await this.accessManagementService.isAuthorizationRequired?.() === false) {
+        if (this.#isTestCompatibilityMode(req) && await this.accessManagementService.isAuthorizationRequired?.() === false) {
+          const admission = this.#admitRequest(req, { userId: req.headers?.['x-credential-hub-user'] ?? 'test-user' });
+          if (admission.result !== AbuseAdmissionResult.ALLOW) {
+            this.#sendRateLimited(res, admission);
+            return;
+          }
+          leaseId = admission.leaseId ?? null;
           await handler(req, res);
           return;
         }
         const authentication = await this.#resolveAuthenticatedUser(req);
-        if (!authentication.scopes?.includes('*') && !authentication.scopes?.includes(permission)) {
-          const error = new Error('API token is missing the required scope');
-          error.statusCode = 403;
-          error.code = 'API_TOKEN_SCOPE_MISSING';
-          throw error;
+        const policyClass = this.#policyForRequest(req);
+        if (policyClass === AbusePolicyClass.SECURITY_CONTAINMENT) {
+          await this.#assertAuthorized(authentication, permission);
         }
-        await this.accessManagementService.authorize(authentication.userId, permission);
+        const admission = this.#admitRequest(req, authentication, policyClass);
+        if (admission.result !== AbuseAdmissionResult.ALLOW) {
+          this.#sendRateLimited(res, admission);
+          return;
+        }
+        leaseId = admission.leaseId ?? null;
+        if (policyClass !== AbusePolicyClass.SECURITY_CONTAINMENT) await this.#assertAuthorized(authentication, permission);
         req.auth = authentication;
         await handler(req, res);
       } catch (error) {
         this.#sendAuthorizationError(res, error);
+      } finally {
+        if (leaseId) this.abuseAdmission.release(leaseId);
       }
     };
   }
 
   #bootstrapOrAuthorized(handler) {
     return async (req, res) => {
+      let leaseId = null;
       const hasAuthorizationHeader = typeof req.headers?.authorization === 'string'
         && req.headers.authorization.trim() !== '';
-      const hasTestCompatibilityIdentity = this.#isTestCompatibilityMode()
+      const hasTestCompatibilityIdentity = this.#isTestCompatibilityMode(req)
         && typeof req.headers?.['x-credential-hub-user'] === 'string'
         && req.headers['x-credential-hub-user'].trim() !== '';
 
@@ -270,13 +343,23 @@ export class OAuthCallbackServer {
         await this.#authorized('users:manage', handler)(req, res);
         return;
       }
-
-      await this.accessManagementController.bootstrapFirstAdministrator(req, res);
+      try {
+        const admission = this.#admitRequest(req, {}, AbusePolicyClass.BOOTSTRAP);
+        if (admission.result !== AbuseAdmissionResult.ALLOW) {
+          this.#sendRateLimited(res, admission);
+          return;
+        }
+        leaseId = admission.leaseId ?? null;
+        await this.accessManagementController.bootstrapFirstAdministrator(req, res);
+      } finally {
+        if (leaseId) this.abuseAdmission.release(leaseId);
+      }
     };
   }
 
   #consumerAuthorized(handler) {
     return async (req, res) => {
+      let leaseId = null;
       try {
         const bearerToken = this.#bearerTokenFromRequest(req);
         if (!bearerToken || !this.apiTokenService?.authenticate) {
@@ -292,7 +375,7 @@ export class OAuthCallbackServer {
           error.code = 'CONSUMER_SCOPE_MISSING';
           throw error;
         }
-        if (!(this.#isTestCompatibilityMode() && await this.accessManagementService.isAuthorizationRequired?.() === false)) {
+        if (!(this.#isTestCompatibilityMode(req) && await this.accessManagementService.isAuthorizationRequired?.() === false)) {
           try {
             await this.accessManagementService.authorize(authentication.userId, 'credentials:consume');
           } catch {
@@ -303,10 +386,18 @@ export class OAuthCallbackServer {
           }
         }
         req.auth = { ...authentication, consumerId: authentication.apiToken?.id };
+        const admission = this.#admitRequest(req, req.auth);
+        if (admission.result !== AbuseAdmissionResult.ALLOW) {
+          this.#sendRateLimited(res, admission);
+          return;
+        }
+        leaseId = admission.leaseId ?? null;
         await handler(req, res);
       } catch (error) {
         res.set('Cache-Control', 'no-store');
         this.#sendAuthorizationError(res, error);
+      } finally {
+        if (leaseId) this.abuseAdmission.release(leaseId);
       }
     };
   }
@@ -333,7 +424,7 @@ export class OAuthCallbackServer {
       });
     }
 
-    if (this.#isTestCompatibilityMode() && req.headers?.['x-credential-hub-user']) {
+    if (this.#isTestCompatibilityMode(req) && req.headers?.['x-credential-hub-user']) {
       return Object.freeze({ userId: req.headers['x-credential-hub-user'], authMethod: 'test-user-header', scopes: ['*'] });
     }
     throw this.#unauthorized('Missing Bearer API token', 'API_TOKEN_AUTH_FAILED');
@@ -395,6 +486,220 @@ export class OAuthCallbackServer {
     });
   }
 
+  #preParserAdmission(req, res, next) {
+    Promise.resolve(this.#preParserPolicy(req)).then((policyClass) => {
+      if (!policyClass) {
+        next();
+        return;
+      }
+
+      let source;
+      try {
+        source = resolveTrustedSourceIdentity(req, { trustedProxy: this.trustedProxy });
+      } catch {
+        this.#sendRateLimited(res, {
+          result: AbuseAdmissionResult.THROTTLE,
+          retryAfterSeconds: 1,
+          policyClass,
+          reasonClass: 'TRUSTED_PROXY_SOURCE_CONFLICT'
+        });
+        return;
+      }
+
+      const decision = this.abuseAdmission.decide({
+        policyClass,
+        phase: 'PRE_AUTH',
+        sourceIdentity: source.identity,
+        cost: 1
+      });
+      if (decision.result !== AbuseAdmissionResult.ALLOW) {
+        this.#sendRateLimited(res, decision);
+        return;
+      }
+
+      req.abuseSourceIdentity = source.identity;
+      req.abuseSourceClassification = source.classification;
+      req.abusePreAdmission = decision;
+      next();
+    }).catch(() => this.#sendRateLimited(res, {
+      result: AbuseAdmissionResult.THROTTLE,
+      retryAfterSeconds: 1,
+      policyClass: AbusePolicyClass.PRE_AUTH_FAILURE,
+      reasonClass: 'INTERNAL_ADMISSION_FAILURE'
+    }));
+  }
+
+  async #preParserPolicy(req) {
+    const pathname = this.#requestPath(req);
+    if (this.#isSecurityContainmentPath(req, pathname)
+      && await this.#isAuthorizedContainmentRequest(req, pathname)) return null;
+    return this.#preParserPolicyClass(req, pathname);
+  }
+
+  #sendRateLimited(res, decision = {}) {
+    const retryAfterSeconds = Number.isFinite(Number(decision.retryAfterSeconds))
+      ? Math.max(1, Math.min(86_400, Math.ceil(Number(decision.retryAfterSeconds))))
+      : 1;
+    res.set('Retry-After', String(retryAfterSeconds));
+    res.set('Cache-Control', 'no-store');
+    res.status(429).json({
+      error: {
+        code: 'RATE_LIMITED',
+        message: 'Too many requests. Please retry later.'
+      }
+    });
+  }
+
+  #preParserPolicyClass(req, pathname = this.#requestPath(req)) {
+    if (pathname === '/' || pathname === '/health' || pathname.startsWith('/admin/') || pathname.startsWith('/consumer/') || pathname.startsWith('/shared/')) {
+      return this.#mayCarryBody(req) ? AbusePolicyClass.PRE_AUTH_FAILURE : null;
+    }
+    if (/^\/oauth\/[^/]+\/callback$/.test(pathname)) return AbusePolicyClass.OAUTH_CALLBACK_INVALID;
+    if (/^\/oauth\/[^/]+\/login$/.test(pathname)) return AbusePolicyClass.OAUTH_START;
+    if (!pathname.startsWith('/api/v1/')) return this.#mayCarryBody(req) ? AbusePolicyClass.PRE_AUTH_FAILURE : null;
+    if (pathname === '/api/v1/management/users' && req.method === 'POST' && !this.#bearerTokenFromRequest(req)) {
+      return AbusePolicyClass.BOOTSTRAP;
+    }
+    return AbusePolicyClass.PRE_AUTH_FAILURE;
+  }
+
+  async #isAuthorizedContainmentRequest(req, pathname) {
+    try {
+      const authentication = await this.#resolveAuthenticatedUser(req);
+      await this.#assertAuthorized(authentication, this.#containmentPermission(pathname));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #containmentPermission(pathname) {
+    if (pathname.includes('/management/users/')) return 'users:manage';
+    if (pathname.includes('/management/api-tokens/')) return 'api-tokens:manage';
+    if (pathname.includes('/providers/')) return 'providers:manage';
+    return 'credentials:manage';
+  }
+
+  async #assertAuthorized(authentication, permission) {
+    if (!authentication.scopes?.includes('*') && !authentication.scopes?.includes(permission)) {
+      const error = new Error('API token is missing the required scope');
+      error.statusCode = 403;
+      error.code = 'API_TOKEN_SCOPE_MISSING';
+      throw error;
+    }
+    await this.accessManagementService.authorize(authentication.userId, permission);
+  }
+
+  #mayCarryBody(req) {
+    const method = String(req.method ?? 'GET').toUpperCase();
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) return true;
+    const length = Number(req.headers?.['content-length']);
+    return (Number.isFinite(length) && length > 0)
+      || typeof req.headers?.['transfer-encoding'] === 'string';
+  }
+
+  #admitRequest(req, authentication = {}, policyClassOverride = null) {
+    const policyClass = policyClassOverride ?? this.#policyForRequest(req);
+    if (req.abusePreAdmission?.result === AbuseAdmissionResult.ALLOW
+      && req.abusePreAdmission.policyClass === policyClass) {
+      return this.#reserveRequest(req, authentication, policyClass);
+    }
+    return this.abuseAdmission.admit(this.#admissionInput(req, authentication, policyClass));
+  }
+
+  #reserveRequest(req, authentication = {}, policyClass) {
+    return this.abuseAdmission.reserve(this.#admissionInput(req, authentication, policyClass));
+  }
+
+  #admissionInput(req, authentication, policyClass) {
+    const sourceIdentity = req.abuseSourceIdentity ?? this.#sourceIdentity(req);
+    return {
+      policyClass,
+      phase: 'IDENTITY',
+      sourceIdentity,
+      actorIdentity: authentication.userId ?? 'unknown',
+      consumerIdentity: authentication.consumerId ?? authentication.apiToken?.id ?? 'unknown',
+      apiTokenIdentity: authentication.apiToken?.id ?? authentication.apiTokenId ?? authentication.consumerId ?? 'unknown',
+      providerIdentity: req.params?.providerKey ?? req.params?.provider ?? 'unknown',
+      cost: this.#requestCost(req, policyClass)
+    };
+  }
+
+  #sourceIdentity(req) {
+    try {
+      const source = resolveTrustedSourceIdentity(req, { trustedProxy: this.trustedProxy });
+      req.abuseSourceIdentity = source.identity;
+      req.abuseSourceClassification = source.classification;
+      return source.identity;
+    } catch {
+      return 'source:unknown';
+    }
+  }
+
+  #policyForRequest(req) {
+    const pathname = this.#requestPath(req);
+    const method = String(req.method ?? 'GET').toUpperCase();
+    if (pathname === '/api/v1/consumer/credentials') return AbusePolicyClass.CONSUMER_DISCOVERY;
+    if (pathname === '/api/v1/consumer/credentials/resolve-batch') return AbusePolicyClass.CONSUMER_BATCH_RESOLVE;
+    if (/^\/api\/v1\/consumer\/credentials\/[^/]+\/resolve$/.test(pathname)) return AbusePolicyClass.CONSUMER_RESOLVE;
+    if (/\/oauth\/(?:start|login)$/.test(pathname)
+      || /^\/api\/v1\/providers\/[^/]+\/oauth\/start$/.test(pathname)) return AbusePolicyClass.OAUTH_START;
+    if (this.#isSecurityContainmentPath(req, pathname)) return AbusePolicyClass.SECURITY_CONTAINMENT;
+    if (pathname === '/api/v1/management/api-tokens' && method === 'POST') return AbusePolicyClass.API_TOKEN_CREATE;
+    if (/\/health-check$|\/test-connection$|\/validate$|\/refresh$|\/scheduler\/run-once$/.test(pathname)) {
+      return AbusePolicyClass.PROVIDER_HEALTH_OR_EXPENSIVE_MANAGEMENT;
+    }
+    if (/\/api-tokens(?:\/[^/]+)?(?:\/revoke)?$/.test(pathname) && (method === 'DELETE' || pathname.endsWith('/revoke'))) {
+      return AbusePolicyClass.API_TOKEN_REVOKE;
+    }
+    if (/^\/api\/v1\/management\/consumer-grants\/(?:preview|diagnose)$/.test(pathname)) {
+      return AbusePolicyClass.MANAGEMENT_AUTHENTICATED;
+    }
+    if (pathname.includes('/api/v1/management/') || pathname.startsWith('/api/v1/credentials') || pathname.startsWith('/api/v1/providers')) {
+      return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+        ? AbusePolicyClass.MANAGEMENT_MUTATION
+        : AbusePolicyClass.MANAGEMENT_AUTHENTICATED;
+    }
+    return AbusePolicyClass.MANAGEMENT_AUTHENTICATED;
+  }
+
+  #requestCost(req, policyClass) {
+    if (policyClass === AbusePolicyClass.CONSUMER_BATCH_RESOLVE) {
+      const requests = req.body?.requests;
+      if (!Array.isArray(requests) || requests.length < 1 || requests.length > 20) return 20;
+      const valid = requests.every((request) => (
+        typeof request?.credentialKey === 'string'
+        && request.credentialKey.trim() !== ''
+        && Array.isArray(request.secretNames)
+      ));
+      return valid ? requests.length : 20;
+    }
+    if (policyClass === AbusePolicyClass.MANAGEMENT_MUTATION
+      && (/\/credentials\/(?:bulk|import)$/.test(this.#requestPath(req)))) {
+      const candidate = req.body?.credentials ?? req.body?.items ?? req.body?.requests;
+      if (!Array.isArray(candidate) || candidate.length < 1 || candidate.length > 20) return 20;
+      return Math.min(20, candidate.length);
+    }
+    return 1;
+  }
+
+  #isSecurityContainmentPath(req, pathname = this.#requestPath(req)) {
+    const method = String(req.method ?? 'GET').toUpperCase();
+    return (pathname.endsWith('/revoke') || pathname.endsWith('/disable'))
+      && ['POST', 'DELETE'].includes(method)
+      || (method === 'DELETE' && /^\/api\/v1\/(?:management\/users|management\/api-tokens|credentials|providers)\//.test(pathname));
+  }
+
+  #requestPath(req) {
+    const raw = typeof req.path === 'string'
+      ? req.path
+      : String(req.originalUrl ?? '/').split('?')[0];
+    if (this.basePath !== '/' && raw.startsWith(this.basePath)) {
+      return raw.slice(this.basePath.length) || '/';
+    }
+    return raw || '/';
+  }
+
   #routes() {
     this.routes.get('/', (req, res) => {
       res.redirect(this.#path('/admin/'));
@@ -432,6 +737,16 @@ export class OAuthCallbackServer {
       await this.consumerGrantController.create(req, res);
     }));
 
+    this.routes.get('/api/v1/management/consumer-grants/access-scope', this.#authorized('consumer-grants:manage', async (req, res) => {
+      if (!this.consumerGrantController) throw this.#unauthorized('Consumer access scope is not configured', 'CONSUMER_ACCESS_SCOPE_UNAVAILABLE');
+      await this.consumerGrantController.accessScope(req, res);
+    }));
+
+    this.routes.post('/api/v1/management/consumer-grants/preview', this.#authorized('consumer-grants:manage', async (req, res) => {
+      if (!this.consumerGrantController) throw this.#unauthorized('Consumer access scope is not configured', 'CONSUMER_ACCESS_SCOPE_UNAVAILABLE');
+      await this.consumerGrantController.preview(req, res);
+    }));
+
     this.routes.post('/api/v1/management/consumer-grants/diagnose', this.#authorized('consumer-grants:manage', async (req, res) => {
       const consumerId = req.body?.consumerId;
       try {
@@ -451,11 +766,21 @@ export class OAuthCallbackServer {
       await this.consumerGrantController.list(req, res);
     }));
 
+    this.routes.get('/api/v1/management/credentials/:credentialId/access-scope', this.#authorized('credentials:read', async (req, res) => {
+      if (!this.consumerGrantController) throw this.#unauthorized('Consumer access scope is not configured', 'CONSUMER_ACCESS_SCOPE_UNAVAILABLE');
+      await this.consumerGrantController.credentialAccessScope(req, res);
+    }));
+
     this.routes.put('/api/v1/management/consumer-grants/:grantId', this.#authorized('consumer-grants:manage', async (req, res) => {
       if (!this.consumerGrantController) {
         throw this.#unauthorized('Consumer grant management is not configured', 'CONSUMER_GRANT_MANAGEMENT_UNAVAILABLE');
       }
       await this.consumerGrantController.update(req, res);
+    }));
+
+    this.routes.delete('/api/v1/management/consumer-grants/:grantId', this.#authorized('consumer-grants:manage', async (req, res) => {
+      if (!this.consumerGrantController) throw this.#unauthorized('Consumer grant management is not configured', 'CONSUMER_GRANT_MANAGEMENT_UNAVAILABLE');
+      await this.consumerGrantController.delete(req, res);
     }));
 
     for (const [route, file] of Object.entries(PROJECT_DOCUMENTS)) {
@@ -679,9 +1004,16 @@ export class OAuthCallbackServer {
       const callbackPath = this.#path(`/oauth/${encodeURIComponent(providerKey)}/callback`);
       const redirectUri = `${requestOrigin}${callbackPath}`;
       const oauthState = crypto.randomUUID();
+      const actorUserId = req.auth?.userId ?? null;
+      const actorIdentity = actorUserId && this.accessManagementService.getUserIdentity
+        ? await this.accessManagementService.getUserIdentity(actorUserId)
+        : null;
       const result = await this.providerManager.startOAuth(providerKey, {
         state: oauthState,
-        actorUserId: req.auth?.userId ?? null,
+        actorUserId: actorIdentity?.userId ?? actorUserId,
+        actorPrincipalGeneration: actorIdentity?.principalGeneration ?? null,
+        publicOrigin: requestOrigin,
+        redirectUri,
         scopes: Array.isArray(req.body?.scopes) ? req.body.scopes : null,
         credentialMethodKey: req.body?.credentialMethodKey ?? null,
         providerConfiguration: {
@@ -697,11 +1029,22 @@ export class OAuthCallbackServer {
         throw error;
       }
 
-      const bindingToken = this.#rememberOAuthWizardIntent({
-        state: oauthState,
-        providerKey,
-        actorUserId: req.auth?.userId ?? null
-      });
+      let bindingToken;
+      try {
+        bindingToken = this.#rememberOAuthWizardIntent({
+          state: oauthState,
+          providerKey,
+          actorUserId: actorIdentity?.userId ?? actorUserId,
+          actorPrincipalGeneration: actorIdentity?.principalGeneration ?? null
+        });
+      } catch (error) {
+        try {
+          await this.providerManager.cancelOAuth?.(providerKey, oauthState, {
+            expectedActorUserId: req.auth?.userId ?? null
+          });
+        } catch {}
+        throw error;
+      }
       this.#setOAuthBindingCookie(req, res, oauthState, bindingToken);
 
       const authorizationRedirectUri = this.#oauthRedirectUri(result.data.authorizationUrl);
@@ -738,7 +1081,7 @@ export class OAuthCallbackServer {
     }));
 
     this.routes.get('/oauth/:provider/login', async (req, res) => {
-      if (this.#isTestCompatibilityMode()) {
+      if (this.#isTestCompatibilityMode(req)) {
         try {
           const { provider } = req.params;
           const state = crypto.randomUUID();
@@ -756,12 +1099,13 @@ export class OAuthCallbackServer {
     this.routes.get('/oauth/:provider/callback', async (req, res) => {
       const { provider } = req.params;
       let providerConfigurationId = null;
+      let leaseId = null;
       const callbackState = req.query.state;
       try {
         const { code, state, error, error_description } = req.query;
         this.#purgeExpiredOAuthWizardIntents();
         await this.providerManager.cleanupExpiredOAuthContexts?.();
-        const intent = !this.#isTestCompatibilityMode()
+        const intent = !this.#isTestCompatibilityMode(req)
           ? this.#consumeOAuthWizardIntent({ state, providerKey: provider, req, res })
           : null;
         const expectedActorUserId = intent?.actorUserId ?? null;
@@ -788,10 +1132,27 @@ export class OAuthCallbackServer {
           throw missingCode;
         }
 
+        const admission = this.#admitRequest(
+          req,
+          { userId: expectedActorUserId },
+          AbusePolicyClass.OAUTH_CALLBACK_VALID
+        );
+        if (admission.result !== AbuseAdmissionResult.ALLOW) {
+          this.#sendRateLimited(res, admission);
+          return;
+        }
+        leaseId = admission.leaseId ?? null;
+
+        if (intent) await this.#revalidateOAuthActor(intent);
+
         const result = await this.providerManager.handleOAuthCallback(
           provider,
           { code, state },
-          { expectedActorUserId }
+          {
+            expectedActorUserId,
+            publicOrigin: this.#publicOrigin(req),
+            redirectUri: `${this.#publicOrigin(req)}${this.#path(`/oauth/${encodeURIComponent(provider)}/callback`)}`
+          }
         );
 
         if (!result.success) {
@@ -802,7 +1163,14 @@ export class OAuthCallbackServer {
 
         providerConfigurationId = result.data.metadata?.providerConfigurationId ?? null;
 
-        const credentialRecord = await this.importTokenCommand.execute(result.data);
+        const credentialRecord = intent
+          ? await this.accessManagementService.withAuthorizedCurrentPrincipal(
+            intent.actorUserId,
+            intent.actorPrincipalGeneration,
+            'providers:manage',
+            () => this.importTokenCommand.execute(result.data)
+          )
+          : await this.importTokenCommand.execute(result.data);
 
         res.status(200).send(this.#oauthResultPage({
           status: 'success',
@@ -812,7 +1180,15 @@ export class OAuthCallbackServer {
         }));
       } catch (error) {
         await this.providerManager.discardProviderConfiguration?.(providerConfigurationId, provider);
-        const code = ['OAUTH_STATE_INVALID', 'OAUTH_REDIRECT_URI_MISMATCH'].includes(error.code)
+        const safeOAuthCodes = [
+          'OAUTH_STATE_INVALID', 'OAUTH_CONTEXT_INVALID', 'OAUTH_CONTEXT_EXPIRED',
+          'OAUTH_PROVIDER_MISMATCH', 'OAUTH_PROFILE_MISMATCH', 'OAUTH_METHOD_MISMATCH',
+          'OAUTH_CLIENT_MISMATCH', 'OAUTH_ISSUER_MISMATCH', 'OAUTH_AUDIENCE_MISMATCH',
+          'OAUTH_SCOPE_MISMATCH', 'OAUTH_ACCOUNT_MISMATCH', 'OAUTH_REDIRECT_URI_MISMATCH',
+          'OAUTH_CREDENTIAL_BINDING_MISMATCH', 'OAUTH_CREDENTIAL_STATE_CHANGED',
+          'OAUTH_EVIDENCE_UNAVAILABLE'
+        ];
+        const code = safeOAuthCodes.includes(error.code)
           ? error.code
           : 'OAUTH_CALLBACK_FAILED';
         this.logger.error('OAuth callback failed', { code });
@@ -824,26 +1200,63 @@ export class OAuthCallbackServer {
             ? `${this.#publicOrigin(req)}${this.#path(`/oauth/${encodeURIComponent(provider)}/callback`)}`
             : null
         }));
+      } finally {
+        if (leaseId) this.abuseAdmission.release(leaseId);
       }
     });
   }
 
-  #rememberOAuthWizardIntent({ state, providerKey, actorUserId }) {
+  #rememberOAuthWizardIntent({ state, providerKey, actorUserId, actorPrincipalGeneration }) {
     this.#purgeExpiredOAuthWizardIntents();
+    this.#assertOAuthWizardIntentCapacity(actorUserId);
     const ttl = this.#oauthWizardIntentTtlMs();
     const bindingToken = crypto.randomBytes(32).toString('base64url');
     this.oauthWizardIntents.set(state, Object.freeze({
       providerKey,
       actorUserId,
+      actorPrincipalGeneration,
       bindingTokenDigest: this.#digestOAuthBindingToken(bindingToken),
-      expiresAt: Date.now() + ttl
+      expiresAt: this.oauthStateClock() + ttl
     }));
     return bindingToken;
   }
 
-  #isTestCompatibilityMode() { return this.nodeEnv === 'test'; }
+  async #revalidateOAuthActor(intent) {
+    if (!intent?.actorUserId || !intent?.actorPrincipalGeneration) {
+      const error = new Error('OAuth callback actor binding is missing');
+      error.code = 'OAUTH_CONTEXT_INVALID';
+      error.statusCode = 403;
+      throw error;
+    }
+    await this.accessManagementService.authorizeCurrentPrincipal(
+      intent.actorUserId,
+      intent.actorPrincipalGeneration,
+      'providers:manage'
+    );
+  }
 
-  #purgeExpiredOAuthWizardIntents(now = Date.now()) {
+  #isTestCompatibilityMode(req) {
+    if (this.nodeEnv !== 'test'
+      || this.hostedMode
+      || !['127.0.0.1', '::1', 'localhost'].includes(this.bindHost)
+      || !this.#canonicalServer?.listening
+      || this.server !== this.#canonicalServer
+      || req?.socket?.server !== this.#canonicalServer) {
+      return false;
+    }
+
+    const listenerAddress = this.#canonicalServer.address();
+    return typeof listenerAddress === 'object'
+      && listenerAddress !== null
+      && this.#isLoopbackAddress(listenerAddress.address)
+      && this.#isLoopbackAddress(req.socket.localAddress);
+  }
+
+  #isLoopbackAddress(address) {
+    return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address);
+  }
+
+  #purgeExpiredOAuthWizardIntents(now = this.oauthStateClock()) {
     for (const [state, intent] of this.oauthWizardIntents.entries()) {
       if (intent.expiresAt <= now) this.oauthWizardIntents.delete(state);
     }
@@ -851,7 +1264,7 @@ export class OAuthCallbackServer {
 
   #consumeOAuthWizardIntent({ state, providerKey, req, res }) {
     const intent = typeof state === 'string' ? this.oauthWizardIntents.get(state) : null;
-    if (!intent || intent.providerKey !== providerKey || intent.expiresAt <= Date.now()) {
+    if (!intent || intent.providerKey !== providerKey || intent.expiresAt <= this.oauthStateClock()) {
       const error = new Error('OAuth wizard intent is missing or expired');
       error.code = 'OAUTH_WIZARD_INTENT_REQUIRED';
       error.statusCode = 403;
@@ -876,6 +1289,32 @@ export class OAuthCallbackServer {
   #oauthWizardIntentTtlMs() {
     const configured = Number(this.config.get('OAUTH_WIZARD_INTENT_TTL_MS', 10 * 60 * 1000));
     return Number.isFinite(configured) && configured >= 0 ? configured : 10 * 60 * 1000;
+  }
+
+  #assertOAuthWizardIntentCapacity(actorUserId) {
+    if (this.oauthWizardIntents.size >= this.oauthWizardIntentMaxEntries) {
+      throw this.#oauthWizardIntentCapacityError();
+    }
+    const actor = actorUserId ?? 'anonymous';
+    let actorIntents = 0;
+    for (const intent of this.oauthWizardIntents.values()) {
+      if ((intent.actorUserId ?? 'anonymous') === actor) actorIntents += 1;
+    }
+    if (actorIntents >= this.oauthWizardIntentMaxPerActor) {
+      throw this.#oauthWizardIntentCapacityError();
+    }
+  }
+
+  #oauthWizardIntentCapacityError() {
+    const error = new Error('OAuth wizard intent capacity exceeded');
+    error.code = 'OAUTH_WIZARD_INTENT_CAPACITY';
+    error.statusCode = 429;
+    return error;
+  }
+
+  #positiveInteger(value, fallback) {
+    const number = Number(value);
+    return Number.isInteger(number) && number > 0 ? number : fallback;
   }
 
   #oauthBindingCookieName(state) {
@@ -911,7 +1350,7 @@ export class OAuthCallbackServer {
       'HttpOnly',
       'SameSite=Lax'
     ];
-    if (req.secure || this.publicBaseUrl?.startsWith('https://')) parts.push('Secure');
+    if (this.nodeEnv === 'production' || req.secure || this.publicBaseUrl?.startsWith('https://')) parts.push('Secure');
     res.set('Set-Cookie', parts.join('; '));
   }
 
@@ -923,7 +1362,7 @@ export class OAuthCallbackServer {
       'HttpOnly',
       'SameSite=Lax'
     ];
-    if (req.secure || this.publicBaseUrl?.startsWith('https://')) parts.push('Secure');
+    if (this.nodeEnv === 'production' || req.secure || this.publicBaseUrl?.startsWith('https://')) parts.push('Secure');
     res.append('Set-Cookie', parts.join('; '));
   }
 

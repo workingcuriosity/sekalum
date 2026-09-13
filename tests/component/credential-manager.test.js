@@ -182,7 +182,7 @@ test('CredentialManager startup migration assigns oauth2 to legacy Discord token
   const store = createMemoryStore();
   const provider = {
     credentialMethods: [
-      { key: 'oauth2', credentialFields: [] },
+      { key: 'oauth2', credentialFields: [{ key: 'accessToken', secret: true }, { key: 'refreshToken', secret: true }] },
       { key: 'webhook', credentialFields: [] }
     ],
     providerMethodBindings: [{ methodKey: 'oauth2' }, { methodKey: 'webhook' }]
@@ -229,18 +229,72 @@ test('CredentialManager updates a credential through the CredentialStore', async
   });
 
   const updatedCredential = await manager.updateCredential(credential.credentialId, {
-    externalReference: 'account-2',
     metadata: { displayName: 'new-name' },
     secrets: [{ name: 'accessToken', value: 'access-2' }]
   });
 
   assert.equal(updatedCredential.credentialId, credential.credentialId);
-  assert.equal(updatedCredential.externalReference, 'account-2');
+  assert.equal(updatedCredential.externalReference, 'account-1');
   assert.equal(updatedCredential.metadata.toJSON().displayName, 'new-name');
   assert.deepEqual(updatedCredential.metadata.toJSON().scopes, ['read']);
   assert.equal(updatedCredential.secrets[0].value, 'access-2');
   assert.equal(updatedCredential.version, credential.version + 1);
   assert.equal(await store.load(credential.credentialId), updatedCredential);
+});
+
+test('CredentialManager rejects immutable binding changes while preserving mutable updates', async () => {
+  const store = createMemoryStore();
+  const manager = new CredentialManager({ credentialStore: store });
+  const credential = await manager.register({
+    providerKey: 'threads',
+    externalReference: 'account-1',
+    credentialMethodKey: 'oauth2',
+    providerProfile: { providerKey: 'threads', version: '1.0.0', digest: 'profile-1' },
+    providerConfigurationId: 'configuration-1',
+    credentialGeneration: 'generation-1',
+    secrets: [{ name: 'accessToken', value: 'access-1' }]
+  });
+
+  const mutable = await manager.updateCredential(credential.credentialId, {
+    metadata: { displayName: 'renamed' },
+    secrets: [{ name: 'accessToken', value: 'access-2' }]
+  });
+  assert.equal(mutable.metadata.toJSON().displayName, 'renamed');
+  assert.equal(mutable.credentialGeneration, 'generation-1');
+
+  const immutableChanges = [
+    { providerKey: 'other-provider' },
+    { externalReference: 'account-2' },
+    { credentialMethodKey: 'api-key' },
+    { providerProfile: { providerKey: 'threads', version: '2.0.0', digest: 'profile-2' } },
+    { providerConfigurationId: 'configuration-2' },
+    {
+      oauthCredentialBinding: {
+        providerKey: 'threads',
+        credentialMethodKey: 'oauth2',
+        clientBindingFingerprint: 'a'.repeat(64),
+        accountId: 'account-2',
+        grantedScopes: []
+      }
+    },
+    { credentialGeneration: 'generation-2' },
+    { credentialKey: 'replacement-key' }
+  ];
+
+  for (const updates of immutableChanges) {
+    await assert.rejects(
+      () => manager.updateCredential(credential.credentialId, updates),
+      (error) => error.code === 'CREDENTIAL_LIFECYCLE_CONFLICT'
+        && error.details.reason === 'IMMUTABLE_BINDING'
+        && !error.message.includes('generation-2')
+    );
+  }
+
+  const persisted = await store.load(credential.credentialId);
+  assert.equal(persisted.externalReference, 'account-1');
+  assert.equal(persisted.credentialMethodKey, 'oauth2');
+  assert.equal(persisted.credentialGeneration, 'generation-1');
+  assert.equal(persisted.metadata.toJSON().displayName, 'renamed');
 });
 
 test('CredentialManager updates one same-provider Credential without changing another secret', async () => {

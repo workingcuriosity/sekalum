@@ -5,8 +5,8 @@ import { ProviderMethodBinding } from '../models/provider-method-binding.js';
 import { DeclarativeCustomProvider } from '../providers/custom/declarative-custom-provider.js';
 import { safeError, safeErrorMessage } from '../utils/safe-diagnostics.js';
 import { SerializedMutationQueue } from '../storage/serialized-mutation-queue.js';
-
-const PROVIDER_KEY = /^[a-z][a-z0-9-]{1,62}$/;
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
+import { withBindingCommitLock } from '../storage/binding-commit-coordinator.js';
 const ROOT_KEYS = new Set(['key', 'displayName', 'category', 'description', 'enabled', 'credentialMethods', 'providerMethodBindings', 'credentialFields']);
 const FORBIDDEN_KEYS = new Set(['providerConfigurationFields', 'oauth', 'oauthSecurity', 'oauthTechnical', 'runtimeOperations', 'provider', 'apiClient', 'hooks', 'scripts', 'code', 'secrets', 'secretValues']);
 const METHOD_KEYS = new Set(['key', 'displayName', 'description', 'credentialFields']);
@@ -33,11 +33,11 @@ export class CustomProviderService {
     }
   }
 
-  async create(input) {
-    return this.mutationQueue.run(() => this.#create(input));
+  async create(input, options = {}) {
+    return this.mutationQueue.run(() => this.#create(input, options));
   }
 
-  async #create(input) {
+  async #create(input, options) {
     const definition = this.#normalize(input);
     if (this.providerRegistry.has(definition.key)) {
       const error = new Error(`Provider '${definition.key}' already exists`);
@@ -48,13 +48,21 @@ export class CustomProviderService {
     await this.store.save(definition);
     try {
       this.#register(definition);
+      await this.#audit('custom_provider_created', definition.key, options.actorUserId, 'success', {
+        credentialMethodCount: definition.credentialMethods.length,
+        credentialFieldCount: definition.credentialFields.length
+      });
     } catch (error) {
-      // A persisted custom provider must always be available after restart.
-      // Revert the durable write if registration fails so the two states stay aligned.
       try {
+        if (this.providerRegistry.has(definition.key)) {
+          const removed = this.providerRegistry.unregister(definition.key);
+          if (!removed || this.providerRegistry.has(definition.key)) {
+            throw new Error('Provider registry compensation did not remove the created provider');
+          }
+        }
         await this.store.delete(definition.key);
       } catch (rollbackError) {
-        error.rollbackError = rollbackError;
+        throw this.#consistencyError(`Create for '${definition.key}' failed and compensation failed`, error, rollbackError);
       }
       throw error;
     }
@@ -122,20 +130,31 @@ export class CustomProviderService {
   }
 
   async #delete(key, options) {
+    return withBindingCommitLock(() => this.#deleteWithinReferenceCommit(key, options));
+  }
+
+  async #deleteWithinReferenceCommit(key, options) {
     const current = await this.#loadCustomDefinition(key);
     await this.#tryAudit('custom_provider_delete_attempted', key, options.actorUserId, 'attempted');
-    const credentials = await this.#credentialsFor(key);
-    const grants = await this.#grantsFor(key);
-    if (credentials.length > 0 || grants.length > 0) {
-      const error = new Error(`Provider '${key}' cannot be deleted while Credentials or Consumer Grants reference it`);
-      error.code = 'CUSTOM_PROVIDER_DEPENDENCIES';
-      error.statusCode = 409;
+    const dependency = await withBindingCommitLock(async () => {
+      const credentials = await this.#credentialsFor(key);
+      const grants = await this.#grantsFor(key);
+      if (credentials.length > 0 || grants.length > 0) {
+        const error = new Error(`Provider '${key}' cannot be deleted while Credentials or Consumer Grants reference it`);
+        error.code = 'CUSTOM_PROVIDER_DEPENDENCIES';
+        error.statusCode = 409;
+        error.details = { credentialCount: credentials.length, grantCount: grants.length };
+        return { error };
+      }
+      return { error: null };
+    });
+    if (dependency.error) {
       await this.#tryAudit('custom_provider_delete_blocked', key, options.actorUserId, 'blocked', {
-        credentialCount: credentials.length,
-        grantCount: grants.length,
-        error
+        credentialCount: dependency.error.details.credentialCount,
+        grantCount: dependency.error.details.grantCount,
+        error: dependency.error
       });
-      throw error;
+      throw dependency.error;
     }
     const wasRegistered = this.providerRegistry.has(key);
     if (wasRegistered) this.providerRegistry.unregister(key);
@@ -160,7 +179,11 @@ export class CustomProviderService {
     for (const key of Object.keys(input)) {
       if (FORBIDDEN_KEYS.has(key) || !ROOT_KEYS.has(key)) throw this.#invalid(`Provider definition contains unsupported property '${key}'`);
     }
-    if (typeof input.key !== 'string' || !PROVIDER_KEY.test(input.key)) throw this.#invalid('Provider ID must be lowercase kebab-case');
+    try {
+      validateNamedIdentifier('providerKey', input.key);
+    } catch {
+      throw this.#invalid('Provider ID must be lowercase kebab-case');
+    }
     if (typeof input.displayName !== 'string' || input.displayName.trim() === '') throw this.#invalid('Provider display name is required');
     if (typeof input.category !== 'string' || input.category.trim() === '') throw this.#invalid('Provider category is required');
     if (input.description !== undefined && (typeof input.description !== 'string' || input.description.trim() === '')) throw this.#invalid('Provider description must be a non-empty string when supplied');

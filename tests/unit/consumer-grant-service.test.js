@@ -10,6 +10,7 @@ function createService({ consumers = ['consumer-1'], credentials = null, store =
       credentialId: 'credential-1',
       providerKey: 'threads',
       credentialMethodKey: 'oauth2',
+      lifecycleState: 'active',
       secrets: [{ name: 'accessToken', value: 'secret' }, { name: 'refreshToken', value: 'refresh' }]
     })]
   ]);
@@ -54,6 +55,7 @@ function createDerivedService({ derivedFields = ['runtimeToken'] } = {}) {
     credentialId: 'credential-derived-1',
     providerKey: 'threads',
     credentialMethodKey: 'service-account',
+    lifecycleState: 'active',
     secrets: [{ name: 'signingIdentity', value: 'durable-identity' }]
   });
   return new ConsumerGrantService({
@@ -176,8 +178,8 @@ test('ConsumerGrantService serializes concurrent create, update and delete read-
     }
   };
   const credentials = new Map([
-    ['credential-1', new Credential({ credentialId: 'credential-1', providerKey: 'threads', credentialMethodKey: 'oauth2', secrets: [{ name: 'accessToken', value: 'one' }, { name: 'refreshToken', value: 'one-refresh' }] })],
-    ['credential-2', new Credential({ credentialId: 'credential-2', providerKey: 'threads', credentialMethodKey: 'oauth2', secrets: [{ name: 'accessToken', value: 'two' }, { name: 'refreshToken', value: 'two-refresh' }] })]
+    ['credential-1', new Credential({ credentialId: 'credential-1', providerKey: 'threads', credentialMethodKey: 'oauth2', lifecycleState: 'active', secrets: [{ name: 'accessToken', value: 'one' }, { name: 'refreshToken', value: 'one-refresh' }] })],
+    ['credential-2', new Credential({ credentialId: 'credential-2', providerKey: 'threads', credentialMethodKey: 'oauth2', lifecycleState: 'active', secrets: [{ name: 'accessToken', value: 'two' }, { name: 'refreshToken', value: 'two-refresh' }] })]
   ]);
   const service = createService({ credentials, store });
   const first = await service.createGrant({

@@ -1,6 +1,6 @@
 FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
 
-ARG APP_VERSION=1.0.0-rc.2
+ARG APP_VERSION=1.0.0-rc.3
 
 LABEL org.opencontainers.image.title="Sekalum" \
   org.opencontainers.image.description="Open Source credential lifecycle management platform." \

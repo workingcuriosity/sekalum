@@ -62,7 +62,7 @@ function curlExample({ endpoint, consumerToken, secretNames }) {
     '  -H "Content-Type: application/json" \\',
     `  --data '${json({ secretNames })}'`,
     '',
-    '# Use resolved values only for the immediate target operation; do not log or persist them.'
+    '# Placeholder-only documentation: use resolved values only for the immediate target operation; do not copy, persist, log, export, pin, or place them in URLs or retry payloads.'
   ].join('\n');
 }
 
@@ -88,7 +88,7 @@ const response = await fetch(
 if (!response.ok) throw new Error(\`Resolve failed: ${'${response.status}'}\`);
 const resolved = await response.json();
 const secrets = resolved.data?.secrets;
-// Use secrets transiently for the target operation, then release the reference.`;
+// Placeholder-only documentation: use secrets transiently for the target operation, then release the reference; do not copy, persist, log, export, pin, or place them in URLs or retry payloads.`;
 }
 
 function pythonExample({ endpoint, consumerToken, secretNames }) {
@@ -109,7 +109,7 @@ request = Request(
 with urlopen(request) as response:
     resolved = json.load(response)
 secrets = resolved["data"]["secrets"]
-# Use secrets transiently for the target operation; do not log or persist them.`;
+# Placeholder-only documentation: use secrets transiently for the target operation; do not copy, persist, log, export, pin, or place them in URLs or retry payloads.`;
 }
 
 function powershellExample({ endpoint, consumerToken, secretNames }) {
@@ -126,7 +126,7 @@ $resolved = Invoke-RestMethod \\
   -ContentType 'application/json' \\
   -Body $body
 $secrets = $resolved.data.secrets
-# Use secrets transiently for the target operation; do not log or persist them.`;
+# Placeholder-only documentation: use secrets transiently for the target operation; do not copy, persist, log, export, pin, or place them in URLs or retry payloads.`;
 }
 
 function n8nExample({ endpoint, consumerToken, secretNames }) {
@@ -148,7 +148,8 @@ function n8nExample({ endpoint, consumerToken, secretNames }) {
       sendBody: true,
       contentType: 'raw',
       rawContentType: 'application/json',
-      body: JSON.stringify({ secretNames })
+      body: JSON.stringify({ secretNames }),
+      notes: 'Placeholder-only documentation. Use resolved values only for the immediate target. Do not copy, persist, log, export, pin, or place them in URLs or retry payloads.'
     }
   }, null, 2);
 }

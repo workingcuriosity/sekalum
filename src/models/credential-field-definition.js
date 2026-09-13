@@ -1,3 +1,5 @@
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
+
 const SUPPORTED_TYPES = new Set([
   'text',
   'password',
@@ -47,9 +49,7 @@ export class CredentialFieldDefinition {
     runtimePublic = false,
     materialization = 'stored'
   } = {}) {
-    if (typeof key !== 'string' || key.trim() === '') {
-      throw new Error("CredentialFieldDefinition: 'key' is required");
-    }
+    validateNamedIdentifier('fieldKey', key);
 
     if (typeof label !== 'string' || label.trim() === '') {
       throw new Error(`CredentialFieldDefinition '${key}': label is required`);
@@ -93,7 +93,7 @@ export class CredentialFieldDefinition {
       throw new Error(`CredentialFieldDefinition '${key}': internal fields must not be Runtime-Public`);
     }
 
-    this.key = key.trim();
+    this.key = key;
     this.label = label.trim();
     this.type = type;
     this.required = Boolean(required);

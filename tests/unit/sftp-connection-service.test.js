@@ -26,14 +26,16 @@ test('SftpConnectionService validates a username/password credential', async () 
   const service = new SftpConnectionService({
     client: {
       async testConnection(options) {
-        assert.deepEqual(options, {
-          host: 'sftp.example.test',
-          port: 22,
-          username: 'deploy',
-          password: 'secret',
-          timeoutMs: undefined,
-          verificationHost: 'sftp.example.test'
-        });
+      assert.deepEqual(options, {
+        host: 'sftp.example.test',
+        port: 22,
+        username: 'deploy',
+        password: 'secret',
+        timeoutMs: undefined,
+        verificationHost: 'sftp.example.test',
+        purpose: 'PROVIDER_VALIDATION',
+        pathId: 'SFTP-STORED'
+      });
 
         return { host: options.host, port: options.port };
       }

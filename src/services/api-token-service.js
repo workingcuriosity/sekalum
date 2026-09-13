@@ -3,6 +3,8 @@ import crypto from 'node:crypto';
 import { ApiToken } from '../models/api-token.js';
 import { ApiTokenStatus } from '../models/api-token-status.js';
 import { SerializedMutationQueue } from '../storage/serialized-mutation-queue.js';
+import { withBindingCommitLock } from '../storage/binding-commit-coordinator.js';
+import { validateNamedIdentifier, AuthorizationIdentifierError } from '../security/authorization-identifier.js';
 
 const TOKEN_PREFIX = 'cht_';
 const TOKEN_BYTES = 32;
@@ -32,10 +34,9 @@ function normalizeScopes(scopes) {
   }
 
   const normalized = scopes.map((scope) => {
-    if (typeof scope !== 'string' || scope.trim() === '') {
+    try { return validateNamedIdentifier('permissionScope', scope); } catch {
       throw new Error("ApiTokenService: 'scopes' must contain non-empty strings");
     }
-    return scope.trim();
   });
 
   return [...new Set(normalized)];
@@ -51,7 +52,7 @@ function toDate(value, fieldName) {
 }
 
 export class ApiTokenService {
-  constructor({ store, auditLogService = null, clock = () => new Date(), randomBytes = crypto.randomBytes, logger = null, userIdentityProvider = null } = {}) {
+  constructor({ store, auditLogService = null, clock = () => new Date(), randomBytes = crypto.randomBytes, logger = null, userIdentityProvider = null, userAuthorizationProvider = null } = {}) {
     if (!store?.list || !store?.load || !store?.save || !store?.findByPrefix) {
       throw new Error('ApiTokenService requires ApiTokenStore');
     }
@@ -62,20 +63,32 @@ export class ApiTokenService {
     this.randomBytes = randomBytes;
     this.logger = logger;
     this.userIdentityProvider = userIdentityProvider;
+    this.userAuthorizationProvider = userAuthorizationProvider;
     this.preAuthFailureWindows = new Map();
     this.mutationQueue = new SerializedMutationQueue();
   }
 
-  async createToken({ name, userId, scopes = [], expiresAt = null, createdBy }) {
-    return this.mutationQueue.run(() => this.#createToken({ name, userId, scopes, expiresAt, createdBy }));
+  async createToken({ name, userId, scopes = [], expiresAt = null, createdBy, issuer = null }) {
+    const normalizedScopes = normalizeScopes(scopes);
+    return this.mutationQueue.run(() => this.#createToken({ name, userId, scopes: normalizedScopes, expiresAt, createdBy, issuer }));
   }
 
-  async #createToken({ name, userId, scopes = [], expiresAt = null, createdBy }) {
+  async #createToken({ name, userId, scopes = [], expiresAt = null, createdBy, issuer = null }) {
     if (!name) throw new Error("ApiTokenService: 'name' is required");
-    if (!userId) throw new Error("ApiTokenService: 'userId' is required");
-    if (!createdBy) throw new Error("ApiTokenService: 'createdBy' is required");
+    try { validateNamedIdentifier('userId', userId); validateNamedIdentifier('userId', createdBy); } catch (error) {
+      if (error instanceof AuthorizationIdentifierError) throw error;
+      throw new Error("ApiTokenService: user identity is invalid");
+    }
+
+    await this.#assertDelegation({ userId, scopes, createdBy, issuer });
 
     const principal = await this.#currentPrincipal(userId);
+    if (this.userIdentityProvider && !principal) {
+      const error = new Error('API token owner is not an active principal');
+      error.code = 'NOT_FOUND';
+      error.statusCode = 404;
+      throw error;
+    }
 
     const plaintextToken = this.#generatePlaintextToken();
     const tokenPrefix = this.#extractPrefix(plaintextToken);
@@ -85,7 +98,7 @@ export class ApiTokenService {
       tokenHash: sha256(plaintextToken),
       userId,
       principalGeneration: principal?.principalGeneration,
-      scopes: normalizeScopes(scopes),
+      scopes,
       createdAt: this.clock(),
       expiresAt: toDate(expiresAt, 'expiresAt'),
       createdBy
@@ -114,12 +127,44 @@ export class ApiTokenService {
     return (await this.store.load(tokenId)).toPublicJSON();
   }
 
+  /**
+   * Return a token only when it is currently eligible for Consumer use.
+   * This is intentionally ID-based and never requires or reconstructs the
+   * plaintext bearer token.  Access Scope and reverse projections use this
+   * contract so historical/management-only token records cannot masquerade
+   * as effective Consumers.
+   */
+  async getEffectiveConsumerIdentity(tokenId) {
+    let token;
+    try {
+      token = await this.store.load(tokenId);
+    } catch (error) {
+      if (error?.code === 'NOT_FOUND') return null;
+      throw error;
+    }
+    if (token.revokedAt || token.isExpired(this.clock()) || !token.hasScope('credentials:consume')) return null;
+
+    if (this.userIdentityProvider) {
+      const principal = await this.#currentPrincipal(token.userId);
+      if (!principal || principal.principalGeneration !== token.principalGeneration) return null;
+    }
+    if (this.userAuthorizationProvider) {
+      try {
+        if ((await this.userAuthorizationProvider(token.userId, 'credentials:consume')) !== true) return null;
+      } catch (error) {
+        if (['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'].includes(error?.code)) return null;
+        throw error;
+      }
+    }
+    return token.toPublicJSON();
+  }
+
   async revokeToken(tokenId, { revokedAt = this.clock(), revokedBy = null } = {}) {
-    return this.mutationQueue.run(() => this.#revokeToken(tokenId, { revokedAt, revokedBy }));
+    return withBindingCommitLock(() => this.mutationQueue.run(() => this.#revokeToken(tokenId, { revokedAt, revokedBy })));
   }
 
   async revokeTokensForUser(userId, { revokedAt = this.clock(), revokedBy = 'system' } = {}) {
-    return this.mutationQueue.run(async () => {
+    return withBindingCommitLock(() => this.mutationQueue.run(async () => {
       const tokens = await this.store.list();
       let count = 0;
       for (const token of tokens.filter((candidate) => candidate.userId === userId && !candidate.revokedAt)) {
@@ -134,7 +179,60 @@ export class ApiTokenService {
         });
       }
       return count;
-    });
+    }));
+  }
+
+  async #assertDelegation({ userId, scopes, createdBy, issuer }) {
+    // Calls without an issuer are retained for internal/bootstrap provisioning
+    // paths. HTTP management creation always supplies the authenticated
+    // context through ApiTokenController.
+    if (!issuer) return;
+
+    const issuerUserId = issuer.userId;
+    const issuerScopes = Array.isArray(issuer.scopes) ? issuer.scopes : [];
+    const normalizedIssuerScopes = issuerScopes.includes('*')
+      ? ['*']
+      : normalizeScopes(issuerScopes);
+
+    const deny = (reason) => {
+      const error = new Error('API token delegation is not permitted');
+      error.code = 'API_TOKEN_DELEGATION_DENIED';
+      error.statusCode = 403;
+      error.details = { reason };
+      throw error;
+    };
+
+    if (typeof issuerUserId !== 'string' || issuerUserId !== userId || createdBy !== issuerUserId) {
+      deny('cross-principal-delegation');
+    }
+    if (this.userIdentityProvider) {
+      const issuerPrincipal = await this.#currentPrincipal(issuerUserId);
+      const issuerGeneration = issuer.apiToken?.principalGeneration ?? issuer.principalGeneration ?? null;
+      if (!issuerPrincipal || (issuerGeneration && issuerPrincipal.principalGeneration !== issuerGeneration)) {
+        deny('issuer-principal-stale');
+      }
+    }
+    if (!normalizedIssuerScopes.includes('*') && !normalizedIssuerScopes.includes('api-tokens:manage')) {
+      deny('issuer-missing-management-scope');
+    }
+    if (this.userAuthorizationProvider) {
+      try {
+        if ((await this.userAuthorizationProvider(issuerUserId, 'api-tokens:manage')) !== true) {
+          deny('issuer-rbac-missing-management');
+        }
+      } catch (error) {
+        if (['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'].includes(error?.code)) {
+          deny('issuer-rbac-missing-management');
+        }
+        throw error;
+      }
+    }
+    if (!normalizedIssuerScopes.includes('*')) {
+      const issuerScopeSet = new Set(normalizedIssuerScopes);
+      if (scopes.some((scope) => !issuerScopeSet.has(scope))) {
+        deny('requested-scope-outside-issuer-scopes');
+      }
+    }
   }
 
   async #revokeToken(tokenId, { revokedAt = this.clock(), revokedBy = null } = {}) {

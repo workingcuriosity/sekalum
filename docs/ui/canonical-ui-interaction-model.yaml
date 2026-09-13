@@ -2,7 +2,7 @@ schema_version: 0.2.1
 model:
   id: CUI-IM
   title: Canonical UI Interaction Model
-  version: 0.2.1
+  version: 0.3.0
   status: ACTIVE
 source_of_truth:
   format: YAML
@@ -943,10 +943,39 @@ nodes:
     live_verified: false
     handler: openEdit
     backend: /api/v1/credentials/:credentialId
+  - id: UI-CREDENTIAL-DECOMMISSIONING
+    type: section
+    title: Credential revoke and delete status
+    status: UNKNOWN_REQUIRES_REVIEW
+    route: /admin/credentials.html
+    parent: UI-ADMIN-CREDENTIALS
+    roles:
+      - administrator
+    permissions:
+      - credentials:read
+      - credentials:manage
+    entry_conditions:
+      - credential selected
+    visible_when:
+      - credential detail or row action is open
+    data_dependencies:
+      - credential identifier
+      - lifecycle state
+      - decommissioning intent
+      - aggregate and step status
+      - access impact counts
+    source_files:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+    canonical_references:
+      - docs/user-guide/index.md
+    test_references: []
+    live_verified: false
+    handler: null
+    backend: null
   - id: UI-CREDENTIAL-DELETE
     type: confirmation
-    title: Delete credential confirmation
-    status: ACTIVE
+    title: Revoke or delete credential confirmation
+    status: UNKNOWN_REQUIRES_REVIEW
     route: /admin/credentials.html
     parent: UI-ADMIN-CREDENTIALS
     roles:
@@ -954,11 +983,13 @@ nodes:
     permissions:
       - credentials:manage
     entry_conditions:
-      - credential row delete action
+      - credential row revoke or delete action
     visible_when:
-      - delete panel is open
+      - decommissioning confirmation is open
     data_dependencies:
       - credential identifier
+      - lifecycle state
+      - access impact counts
     source_files:
       - public/admin/credentials.html
       - public/admin/credentials.js
@@ -1897,6 +1928,35 @@ interactions:
     outcome: save_data
     handler: submitEdit
     redirect: null
+  - id: INT-CREDENTIAL-REVOKE
+    source: UI-CREDENTIAL-DECOMMISSIONING
+    trigger: confirm revoke
+    control: UI-CREDENTIAL-DELETE
+    preconditions:
+      - credential is consumable
+      - revoke confirmation open
+    action: POST credential revoke
+    success:
+      - access is contained before cleanup status is shown
+    failure:
+      - safe classified containment error shown
+    next_state: UI-CREDENTIAL-DECOMMISSIONING
+    side_effects:
+      - credential becomes terminal and cleanup may remain pending
+    messages:
+      - FB-SUCCESS
+      - FB-DECOMMISSIONING-PENDING
+      - FB-AUTHORIZATION-ERROR
+      - FB-SYSTEM-ERROR
+    security_boundary: credentials:manage authorization and revoke-first containment
+    capability_ids:
+      - CAP-CREDENTIAL-REVOKE
+    source_files:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+    test_ids: []
+    outcome: revoke_or_delete
+    handler: confirmRevoke
+    redirect: null
   - id: INT-CREDENTIAL-DELETE
     source: UI-CREDENTIAL-DELETE
     trigger: confirm delete
@@ -1905,16 +1965,18 @@ interactions:
       - delete confirmation open
     action: DELETE credential
     success:
-      - table refreshed
+      - table refreshed or cleanup-pending status shown
     failure:
-      - error shown
-    next_state: UI-ADMIN-CREDENTIALS
+      - safe classified containment error shown
+    next_state: UI-CREDENTIAL-DECOMMISSIONING
     side_effects:
-      - credential deleted
+      - credential is contained before cleanup and may retain a tombstone
     messages:
       - FB-SUCCESS
+      - FB-DECOMMISSIONING-PENDING
+      - FB-AUTHORIZATION-ERROR
       - FB-SYSTEM-ERROR
-    security_boundary: credentials:manage authorization
+    security_boundary: credentials:manage authorization and revoke-first containment
     capability_ids:
       - CAP-CREDENTIAL-DELETE
     source_files:
@@ -3186,6 +3248,13 @@ interaction_execution:
       suite
     required_fixture: Disposable credential fixture with deterministic restore
     required_work: Add a declarative delete confirmation verification
+  - interaction_id: INT-CREDENTIAL-REVOKE
+    status: NOT_EXECUTED
+    reason: RC3-05 revoke workflow is architecture-only and has no implemented
+      browser fixture
+    required_fixture: Disposable credential with provider/grant cleanup outcome controls
+    required_work: Implement and authorize the RC3-05 product workflow before
+      browser verification
   - interaction_id: INT-GRANT-EDIT
     status: NOT_EXECUTED
     reason: The generic grant edit interaction has no independent browser verification
@@ -3621,6 +3690,25 @@ capabilities:
       - docs/api/REST_API.md
     test_references:
       - tests/integration/admin-ui.test.js
+  - id: CAP-CREDENTIAL-REVOKE
+    name: Credential revoke-first decommissioning
+    description: Contain credential authorization before cleanup and expose safe
+      pending/retry status
+    status: ARCHITECTURE_ONLY
+    implemented: false
+    documented: true
+    ui_reachable: false
+    api_reachable: true
+    tested: false
+    live_verified: false
+    classification: ARCHITECTURE_ONLY
+    api_routes:
+      - /api/v1/credentials/:credentialId/revoke
+    source_files:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+    canonical_references:
+      - docs/api/REST_API.md
+    test_references: []
   - id: CAP-OAUTH-ONBOARDING
     name: OAuth onboarding
     description: Start OAuth authorization and consume callback state
@@ -3875,6 +3963,15 @@ capabilities:
     test_references:
       - tests/integration/management-api.test.js
 feedback:
+  - id: FB-DECOMMISSIONING-PENDING
+    type: INFO
+    message_key: access blocked; cleanup pending; retry available
+    source_files:
+      - docs/ui/CANONICAL_UI_INTERACTION_MODEL.md
+    test_references: []
+    duration: null
+    blocking: true
+    recovery: retry the same decommissioning action
   - id: FB-SUCCESS
     type: SUCCESS
     message_key: localized success message or operation result

@@ -9,7 +9,9 @@
 import path from 'node:path';
 
 import { Credential } from '../models/credential.js';
+import { assertCredentialBindingUnchanged } from '../security/credential-binding-guard.js';
 import { SerializedMutationQueue } from './serialized-mutation-queue.js';
+import { withBindingCommitLock } from './binding-commit-coordinator.js';
 
 function assertUniqueCredentialKeys(credentials) {
   const byKey = new Map();
@@ -55,19 +57,23 @@ export class CredentialCollectionStoreAdapter {
     return credential;
   }
 
-  async save(credentialInput) {
-    return this.#serializeMutation(() => this.#saveWithinMutation(credentialInput));
+  async save(credentialInput, options = {}) {
+    return this.#serializeMutation(() => this.#saveWithinMutation(credentialInput, options), { commit: true });
   }
 
   async create(credentialInput) {
-    return this.#serializeMutation(() => this.#saveWithinMutation(credentialInput, { insertOnly: true }));
+    return this.#serializeMutation(() => this.#saveWithinMutation(credentialInput, { insertOnly: true }), { commit: true });
   }
 
-  async saveConditional(credentialInput, { expectedVersion = undefined, requireExisting = true } = {}) {
-    return this.#serializeMutation(() => this.#saveWithinMutation(credentialInput, { expectedVersion, requireExisting }));
+  async saveConditional(credentialInput, { expectedVersion = undefined, requireExisting = true, allowBindingChange = false } = {}) {
+    return this.#serializeMutation(() => this.#saveWithinMutation(credentialInput, {
+      expectedVersion,
+      requireExisting,
+      allowBindingChange
+    }), { commit: true });
   }
 
-  async applyBatch(changes = [], { afterCommit = null } = {}) {
+  async applyBatch(changes = [], { beforeCommit = null, afterCommit = null } = {}) {
     if (!Array.isArray(changes)) {
       throw new Error('CredentialCollectionStoreAdapter.applyBatch() requires an array');
     }
@@ -79,17 +85,21 @@ export class CredentialCollectionStoreAdapter {
 
       for (const change of changes) {
         const mode = change?.mode;
-        const input = Credential.from(change?.credential);
+        const rawInput = change?.credential;
+        const parsedInput = Credential.from(rawInput);
         if (!['create', 'update'].includes(mode)) {
           throw this.#atomicityError('CREDENTIAL_IMPORT_OPERATION_INVALID', 'Credential import operation is invalid', 400);
         }
-        if (touchedIds.has(input.credentialId)) {
+        if (touchedIds.has(parsedInput.credentialId)) {
           throw this.#atomicityError('CREDENTIAL_IMPORT_DUPLICATE_TARGET', 'Credential import targets the same identity more than once', 409);
         }
-        touchedIds.add(input.credentialId);
+        touchedIds.add(parsedInput.credentialId);
 
-        const index = credentials.findIndex((entry) => entry.credentialId === input.credentialId);
+        const index = credentials.findIndex((entry) => entry.credentialId === parsedInput.credentialId);
         const existing = index === -1 ? null : credentials[index];
+        const input = existing && mode === 'update'
+          ? Credential.from({ ...existing.toJSON(), ...rawInput })
+          : parsedInput;
         if (mode === 'create') {
           if (existing) {
             throw this.#atomicityError('CREDENTIAL_ALREADY_EXISTS', `Credential '${input.credentialId}' already exists`, 409);
@@ -141,11 +151,19 @@ export class CredentialCollectionStoreAdapter {
         if (input.credentialKey !== existing.credentialKey) {
           throw this.#atomicityError('CREDENTIAL_KEY_IMMUTABLE', `Credential '${input.credentialId}' credentialKey cannot be changed`, 409);
         }
+        assertCredentialBindingUnchanged(existing, input, { operation: 'credential batch update' });
         credentials[index] = input;
       }
 
       assertUniqueCredentialKeys(credentials);
       const nextData = { ...data, credentials: credentials.map((entry) => entry.toJSON()) };
+      await beforeCommit?.({
+        currentCredentials: data.credentials.map((entry) => Credential.from(entry)),
+        credentials: [...credentials],
+        changes,
+        tombstones: data.tombstones.map((entry) => ({ ...entry })),
+        currentTombstones: data.tombstones.map((entry) => ({ ...entry }))
+      });
       await this.#saveCollectionState(nextData, credentials, data);
 
       try {
@@ -155,7 +173,7 @@ export class CredentialCollectionStoreAdapter {
         await this.#saveCollectionState(data, data.credentials.map((entry) => Credential.from(entry)), data);
         throw error;
       }
-    });
+    }, { commit: true });
   }
 
   async delete(credentialId) {
@@ -175,14 +193,14 @@ export class CredentialCollectionStoreAdapter {
         });
       }
       return this.#deleteWithinMutationData(data, credentialId);
-    });
+    }, { commit: true });
   }
 
   async #deleteWithinMutation(credentialId) {
     return this.#serializeMutation(async () => {
       const data = await this.#loadRaw();
       return this.#deleteWithinMutationData(data, credentialId);
-    });
+    }, { commit: true });
   }
 
   async #deleteWithinMutationData(data, credentialId) {
@@ -215,6 +233,16 @@ export class CredentialCollectionStoreAdapter {
     });
   }
 
+  async getRestoreState() {
+    return this.#serializeMutation(async () => {
+      const data = await this.#loadRaw();
+      return {
+        credentials: data.credentials.map((entry) => Credential.from(entry)),
+        tombstones: data.tombstones.map((entry) => ({ ...entry }))
+      };
+    });
+  }
+
   async list() {
     return this.#serializeMutation(async () => {
       const data = await this.#loadRaw();
@@ -222,14 +250,16 @@ export class CredentialCollectionStoreAdapter {
       assertUniqueCredentialKeys(credentials);
       const migrated = credentials.some((credential, index) => !data.credentials[index].credentialKey || !data.credentials[index].credentialGeneration);
       if (migrated) {
-        await this.jsonStore.save(this.filePath, {
-          ...data,
-          credentials: credentials.map((credential) => credential.toJSON())
+        await withBindingCommitLock(async () => {
+          await this.jsonStore.save(this.filePath, {
+            ...data,
+            credentials: credentials.map((credential) => credential.toJSON())
+          });
+          await this.#saveMetadata(credentials);
         });
-        await this.#saveMetadata(credentials);
       }
       return credentials;
-    });
+    }, { commit: true });
   }
 
   async listMetadata() {
@@ -260,14 +290,16 @@ export class CredentialCollectionStoreAdapter {
       assertUniqueCredentialKeys(credentials);
       const migrated = credentials.some((credential, index) => !data.credentials[index].credentialKey || !data.credentials[index].credentialGeneration);
       if (migrated) {
-        await this.jsonStore.save(this.filePath, {
-          ...data,
-          credentials: credentials.map((credential) => credential.toJSON())
+        await withBindingCommitLock(async () => {
+          await this.jsonStore.save(this.filePath, {
+            ...data,
+            credentials: credentials.map((credential) => credential.toJSON())
+          });
         });
       }
-      await this.#saveMetadata(credentials);
+      await withBindingCommitLock(() => this.#saveMetadata(credentials));
       return credentials.map((credential) => credential.toInternalMetadataJSON?.() ?? credential.toMetadataJSON());
-    });
+    }, { commit: true });
   }
 
   async loadMetadata(credentialId) {
@@ -366,11 +398,17 @@ export class CredentialCollectionStoreAdapter {
     }
   }
 
-  #serializeMutation(operation) {
-    return this.mutationQueue.run(operation);
+  #serializeMutation(operation, { commit = false } = {}) {
+    const run = () => this.mutationQueue.run(operation);
+    return commit ? withBindingCommitLock(run) : run();
   }
 
-  async #saveWithinMutation(credentialInput, { expectedVersion = undefined, requireExisting = false, insertOnly = false } = {}) {
+  async #saveWithinMutation(credentialInput, {
+    expectedVersion = undefined,
+    requireExisting = false,
+    insertOnly = false,
+    allowBindingChange = false
+  } = {}) {
     const data = await this.#loadRaw();
     const input = credentialInput instanceof Credential ? credentialInput.toJSON() : credentialInput;
     const credentials = data.credentials.map((entry) => Credential.from(entry));
@@ -432,6 +470,9 @@ export class CredentialCollectionStoreAdapter {
       ...input,
       ...(hasCredentialKey || !existing ? {} : { credentialKey: existing.credentialKey })
     });
+    if (existing && !allowBindingChange) {
+      assertCredentialBindingUnchanged(existing, credential, { operation: 'credential persistence' });
+    }
     const index = credentials.findIndex((entry) => entry.credentialId === credential.credentialId);
     if (index === -1) credentials.push(credential);
     else credentials[index] = credential;

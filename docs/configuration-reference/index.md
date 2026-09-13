@@ -3,7 +3,7 @@ title: Configuration Reference
 document_id: DOC-CONFIGURATION-REFERENCE-INDEX
 classification: PUBLIC
 language: en
-version: 1.0.6
+version: 1.0.9
 status: Active
 category: Configuration
 canonical: true
@@ -17,7 +17,17 @@ target_audience:
 dependent_documents:
   - docs/api-reference/index.md
   - docs/providers/README.md
+  - docs/adr/ADR-031-OAuth-Context-Binding.md
 change_history:
+  - version: 1.0.9
+    date: 2026-09-06
+    change: Derives the canonical deployment-unique Bootstrap proof contract: missing, shipped/example and documentation-placeholder values are invalid; runtime enforcement remains separately authorized.
+  - version: 1.0.8
+    date: 2026-09-06
+    change: Documents the RC3-12 Slice B enforced exact private-network exception configuration.
+  - version: 1.0.7
+    date: 2026-09-06
+    change: Derives the RC3-12 Slice B production public-origin and trusted-proxy configuration guidance from ADR-031 without claiming runtime enforcement.
   - version: 1.0.6
     date: 2026-08-26
     change: Adds the high-entropy ADMIN_BOOTSTRAP_TOKEN configuration and fail-closed Bootstrap semantics.
@@ -58,7 +68,37 @@ This reference contains only global runtime configuration. FTP, SFTP, and OpenAI
 | `BASE_PATH` | No | `/` | Public path prefix for the admin interface, REST API, health endpoint, and OAuth callbacks. |
 | `CHECK_INTERVAL_HOURS` | No | `12` | Interval for refresh and rotation scheduler jobs. |
 | `REFRESH_BEFORE_DAYS` | No | `14` | Threshold used by credential lifecycle refresh logic. |
-| `ADMIN_BOOTSTRAP_TOKEN` | Required for first setup | None | High-entropy, at least 32-byte proof required for the one-time First Administrator Bootstrap. |
+| `ADMIN_BOOTSTRAP_TOKEN` | Required for first setup | None | Deployment-unique, high-entropy proof of at least 32 bytes for the one-time First Administrator Bootstrap; shipped/example and documentation-placeholder values are invalid. |
+
+## Bounded private FTP/SFTP connection targets
+
+Private RFC1918 or IPv6 ULA targets remain denied by default. The legacy
+`CONNECTION_TEST_ALLOW_PRIVATE_NETWORKS=true` compatibility input has no effect
+by itself. A deployment that must test one private FTP or SFTP target must also
+set `CONNECTION_TEST_PRIVATE_EXCEPTION` to a JSON object containing all of
+`protocol`, `purpose`, `hostname`, `cidr` (or `cidrs`) and `port`. The
+separate compatibility input must be set to the literal string `true`.
+
+The exception object has this schema (replace every angle-bracketed value with
+the one bounded deployment target):
+
+```json
+{
+  "protocol": "<ftp-or-sftp>",
+  "purpose": "<bounded-connection-purpose>",
+  "hostname": "<normalized-hostname>",
+  "cidr": "<resolved-address-cidr>",
+  "port": "<destination-port>"
+}
+```
+
+The runtime normalizes the hostname and requires an exact protocol, purpose,
+hostname, resolved-address/CIDR and port match. Only `ftp` or `sftp` with
+`CREDENTIAL_CONNECTION_TEST`, `PROVIDER_VALIDATION`, or
+`PROVIDER_HEALTH_CHECK` can use this exception. It never permits loopback,
+link-local, metadata, unspecified, multicast, reserved/special or CGNAT
+targets, and it is not an OAuth or general egress control. Rotate or remove the
+exception when the bounded operational need ends.
 
 ## Encryption at rest
 
@@ -80,13 +120,22 @@ ADMIN_BOOTSTRAP_TOKEN=YOUR_HIGH_ENTROPY_BOOTSTRAP_TOKEN
 
 `ADMIN_BOOTSTRAP_TOKEN` is the explicit proof-of-possession secret for the
 one-time First Administrator operation. It must be a high-entropy value of at
-least 32 bytes. A missing, weak or invalidly supplied value fails closed; the
-empty user collection is not an authorization grant. The Bootstrap token is
+least 32 bytes and be deployment-unique and operator supplied. A missing,
+shipped/example, documentation-placeholder, weak or invalidly supplied value
+fails closed; the empty user collection is not an authorization grant. The
+Bootstrap token is
 distinct from `TOKEN_ENCRYPTION_KEY`, a Management Token and an API token. It
 is never persisted as an API token, returned, logged, audited or serialized in
 application output. After the first active administrator is durably persisted,
 the Bootstrap operation is closed and normal management requests require
-Bearer authentication, scope validation and RBAC.
+Bearer authentication, scope validation and RBAC. A value is not admissible
+solely because it meets the length requirement; runtime admission rejects
+low-diversity, repeated-pattern and monotonic values and requires a minimum
+measured byte entropy in addition to the 32-byte floor: at least 8 distinct
+UTF-8 bytes, at least 3.5 bits of Shannon entropy per byte, no repeated pattern
+of period 16 bytes or less, and no monotonic run of 8 bytes or more. Sekalum
+provides no Bootstrap default. The [Security Guide](../security-guide/index.md#first-administrator-bootstrap-boundary)
+owns this contract.
 
 ## OAuth provider application configuration
 
@@ -133,13 +182,29 @@ The derived redirect URI must match the registration of the respective OAuth pro
 BASE_PATH=<YOUR_BASE_PATH>
 ```
 
-For deployments behind a reverse proxy, configure the public HTTP(S) origin separately so OAuth never derives an internal host or protocol:
+For deployments behind a reverse proxy, configure the public origin separately
+so OAuth never derives an internal host or protocol:
 
 ```env
 PUBLIC_BASE_URL=<YOUR_PUBLIC_ORIGIN>
 ```
 
-`PUBLIC_BASE_URL` is optional for direct deployments. When set, it must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The Wizard and OAuth-start route use the same value and report `OAUTH_REDIRECT_URI_MISMATCH` with the actually used, non-secret redirect URI if the displayed and generated values diverge.
+`PUBLIC_BASE_URL` is optional for direct deployments. In production, when set,
+it must be an absolute HTTPS origin without credentials, path, query, or
+fragment. A direct production origin is HTTPS as well. HTTP is allowed only in
+an explicitly non-production development or test deployment. The Wizard and
+OAuth-start route use the same value and report `OAUTH_REDIRECT_URI_MISMATCH`
+with the actually used, non-secret redirect URI if the displayed and generated
+values diverge.
+
+For a TLS-terminating production reverse proxy, configure the proxy explicitly
+with `TRUSTED_PROXY`. Its value is an explicit `loopback`, `linklocal`, or
+`uniquelocal` boundary, or one or more explicit IP/CIDR values; broad `/0`
+values are invalid. Forwarded host or protocol headers from all other peers are
+untrusted and cannot establish or override the public origin. The exact
+security rule, including the requirement for a Secure OAuth browser-binding
+cookie in production, is owned by
+ADR-031.
 
 For example, set `BASE_PATH=/credential-hub` when the public service is hosted below that prefix; `PUBLIC_BASE_URL` remains the external origin such as `https://sekalum.example.com`.
 

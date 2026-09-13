@@ -12,21 +12,23 @@ export class SftpProvider extends Provider {
     this.connectionService = connectionService;
   }
 
-  async validateCredential(credential) {
+  async validateCredential(credential, context = {}) {
     try {
-      const validation = await this.connectionService.validateCredential(credential);
+      const validation = await this.connectionService.validateCredential(credential, context);
       return ProviderResult.success(validation);
     } catch (error) {
       return ProviderResult.failure(error);
     }
   }
 
-  async healthCheck(credential) {
+  async healthCheck(credential, context = {}) {
     try {
-      const health = await this.connectionService.healthCheck(credential);
+      const health = await this.connectionService.healthCheck(credential, context);
 
       if (!health.healthy) {
-        return ProviderResult.failure(new Error(health.message ?? 'SFTP health check failed'));
+        const error = new Error(health.message ?? 'SFTP health check failed');
+        if (health.code) error.code = health.code;
+        return ProviderResult.failure(error);
       }
 
       return ProviderResult.success(health);

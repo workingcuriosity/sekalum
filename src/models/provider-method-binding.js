@@ -1,13 +1,12 @@
 import { isProviderOperationCapability } from './provider-capability.js';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
 
 /**
  * Provider-local availability and operation adapter for a CredentialMethod.
  */
 export class ProviderMethodBinding {
   constructor({ methodKey, displayName = null, description = null, metadata = {}, operationAdapters = {} } = {}) {
-    if (typeof methodKey !== 'string' || methodKey.trim() === '') {
-      throw new Error("ProviderMethodBinding: 'methodKey' is required");
-    }
+    validateNamedIdentifier('methodKey', methodKey);
     if (!metadata || Array.isArray(metadata) || typeof metadata !== 'object') {
       throw new Error(`ProviderMethodBinding '${methodKey}': metadata must be an object`);
     }
@@ -26,7 +25,7 @@ export class ProviderMethodBinding {
       adapters[operation] = adapter;
     }
 
-    this.methodKey = methodKey.trim();
+    this.methodKey = methodKey;
     this.displayName = displayName;
     this.description = description;
     this.metadata = Object.freeze({ ...metadata });

@@ -111,3 +111,45 @@ test('OAuthSecurityService purges only expired contexts without extending their 
   assert.equal(service.contexts.has(live.state), true);
   assert.equal(service.contexts.has(expired.state), false);
 });
+
+test('OAuthSecurityService evicts expired state on its scheduled cleanup without another OAuth request', () => {
+  let now = 1_000;
+  let cleanup = null;
+  const service = new OAuthSecurityService({
+    ttlMs: 10,
+    now: () => now,
+    schedule(task) { cleanup = task; return null; }
+  });
+  const created = service.createAuthorizationContext({ provider: 'google' });
+  now = 1_011;
+  cleanup();
+  assert.equal(service.contexts.has(created.state), false);
+});
+
+test('OAuthSecurityService bounds state globally and per initiating actor', () => {
+  const service = new OAuthSecurityService({
+    maxContexts: 2,
+    maxContextsPerActor: 1,
+    schedule() { return null; }
+  });
+  service.createAuthorizationContext({ provider: 'google', actorUserId: 'actor-a' });
+  assert.throws(
+    () => service.createAuthorizationContext({ provider: 'google', actorUserId: 'actor-a' }),
+    /actor capacity exceeded/
+  );
+  service.createAuthorizationContext({ provider: 'google', actorUserId: 'actor-b' });
+  assert.throws(
+    () => service.createAuthorizationContext({ provider: 'google', actorUserId: 'actor-c' }),
+    /capacity exceeded/
+  );
+});
+
+test('OAuthSecurityService retains no provider-configuration secrets in its state map', () => {
+  const service = new OAuthSecurityService({ schedule() { return null; } });
+  const context = service.createAuthorizationContext({
+    provider: 'google',
+    providerConfiguration: { clientId: 'client-id', clientSecret: 'test-client-secret' }
+  });
+  assert.equal(JSON.stringify(context).includes('test-client-secret'), false);
+  assert.equal(JSON.stringify([...service.contexts.values()]).includes('test-client-secret'), false);
+});

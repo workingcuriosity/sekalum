@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
 
 export class TokenRecord {
   constructor(input = {}) {
@@ -9,6 +10,7 @@ export class TokenRecord {
     provider,
     accountId,
     accountName = null,
+    credentialGeneration = null,
 
     accessToken,
     refreshToken = null,
@@ -29,25 +31,20 @@ export class TokenRecord {
       ? input.credentialKey
       : crypto.randomUUID();
 
-    if (!id) {
-      throw new Error("TokenRecord: 'id' is required");
-    }
-
     if (typeof credentialKey !== 'string' || credentialKey.trim() === '') {
       throw new Error("TokenRecord: 'credentialKey' is required");
     }
-
-    if (!providerId) {
-      throw new Error("TokenRecord: 'providerId' is required");
-    }
+    validateNamedIdentifier('credentialId', id);
+    validateNamedIdentifier('credentialKey', credentialKey);
+    // Legacy TokenRecord provider IDs are provider-owned references and may
+    // include a provider-local suffix (for example `google:main`).
+    validateNamedIdentifier('externalReference', providerId);
 
     if (!provider) {
       throw new Error("TokenRecord: 'provider' is required");
     }
 
-    if (!accountId) {
-      throw new Error("TokenRecord: 'accountId' is required");
-    }
+    validateNamedIdentifier('externalReference', accountId);
 
     if (!accessToken) {
       throw new Error("TokenRecord: 'accessToken' is required");
@@ -60,6 +57,7 @@ export class TokenRecord {
     this.provider = provider;
     this.accountId = accountId;
     this.accountName = accountName;
+    this.credentialGeneration = credentialGeneration;
 
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;

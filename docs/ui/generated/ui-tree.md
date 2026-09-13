@@ -4,7 +4,7 @@
 
 Status: `ACTIVE`
 
-Generated counts: 46 nodes, 58 interactions, 22 capabilities, 7 feedback definitions.
+Generated counts: 47 nodes, 59 interactions, 23 capabilities, 8 feedback definitions.
 
 - **Sekalum Web UI** `UI-APP` (application, ACTIVE)
   - **Admin UI** `UI-ADMIN` (area, ACTIVE)
@@ -27,7 +27,8 @@ Generated counts: 46 nodes, 58 interactions, 22 capabilities, 7 feedback definit
       - **Credentials table** `UI-CREDENTIALS-TABLE` (table, ACTIVE)
       - **Credential detail view** `UI-CREDENTIAL-DETAIL` (modal, ACTIVE)
       - **Edit credential dialog** `UI-CREDENTIAL-EDIT` (modal, ACTIVE)
-      - **Delete credential confirmation** `UI-CREDENTIAL-DELETE` (confirmation, ACTIVE)
+      - **Credential revoke and delete status** `UI-CREDENTIAL-DECOMMISSIONING` (section, UNKNOWN_REQUIRES_REVIEW)
+      - **Revoke or delete credential confirmation** `UI-CREDENTIAL-DELETE` (confirmation, UNKNOWN_REQUIRES_REVIEW)
     - **Consumer Grants** `UI-ADMIN-GRANTS` (page, ACTIVE)
       - **Consumer grants table** `UI-GRANTS-TABLE` (table, ACTIVE)
       - **Edit consumer grant dialog** `UI-GRANT-EDIT` (modal, ACTIVE)

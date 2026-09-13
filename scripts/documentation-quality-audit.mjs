@@ -5,6 +5,12 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// The IEP path is part of the private Sekalum adapter boundary.  Keep the
+// public audit self-contained: the adapter module is resolved only when the
+// private profile actually needs canonical-state validation.
+const IEP_RC3_PATH = 'docs/project/issue-execution/IEP-rc3.md';
+const SEKALUM_IEP_ADAPTER_URL = new URL('../tools/gov3/sekalum-adapter/iep-rc3-state.mjs', import.meta.url);
+
 const CANONICAL_FIELDS = [
   'title',
   'version',
@@ -117,6 +123,23 @@ function frontMatterValue(lines, key) {
   return lines?.find((line) => line.match(new RegExp(`^${key}:\\s*`, 'i')))?.replace(new RegExp(`^${key}:\\s*`, 'i'), '').trim();
 }
 
+function duplicateFrontMatterKeys(lines) {
+  const counts = new Map();
+  for (const line of lines ?? []) {
+    const key = line.match(/^([a-z_][a-z0-9_]*):/i)?.[1]?.toLowerCase();
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key);
+}
+
+function documentControlVersion(content) {
+  return content.match(/^\|\s*Version\s*\|\s*`?([^`|\s]+)`?\s*\|/im)?.[1] ?? null;
+}
+
+function latestHistoryVersion(lines) {
+  return lines?.find((line) => /^\s*-\s+version:\s*/i.test(line))?.replace(/^\s*-\s+version:\s*/i, '').trim() ?? null;
+}
+
 function stripFrontMatter(content) {
   if (!content.startsWith('---\n')) {
     return content;
@@ -215,7 +238,33 @@ async function gitFileAt(root, ref, displayPath) {
   }
 }
 
-export async function auditDocumentation(root = process.cwd(), { publicProfile = false, baseRef = process.env.DOC_AUDIT_BASE, privateRoot = process.env.DOC_AUDIT_PRIVATE_ROOT } = {}) {
+async function privateIepConsistency(root, injectedCheck) {
+  try {
+    const adapter = injectedCheck
+      ? { checkIepRc3Consistency: injectedCheck, IEP_RC3_PATH }
+      : await import(SEKALUM_IEP_ADAPTER_URL.href);
+    const consistency = await adapter.checkIepRc3Consistency(root);
+    return { path: adapter.IEP_RC3_PATH ?? IEP_RC3_PATH, consistency };
+  } catch (error) {
+    return {
+      path: IEP_RC3_PATH,
+      consistency: {
+        result: 'BLOCK',
+        diagnostics: [{
+          code: 'PRIVATE_GOV3_ADAPTER_UNAVAILABLE',
+          reason: error instanceof Error ? error.message : String(error)
+        }]
+      }
+    };
+  }
+}
+
+export async function auditDocumentation(root = process.cwd(), {
+  publicProfile = false,
+  baseRef = process.env.DOC_AUDIT_BASE,
+  privateRoot = process.env.DOC_AUDIT_PRIVATE_ROOT,
+  privateIepConsistency: injectedPrivateIepConsistency
+} = {}) {
   const docsDirectory = path.join(root, 'docs');
   const markdownFiles = await listMarkdownFiles(docsDirectory);
   const privateCanonicalSource = publicProfile && await exists(path.join(root, '.git'));
@@ -260,6 +309,7 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
     const content = await readFile(filePath, 'utf8');
     const displayPath = relativePath(root, filePath);
     const metadata = frontMatter(content);
+    const changedGovernedDocument = Boolean(baseRef && changedFiles.has(displayPath));
 
     if (isHistoryPath(displayPath)) {
       result.historicalDocumentCount += 1;
@@ -272,6 +322,10 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
     if (metadata) {
       result.frontMatterCount += 1;
       const keys = frontMatterKeys(metadata);
+      const duplicateKeys = duplicateFrontMatterKeys(metadata);
+      if (changedGovernedDocument && duplicateKeys.length > 0) {
+        result.governanceFindings.push({ code: 'DOC-HDR-003', file: displayPath, duplicateKeys });
+      }
 
       if (keys.has('canonical') && metadata.some((line) => /^canonical:\s*true\s*$/i.test(line))) {
         result.canonicalDocuments.push(displayPath);
@@ -316,6 +370,14 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
       const language = frontMatterValue(metadata, 'language');
       const version = frontMatterValue(metadata, 'version');
       const documentId = frontMatterValue(metadata, 'document_id');
+      const controlVersion = documentControlVersion(content);
+      if (changedGovernedDocument && controlVersion && controlVersion !== version) {
+        result.governanceFindings.push({ code: 'DOC-HDR-004', file: displayPath, frontMatterVersion: version, documentControlVersion: controlVersion });
+      }
+      const historyVersion = latestHistoryVersion(metadata);
+      if (changedGovernedDocument && historyVersion && historyVersion !== version) {
+        result.governanceFindings.push({ code: 'DOC-HDR-005', file: displayPath, frontMatterVersion: version, latestChangeHistoryVersion: historyVersion });
+      }
 
       if (HISTORICAL_STATUS_MARKERS.test(`${classification} ${frontMatterValue(metadata, 'status') ?? ''}`)) {
         result.roleFindings.push({ code: 'DOC-HIST-001', file: displayPath, classification });
@@ -429,6 +491,19 @@ export async function auditDocumentation(root = process.cwd(), { publicProfile =
   for (const document of requiredDocuments) {
     if (!(await exists(path.join(root, document)))) {
       result.missingProjectDocuments.push(document);
+    }
+  }
+
+  // Gov3 owns the single canonical-state validator; docs:check only routes
+  // the Sekalum adapter result into its existing blocking findings channel.
+  // A checked-out private repository is the explicit Sekalum mapping context;
+  // absence of its required canonical IEP must remain a blocking finding.
+  const sekAlumPrivateMapping = !publicProfile && await exists(path.join(root, '.git'));
+  const canonicalIepPresent = !publicProfile && await exists(path.join(root, IEP_RC3_PATH));
+  if (sekAlumPrivateMapping || canonicalIepPresent) {
+    const { path: consistencyPath, consistency } = await privateIepConsistency(root, injectedPrivateIepConsistency);
+    if (consistency.result !== 'PASS') {
+      result.governanceFindings.push({ code: 'DOC-CANONICAL-STATE-001', file: consistencyPath, reason: 'CANONICAL_STATE_CONSISTENCY_BLOCK', diagnostics: consistency.diagnostics });
     }
   }
 

@@ -14,8 +14,8 @@ import { SftpProvider } from './sftp-provider.js';
 
 export class SftpServiceProvider extends ServiceProvider {
   register(container) {
-    container.singleton(TOKENS.SFTP_CLIENT, () => {
-      return new SftpClient();
+    container.singleton(TOKENS.SFTP_CLIENT, (c) => {
+      return new SftpClient({ egressPolicy: c.resolve(TOKENS.EGRESS_POLICY) });
     });
 
     container.singleton(TOKENS.SFTP_CONNECTION_SERVICE, (c) => {

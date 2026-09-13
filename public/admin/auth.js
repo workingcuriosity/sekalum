@@ -33,12 +33,16 @@ function sessionStorageOrNull() {
   }
 }
 
-function apiError(body, status) {
+function apiError(body, status, response = null) {
   const error = new Error(body?.error?.message ?? body?.message ?? (typeof body === 'string' ? body : `HTTP ${status}`));
   error.code = body?.error?.code ?? body?.code;
   error.messageKey = body?.error?.messageKey ?? body?.messageKey;
+  error.binding = body?.error?.binding;
+  error.remediationHint = body?.error?.remediationHint;
   error.redirectUri = body?.error?.details?.redirectUri;
   error.status = status;
+  const retryAfter = Number(response?.headers?.get?.('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterSeconds = Math.ceil(retryAfter);
   return error;
 }
 
@@ -105,7 +109,7 @@ export class AdminApiClient {
     const response = await this.fetchImpl(applicationPath(path), { ...requestOptions, headers });
     const contentType = response.headers.get('content-type') ?? '';
     const body = contentType.includes('application/json') ? await response.json() : await response.text();
-    if (!response.ok || body?.success === false) throw apiError(body, response.status);
+    if (!response.ok || body?.success === false) throw apiError(body, response.status, response);
     return body;
   }
 

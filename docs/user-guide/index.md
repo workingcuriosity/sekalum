@@ -3,7 +3,7 @@ title: User Guide
 document_id: DOC-USER-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.9.0
+version: 1.10.0
 status: Active
 category: User Guide
 canonical: true
@@ -18,6 +18,9 @@ dependent_documents:
   - docs/data-model-reference/index.md
   - docs/security-guide/index.md
 change_history:
+  - version: 1.10.0
+    date: 2026-09-05
+    change: Adds RC3-10 operational Consumer safe-use guidance for minimum Grants, transient Resolve handling, logical reference rotation, revocation and external-runtime responsibility.
   - version: 1.9.0
     date: 2026-08-27
     change: Explains the fixed 24-hour internal Secret rollback window and immediate history invalidation on terminal Credential actions.
@@ -273,6 +276,14 @@ change, Discovery refresh, reset and errors. Values are not persisted in
 browser storage, cookies, URLs, logs or telemetry, and there is no clipboard
 or copy function.
 
+Use a resolved value only for the immediate target operation where practical.
+Do not copy, persist, log, export or pin it in workflow state, Set/Edit Fields,
+Code-node constants, execution output, retry payloads, source control,
+screenshots or recordings. The `credentialKey` remains a logical reference;
+it is distinct from Secret Version and Secret material. Valid rotation can
+replace material behind that reference. Revocation, deactivation or Grant
+removal blocks future Resolve and does not permit a cached plaintext fallback.
+
 Common safe messages include:
 
 | Situation | Consumer message |
@@ -294,9 +305,12 @@ defaults or cross-Credential reuse.
 
 The permission summary is read-only and shows selected and excluded fields.
 It does not call the API or change permissions. Store the grant only after
-reviewing the Credential, Provider and allowed Secret field names. A successful
+reviewing the Credential, Provider and allowed Secret field names. Use a
+dedicated Consumer identity and the smallest practical application/workload
+boundary; do not use a Management Token for runtime Resolve. A successful
 Resolve still requires an active Consumer token, the consume scope and
-permission, an active Credential and a matching grant.
+permission, an active Credential and a matching grant. A Grant limits future
+delivery; it cannot erase plaintext already delivered to an external runtime.
 
 ## Safe operation and support
 

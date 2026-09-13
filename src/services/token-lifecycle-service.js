@@ -1,11 +1,17 @@
 import { OAuthResult } from '../models/oauth-result.js';
 import { TokenRecord } from '../models/token-record.js';
+import { RestoreAdmissionService } from './restore-admission-service.js';
+import { RestoreCommitCoordinator } from '../storage/restore-commit-coordinator.js';
 
 export class TokenLifecycleService {
-  constructor({ tokenStore, backupStore, logger }) {
+  constructor({ tokenStore, backupStore, logger, credentialManager = null, credentialManagerRef = null, restoreAdmissionService = null, restoreCommitCoordinator = null }) {
     this.tokenStore = tokenStore;
     this.backupStore = backupStore;
     this.logger = logger;
+    this.credentialManager = credentialManager;
+    this.credentialManagerRef = credentialManagerRef;
+    this.restoreAdmissionService = restoreAdmissionService ?? new RestoreAdmissionService();
+    this.restoreCommitCoordinator = restoreCommitCoordinator ?? new RestoreCommitCoordinator();
   }
 
   async import(oauthResult) {
@@ -48,6 +54,7 @@ export class TokenLifecycleService {
       provider: existingToken.provider,
       accountId: existingToken.accountId,
       accountName: oauthResult.accountName ?? existingToken.accountName,
+      ...(existingToken.credentialGeneration ? { credentialGeneration: existingToken.credentialGeneration } : {}),
 
       accessToken: oauthResult.accessToken,
       refreshToken: oauthResult.refreshToken ?? existingToken.refreshToken,
@@ -87,7 +94,41 @@ export class TokenLifecycleService {
       existingCredentialKey: existingToken?.credentialKey
     });
 
-    await this.tokenStore.save(restoredToken);
+    if (restoredToken.providerId !== providerId) {
+      throw this.restoreAdmissionService.errorFromConflict({
+        class: 'HARD_SECURITY_BLOCK',
+        code: 'RESTORE_STATE_CHANGED',
+        resourceType: 'TokenRecord',
+        resourceId: restoredToken.providerId,
+        remediation: 'Provider and account identity must match the requested restore target.'
+      });
+    }
+
+    const credentialManager = this.credentialManager ?? this.credentialManagerRef?.();
+    if (!credentialManager?.getCredentialByKey) {
+      await this.tokenStore.save(restoredToken);
+    } else {
+      const currentCredential = await credentialManager.getCredentialByKey(restoredToken.credentialKey);
+      const preflight = this.restoreAdmissionService.preflightLegacyProviderTokenRestore({
+        restoredToken,
+        currentToken: existingToken,
+        currentCredential
+      });
+      this.restoreAdmissionService.assertCommitAllowed(preflight);
+
+      await this.restoreCommitCoordinator.run(async () => {
+        const finalToken = await this.#loadCurrentToken(providerId);
+        const finalCredential = await credentialManager.getCredentialByKey(restoredToken.credentialKey);
+        const finalAdmission = this.restoreAdmissionService.revalidateLegacyProviderTokenRestore({
+          preflight,
+          restoredToken,
+          currentToken: finalToken,
+          currentCredential: finalCredential
+        });
+        this.restoreAdmissionService.assertCommitAllowed(finalAdmission);
+        await this.tokenStore.save(restoredToken);
+      });
+    }
 
     this.logger.info(`Token restored: ${providerId} from backup ${backupId}`);
 
@@ -112,6 +153,16 @@ export class TokenLifecycleService {
     return existed;
   }
 
+  async #loadCurrentToken(providerId) {
+    if (!this.tokenStore?.load) return null;
+    try {
+      return await this.tokenStore.load(providerId);
+    } catch (error) {
+      if (['ENOENT', 'NOT_FOUND'].includes(error?.code)) return null;
+      throw error;
+    }
+  }
+
   #fromOAuthResult(oauthResult, existingToken = null) {
     const now = new Date();
 
@@ -121,6 +172,7 @@ export class TokenLifecycleService {
       provider: oauthResult.provider,
       accountId: oauthResult.accountId,
       accountName: oauthResult.accountName,
+      ...(existingToken?.credentialGeneration ? { credentialGeneration: existingToken.credentialGeneration } : {}),
 
       accessToken: oauthResult.accessToken,
       refreshToken: oauthResult.refreshToken,

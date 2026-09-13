@@ -131,6 +131,10 @@ test('ProviderManager carries encrypted provider configuration through start and
         preparedOptions = options;
         const { values } = options;
         return { configurationId: 'configuration-1', providerKey: 'threads', configuration: { ...values } };
+      },
+      async load(configurationId) {
+        assert.equal(configurationId, 'configuration-1');
+        return { configurationId, providerKey: 'threads', configuration: { ...configuration } };
       }
     },
     logger: createLogger()

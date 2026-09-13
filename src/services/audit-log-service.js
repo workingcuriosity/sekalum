@@ -56,6 +56,21 @@ export class AuditLogService {
     return this.mutationQueue.run(() => this.#replaceEntries(entries));
   }
 
+  async getRestoreSnapshot() {
+    return this.mutationQueue.run(async () => {
+      const entries = await this.#loadEntries();
+      return entries.map((entry) => ({ ...entry, details: this.#cloneDetails(entry.details) }));
+    });
+  }
+
+  async restoreSnapshot(snapshot = []) {
+    return this.mutationQueue.run(async () => {
+      const entries = Array.isArray(snapshot) ? snapshot : snapshot.entries;
+      if (!Array.isArray(entries)) throw this.#badRequest('Audit restore snapshot must contain an entries array');
+      return this.#saveEntries(entries);
+    });
+  }
+
   async #replaceEntries(entries = []) {
     if (!Array.isArray(entries)) {
       throw this.#badRequest('entries must be an array');

@@ -1,6 +1,6 @@
 {
   "name": "sekalum",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "description": "Sekalum open-source credential lifecycle management platform.",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -23,6 +23,10 @@
     "test:architecture": "node --test tests/architecture/*.test.js",
     "test:component": "node --test tests/component/*.test.js",
     "test:integration": "node --test tests/integration/*.test.js",
+    "test:security-assurance": "node --test tests/security-assurance/*.test.mjs",
+    "test:hacker": "node scripts/hacker-test-runner.mjs --release-gate",
+    "test:hacker:validate": "node scripts/hacker-test-runner.mjs --validate",
+    "test:hacker:all": "node scripts/hacker-test-runner.mjs --all",
     "ui:model:validate": "node scripts/ui-model-validator.mjs",
     "ui:model:generate": "node scripts/ui-model-generator.mjs",
     "ui:model:check": "node scripts/ui-model-validator.mjs --check-generated",
@@ -42,6 +46,8 @@
     "docs:audit": "node scripts/documentation-quality-audit.mjs",
     "docs:check": "node scripts/documentation-quality-audit.mjs --strict",
     "docs:check:public": "node scripts/documentation-quality-audit.mjs --strict --public",
+    "docs:contract:check": "node scripts/gov3-document-contract-check.mjs",
+    "gov3:pre-owner-review": "node scripts/gov3-pre-owner-review.mjs",
     "test:public": "node scripts/public-test-runner.mjs"
   },
   "dependencies": {

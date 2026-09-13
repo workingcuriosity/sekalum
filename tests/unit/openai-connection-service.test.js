@@ -25,12 +25,13 @@ test('OpenAIConnectionService validates an API-key credential', async () => {
   const service = new OpenAIConnectionService({
     client: {
       async validateApiKey(options) {
-        assert.deepEqual(options, {
-          apiKey: 'sk-test',
-          organizationId: 'org-test',
-          projectId: 'proj-test',
-          timeoutMs: undefined
-        });
+      assert.deepEqual(options, {
+        apiKey: 'sk-test',
+        organizationId: 'org-test',
+        projectId: 'proj-test',
+        timeoutMs: undefined,
+        purpose: 'PROVIDER_VALIDATION'
+      });
 
         return { modelCount: 2 };
       }

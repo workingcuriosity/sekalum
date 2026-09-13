@@ -3,8 +3,25 @@ import assert from 'node:assert/strict';
 
 import { SftpClient } from '../../src/api/sftp/sftp-client.js';
 
+const allowingPolicy = () => ({
+  async admit(host, context) {
+    return {
+      connectAddress: host,
+      addressFamily: 4,
+      verificationHost: host,
+      port: context.port,
+      hostHeader: host,
+      protocol: 'sftp',
+      scheme: 'sftp',
+      purpose: context.purpose,
+      pathId: context.pathId
+    };
+  }
+});
+
 test('SftpClient validates required connection options before connecting', async () => {
   const client = new SftpClient({
+    egressPolicy: allowingPolicy(),
     connector: {
       async connect() {
         throw new Error('should not connect');
@@ -23,6 +40,7 @@ test('SftpClient connects and disconnects through injected transport', async () 
   let disconnected = false;
 
   const client = new SftpClient({
+    egressPolicy: allowingPolicy(),
     connector: {
       async connect(options) {
         connected = true;
@@ -55,6 +73,7 @@ test('SftpClient connects and disconnects through injected transport', async () 
 
 test('SftpClient preserves the host-key alias when connecting to a policy-pinned address', async () => {
   const client = new SftpClient({
+    egressPolicy: allowingPolicy(),
     connector: {
       async connect(options) {
         assert.equal(options.host, '203.0.113.10');

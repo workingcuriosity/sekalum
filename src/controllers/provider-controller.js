@@ -67,7 +67,9 @@ export class ProviderController {
   async create(req, res) {
     try {
       if (!this.customProviderService?.create) throw new Error('Custom provider onboarding is not configured');
-      const provider = await this.customProviderService.create(req.body);
+      const provider = await this.customProviderService.create(req.body, {
+        actorUserId: authenticatedUserId(req)
+      });
       const summary = await this.providerManager.getProvider(provider.key);
       res.status(201).json({ success: true, data: this.#toProviderJSON(summary, req) });
     } catch (error) {

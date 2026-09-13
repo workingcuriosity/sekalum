@@ -2,7 +2,7 @@
 
 These workflows demonstrate Sekalum's official Consumer API flow.
 
-## Enthaltene Beispiele
+## Included examples
 
 ### Consumer API Example (OpenAI)
 
@@ -52,9 +52,9 @@ Configure only:
 ## Prerequisites
 
 - Sekalum is running
-- a Consumer API token is available
+- a dedicated Consumer API token is available; never use a Management Token in a workflow
 - the Credential is configured
-- a matching Consumer grant exists
+- a matching least-privilege Consumer Grant exists for the required named fields
 
 ---
 
@@ -62,10 +62,17 @@ Configure only:
 
 Sekalum delivers Secret values only through Resolve. The OpenAI and Twitch
 examples use the resolved value directly in the immediate target HTTP Request
-expression. They do not copy it into an ordinary item, a Code/Set node, a URL,
-workflow notes, logs, retry payloads, pinned data or static data.
+expression. They do not copy it into an ordinary item, a Code/Set node, a URL
+or query string, workflow notes, logs, execution output, retry payloads,
+pinned/static data, source control, exports, screenshots or recordings.
 
 The target request is followed by a sanitized result node. Do not add a
 preparation node that returns a resolved Secret as ordinary JSON. Keep workflow
 success and error retention disabled, and treat Resolve or target failures as
-failures without replaying Secret-bearing data.
+failures without replaying Secret-bearing data. The stable `credentialKey` is a
+logical reference, not a Secret Version or Secret material; rotation may keep
+the reference while replacing material, and revocation blocks future Resolve.
+The generic HTTP Consumer API remains canonical; the existing native n8n node
+is ordinary reference UX and Issue #173 adoption/video/workflow evidence is
+separately governed. `Cache-Control: no-store` does not guarantee erasure from
+the external runtime after delivery.

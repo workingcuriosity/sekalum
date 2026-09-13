@@ -22,7 +22,8 @@ export class InstagramApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'INSTAGRAM-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'instagram', credentialBearing: true
     });
 
     return response.data;
@@ -33,7 +34,8 @@ export class InstagramApiClient {
       grant_type: 'ig_refresh_token',
       access_token: refreshToken
     }), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      pathId: 'INSTAGRAM-REFRESH', purpose: 'OAUTH_REFRESH', providerKey: 'instagram', credentialBearing: true
     });
 
     return response.data;
@@ -44,7 +46,8 @@ export class InstagramApiClient {
       bearerToken: accessToken,
       query: {
         fields: 'id,username,account_type'
-      }
+      },
+      pathId: 'INSTAGRAM-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'instagram', credentialBearing: true
     });
 
     if (!response.data?.id) {

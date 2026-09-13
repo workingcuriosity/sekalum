@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { ApiTokenStatus } from './api-token-status.js';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
 
 function toDate(value, fieldName) {
   if (value === null || value === undefined) return null;
@@ -19,7 +20,7 @@ function normalizeScopes(scopes) {
     if (typeof scope !== 'string' || scope.trim() === '') {
       throw new Error("ApiToken: 'scopes' must contain non-empty strings");
     }
-    return scope.trim();
+    return validateNamedIdentifier('permissionScope', scope);
   });
 
   return Object.freeze([...new Set(normalized)]);
@@ -41,22 +42,22 @@ export class ApiToken {
     createdBy,
     version = 1
   }) {
-    if (!id) throw new Error("ApiToken: 'id' is required");
+    validateNamedIdentifier('apiTokenId', id);
     if (!name) throw new Error("ApiToken: 'name' is required");
     if (!tokenPrefix) throw new Error("ApiToken: 'tokenPrefix' is required");
     if (!tokenHash) throw new Error("ApiToken: 'tokenHash' is required");
-    if (!userId) throw new Error("ApiToken: 'userId' is required");
-    if (typeof principalGeneration !== 'string' || principalGeneration.trim() === '') {
-      throw new Error("ApiToken: 'principalGeneration' is required");
-    }
+    if (typeof userId !== 'string' || userId.trim() === '') throw new Error("ApiToken: 'userId' is required");
+    validateNamedIdentifier('userId', userId);
+    validateNamedIdentifier('principalGeneration', principalGeneration);
     if (!createdBy) throw new Error("ApiToken: 'createdBy' is required");
+    validateNamedIdentifier('userId', createdBy);
 
     this.id = id;
     this.name = name;
     this.tokenPrefix = tokenPrefix;
     this.tokenHash = tokenHash;
     this.userId = userId;
-    this.principalGeneration = principalGeneration.trim();
+    this.principalGeneration = principalGeneration;
     this.scopes = normalizeScopes(scopes);
     this.createdAt = toDate(createdAt, 'createdAt');
     this.expiresAt = toDate(expiresAt, 'expiresAt');

@@ -15,7 +15,7 @@
   <main class="consumer-main">
     <section class="consumer-panel" aria-labelledby="consumer-title">
       <h2 id="consumer-title">Connect a Consumer</h2>
-      <p>Enter a Consumer API token to continue. The token remains in memory for this page only.</p>
+      <p>Enter a dedicated Consumer API token to continue; never use a Management Token. The token remains in memory for this page only.</p>
       <form id="consumer-token-form" class="consumer-form">
         <label for="consumer-token">Consumer API token</label>
         <input id="consumer-token" name="consumer-token" type="password" autocomplete="off" spellcheck="false">
@@ -37,7 +37,7 @@
 
     <section id="consumer-client-examples" class="consumer-panel" aria-labelledby="client-examples-title" hidden>
       <h2 id="client-examples-title">Copy a client example</h2>
-      <p>Examples use the existing Resolve API and safe placeholders. They are documentation only and are not executed or stored.</p>
+      <p>Examples use the existing Resolve API and safe placeholders. They are documentation only and are not executed or stored. Use resolved values only for the immediate target operation; do not copy, persist, log, export, pin, or place them in URLs or retry payloads.</p>
       <label for="consumer-client-example-format">Format</label>
       <select id="consumer-client-example-format"></select>
       <textarea id="consumer-client-example-output" rows="20" readonly spellcheck="false" aria-label="Generated client example"></textarea>
@@ -46,6 +46,7 @@
 
     <section id="consumer-resolve-results" class="consumer-panel" aria-labelledby="resolve-results-title" hidden>
       <h2 id="resolve-results-title">Resolved secrets</h2>
+      <p class="consumer-status">Use resolved values only for the immediate target operation where practical. Do not copy, persist, log, export, pin, or place them in URLs or retry payloads. Browser cleanup and no-store cannot erase a value already delivered to an external runtime.</p>
       <div id="consumer-resolve-result-list"></div>
     </section>
   </main>

@@ -1,6 +1,7 @@
 import { Credential } from '../models/credential.js';
 import { LifecycleState } from '../models/lifecycle-state.js';
 import { TokenRecord } from '../models/token-record.js';
+import { assertCredentialBindingUnchanged } from '../security/credential-binding-guard.js';
 
 export class LegacyTokenCredentialStoreAdapter {
   constructor({ tokenStore }) {
@@ -28,9 +29,40 @@ export class LegacyTokenCredentialStoreAdapter {
     }
   }
 
-  async save(credentialInput) {
+  async save(credentialInput, { allowBindingChange = false } = {}) {
     const credential = Credential.from(credentialInput);
+    if (!allowBindingChange) {
+      const existing = await this.#existingCredentialForSave(credential);
+      if (existing) {
+        assertCredentialBindingUnchanged(existing, credential, { operation: 'legacy credential persistence' });
+      }
+    }
     return this.tokenStore.save(this.#credentialToTokenRecord(credential));
+  }
+
+  async #existingCredentialForSave(credential) {
+    if (typeof this.tokenStore.loadById === 'function') {
+      try {
+        return await this.load(credential.credentialId);
+      } catch (error) {
+        if (error?.code !== 'NOT_FOUND') throw error;
+        return null;
+      }
+    }
+    if (typeof this.tokenStore.exists === 'function') {
+      if (!await this.tokenStore.exists(credential.credentialId)) return null;
+      return this.load(credential.credentialId);
+    }
+    if (typeof this.tokenStore.load === 'function') {
+      try {
+        const tokenRecord = await this.tokenStore.load(credential.credentialId);
+        return this.#tokenRecordToCredential(tokenRecord);
+      } catch (error) {
+        if (error?.code === 'NOT_FOUND' || error?.code === 'ENOENT') return null;
+        throw error;
+      }
+    }
+    return null;
   }
 
   async delete(credentialId) {

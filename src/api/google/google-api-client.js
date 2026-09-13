@@ -21,7 +21,8 @@ export class GoogleApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'GOOGLE-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'google', credentialBearing: true
     });
 
     return response.data;
@@ -38,7 +39,8 @@ export class GoogleApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'GOOGLE-TOKEN', purpose: 'OAUTH_REFRESH', providerKey: 'google', credentialBearing: true
     });
 
     return response.data;
@@ -46,7 +48,8 @@ export class GoogleApiClient {
 
   async getCurrentUser({ accessToken }) {
     const response = await this.httpClient.get(this.userInfoUrl, {
-      bearerToken: accessToken
+      bearerToken: accessToken,
+      pathId: 'GOOGLE-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'google', credentialBearing: true
     });
 
     return response.data;

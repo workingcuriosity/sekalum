@@ -2,6 +2,40 @@
 
 This file contains only changes that are appropriate for the public Sekalum repository. Internal governance, audit evidence, security-scan identifiers, private work-package history, and development-only control-plane changes are intentionally excluded.
 
+## [1.0.0-rc.3] — 2026-09-13
+
+This release candidate is prepared for final release authorization; no tag or
+public release is implied by this entry.
+
+### Added
+
+- Public-safe Security Assurance reporting for the RC3 candidate, including
+  aggregate Product, Architecture, Public and GOV3 qualification results.
+- Candidate-bound adversarial assurance reporting with complete coverage of
+  the registered release-gate attack set.
+
+### Changed
+
+- Hardened hosted OAuth callback configuration and public-origin handling with
+  explicit HTTPS and trusted-proxy boundaries.
+- Strengthened first-administrator bootstrap proof requirements and
+  candidate-bound security evidence handling.
+- Improved public documentation and safe-use guidance for Consumer
+  integrations, credential selection and named-field resolution.
+
+### Security
+
+- Security Assurance status is PASS for the assessed RC3 candidate, with no
+  Critical or High findings in the current candidate-bound evidence set.
+- Public projection remains fail-closed and excludes private governance,
+  deployment and evidence material.
+- Security assurance and risk evaluation for RC3 use documented,
+  standards-aligned methods based on internationally recognized NIST, ISO/IEC,
+  OWASP, MITRE and FIRST references as applicable.
+- The resulting release evidence is maintained in traceable form for reuse in
+  future formal audit or certification work without claiming certification or
+  full standards compliance.
+
 ## [1.0.0-rc.2] — 2026-08-30
 
 ### Added

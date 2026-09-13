@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 
 function createServer({ managementService } = {}) {
   return new OAuthCallbackServer({
@@ -12,15 +13,6 @@ function createServer({ managementService } = {}) {
     managementService,
     config: { get() { return 0; } },
     logger: { success() {}, error() {} }
-  });
-}
-
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-    });
   });
 }
 
@@ -57,7 +49,7 @@ test('HTTP management status endpoint returns aggregated management state', asyn
       }
     }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/management/status`);
@@ -91,7 +83,7 @@ test('HTTP management detail endpoints delegate to ManagementService', async () 
       }
     }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const providers = await (await fetch(`${baseUrl}/api/v1/management/providers`)).json();
@@ -115,7 +107,7 @@ test('HTTP management endpoint returns structured errors', async () => {
       }
     }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/management/status`);
@@ -149,7 +141,7 @@ test('HTTP scheduler management endpoints delegate to ManagementService', async 
       }
     }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const started = await (await fetch(`${baseUrl}/api/v1/management/scheduler/start`, { method: 'POST' })).json();
@@ -176,7 +168,7 @@ test('HTTP provider health-check management endpoint delegates to ManagementServ
       }
     }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/management/providers/threads/health-check`, { method: 'POST' });

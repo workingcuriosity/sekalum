@@ -1,7 +1,10 @@
+import { EgressError, EgressPolicy, EGRESS_PURPOSES } from '../../services/egress-policy.js';
+
 export class SftpClient {
-  constructor({ connector = null, timeoutMs = 10000 } = {}) {
+  constructor({ connector = null, timeoutMs = 10000, egressPolicy = new EgressPolicy() } = {}) {
     this.connector = connector;
     this.timeoutMs = timeoutMs;
+    this.egressPolicy = egressPolicy;
   }
 
   async testConnection(connectionOptions = {}) {
@@ -14,11 +17,20 @@ export class SftpClient {
     let session = null;
 
     try {
+      const route = await this.egressPolicy.admit(connectionOptions.host, {
+        pathId: connectionOptions.pathId ?? 'SFTP-STORED',
+        purpose: connectionOptions.purpose ?? EGRESS_PURPOSES.CREDENTIAL_CONNECTION_TEST,
+        protocol: 'sftp',
+        port: connectionOptions.port,
+        providerKey: 'sftp'
+      });
       // Connect to the policy-pinned address while preserving the original host
       // for SSH host-key connector implementations.
       const connectorOptions = {
         ...connectionOptions,
-        hostKeyAlias: connectionOptions.verificationHost ?? connectionOptions.host
+        host: route.connectAddress,
+        verificationHost: connectionOptions.verificationHost ?? route.verificationHost,
+        hostKeyAlias: connectionOptions.verificationHost ?? route.verificationHost
       };
       session = await this.#withTimeout(
         this.connector.connect(connectorOptions),
@@ -31,8 +43,8 @@ export class SftpClient {
 
       return {
         connected: true,
-        host: connectionOptions.host,
-        port: connectionOptions.port
+        host: connectionOptions.verificationHost ?? route.verificationHost,
+        port: route.port
       };
     } catch (error) {
       if (session?.disconnect) {
@@ -59,7 +71,7 @@ export class SftpClient {
 
     const timeout = new Promise((_, reject) => {
       timeoutHandle = setTimeout(() => {
-        reject(new Error(`SFTP connection timed out after ${timeoutMs}ms`));
+        reject(new EgressError('EGRESS_TIMEOUT', null, { statusCode: 504 }));
       }, timeoutMs);
     });
 

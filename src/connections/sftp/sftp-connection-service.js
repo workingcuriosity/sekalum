@@ -9,9 +9,9 @@ export class SftpConnectionService {
     this.client = client;
   }
 
-  async validateCredential(credential) {
+  async validateCredential(credential, { purpose = 'PROVIDER_VALIDATION', pathId = 'SFTP-STORED' } = {}) {
     const connectionOptions = this.#connectionOptionsFromCredential(credential);
-    const result = await this.client.testConnection(connectionOptions);
+    const result = await this.client.testConnection({ ...connectionOptions, purpose, pathId });
 
     return {
       valid: true,
@@ -22,9 +22,13 @@ export class SftpConnectionService {
     };
   }
 
-  async healthCheck(credential) {
+  async healthCheck(credential, context = {}) {
     try {
-      const validation = await this.validateCredential(credential);
+      const validation = await this.validateCredential(credential, {
+        ...context,
+        purpose: 'PROVIDER_HEALTH_CHECK',
+        pathId: 'SFTP-STORED'
+      });
 
       return {
         healthy: true,
@@ -41,7 +45,8 @@ export class SftpConnectionService {
         status: 'down',
         protocol: 'sftp',
         checkedAt: new Date().toISOString(),
-        message: safeErrorMessage(error, 'SFTP health check failed')
+        message: safeErrorMessage(error, 'SFTP health check failed'),
+        code: error?.code ?? null
       };
     }
   }

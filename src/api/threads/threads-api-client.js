@@ -24,7 +24,8 @@ export class ThreadsApiClient {
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
-        }
+        },
+        pathId: 'THREADS-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'threads', credentialBearing: true
       }
     );
 
@@ -41,7 +42,8 @@ export class ThreadsApiClient {
       `${this.baseUrl}/access_token`,
       body,
       {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        pathId: 'THREADS-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'threads', credentialBearing: true
       }
     );
 
@@ -54,7 +56,8 @@ export class ThreadsApiClient {
       `${this.baseUrl}/refresh_access_token`,
       body,
       {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        pathId: 'THREADS-REFRESH', purpose: 'OAUTH_REFRESH', providerKey: 'threads', credentialBearing: true
       }
     );
 
@@ -68,7 +71,8 @@ export class ThreadsApiClient {
         query: {
           fields: 'id,username'
         },
-        bearerToken: accessToken
+        bearerToken: accessToken,
+        pathId: 'THREADS-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'threads', credentialBearing: true
       }
     );
 

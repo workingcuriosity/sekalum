@@ -63,6 +63,7 @@ function renderDashboard(data) {
   setText('dashboard-providers', number(providers.total));
   setText('dashboard-expired', number(credentials.expiredCount));
   setText('dashboard-expiring', number(credentials.expiringSoonCount));
+  setText('dashboard-consumer-access-count', number(data.consumerAccess?.summary?.consumerCount));
 
   setText('management-system-status', statusLabel(data.lifecycle?.health));
   setText('management-generated-at', data.generatedAt

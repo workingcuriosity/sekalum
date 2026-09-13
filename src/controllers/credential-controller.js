@@ -234,9 +234,17 @@ export class CredentialController {
     try {
       this.#assertCredentialManager('deleteCredential');
 
-      await this.credentialManager.deleteCredential(req.params.credentialId, this.#contextFromRequest(req));
+      const result = await this.credentialManager.deleteCredential(req.params.credentialId, this.#contextFromRequest(req));
 
-      res.status(204).send();
+      if (!result || result.lifecycleState === 'deleted') {
+        res.status(204).send();
+        return;
+      }
+
+      res.status(202).json({
+        success: true,
+        data: this.#toLifecycleResponseJSON({ action: 'delete', credential: result })
+      });
     } catch (error) {
       this.#sendError(res, this.#normalizeNotFoundError(error));
     }
@@ -299,7 +307,13 @@ export class CredentialController {
         throw this.#badRequest(message);
       }
 
-      res.status(200).json({
+      const lifecycleCredential = result.data?.credential;
+      const statusCode = actionName === 'revoke'
+        && lifecycleCredential?.decommissioning
+        && this.#decommissioningProjection(lifecycleCredential.decommissioning)?.cleanupStatus !== 'complete'
+        ? 202
+        : 200;
+      res.status(statusCode).json({
         success: true,
         data: this.#toLifecycleResponseJSON(result.data)
       });
@@ -656,6 +670,9 @@ export class CredentialController {
       const provider = this.#safeProviderOutcome(value.provider);
       if (Object.keys(provider).length > 0) response.provider = provider;
     }
+    if (value.decommissioning !== undefined) {
+      response.decommissioning = this.#decommissioningProjection(value.decommissioning);
+    }
 
     if (Object.keys(response).length > 0) return response;
     return this.#safeProviderOutcome(value);
@@ -690,8 +707,17 @@ export class CredentialController {
       createdAt: raw.createdAt ?? null,
       updatedAt: raw.updatedAt ?? null,
       version: raw.version ?? null,
-      supportedActions: this.#supportedActionsFor(type, raw.lifecycleState)
+      supportedActions: this.#supportedActionsFor(type, raw.lifecycleState, raw.decommissioning)
     };
+
+    const decommissioning = this.#decommissioningProjection(raw.decommissioning);
+    if (decommissioning) {
+      safe.decommissioning = decommissioning;
+      safe.securityContained = ['revoked', 'deleted'].includes(safe.lifecycleState);
+      safe.cleanupComplete = decommissioning.cleanupStatus === 'complete';
+      safe.cleanupRequiresAttention = decommissioning.cleanupStatus === 'failed_retryable';
+      safe.deletePending = decommissioning.intent === 'delete' && safe.lifecycleState !== 'deleted';
+    }
 
     if (raw.providerProfile && typeof raw.providerProfile === 'object') {
       safe.providerProfile = Object.fromEntries(
@@ -838,6 +864,7 @@ export class CredentialController {
 
   #supportedActionsForProvider(capabilities = [], type, lifecycleState, credentialMethodKey = null, provider = null) {
     if (lifecycleState === 'deleted') return [];
+    if (lifecycleState === 'revoked') return this.#supportedActionsFor(type, lifecycleState);
 
     if (credentialMethodKey) {
       const method = (provider?.credentialMethods ?? []).find((candidate) => candidate.key === credentialMethodKey);
@@ -924,8 +951,12 @@ export class CredentialController {
     return 'unknown';
   }
 
-  #supportedActionsFor(type, lifecycleState) {
+  #supportedActionsFor(type, lifecycleState, decommissioning = null) {
     if (lifecycleState === 'deleted') return [];
+
+    if (lifecycleState === 'revoked') {
+      return decommissioning?.intent === 'delete' ? ['delete'] : ['retry_cleanup', 'delete'];
+    }
 
     const actions = ['validate', 'health-check'];
 
@@ -933,6 +964,28 @@ export class CredentialController {
     if (lifecycleState !== 'revoked') actions.push('revoke');
 
     return actions;
+  }
+
+  #decommissioningProjection(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const names = ['providerCleanup', 'grantCleanup', 'secretHistoryCleanup'];
+    const projection = { intent: value.intent ?? null, requestedAt: value.requestedAt ?? null };
+    for (const name of names) {
+      const step = value[name];
+      if (!step || typeof step !== 'object') continue;
+      projection[name] = {
+        status: step.status ?? 'pending',
+        lastAttemptAt: step.lastAttemptAt ?? null,
+        ...(step.failureCode ? { failureCode: step.failureCode } : {})
+      };
+    }
+    const statuses = names.map((name) => projection[name]?.status).filter(Boolean);
+    projection.cleanupStatus = statuses.includes('failed_retryable')
+      ? 'failed_retryable'
+      : statuses.length === names.length && statuses.every((status) => ['complete', 'not_required'].includes(status))
+        ? 'complete'
+        : 'pending';
+    return projection;
   }
 
   #toJSON(value) {

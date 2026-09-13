@@ -5,7 +5,7 @@ import { ConsumerCredentialService } from '../../src/services/consumer-credentia
 import { resolveDiagnostic, ResolveDiagnosticCode } from '../../src/services/resolve-diagnostics.js';
 import { Credential } from '../../src/models/credential.js';
 
-function setup({ lifecycleState = 'active', grantNames = ['apiKey', 'secondaryKey'], credentialMethodKey = 'api-key', credentialManager = null, runtimePublicProjectionService = null, findGrantResult = undefined, expiresAt = null, metadata = {}, auditLogService = null, credentialStore = null } = {}) {
+function setup({ lifecycleState = 'active', grantNames = ['apiKey', 'secondaryKey'], credentialMethodKey = 'api-key', credentialManager = null, runtimePublicProjectionService = null, findGrantResult = undefined, expiresAt = null, metadata = {}, auditLogService = null, credentialStore = null, apiTokenService = null } = {}) {
   const secretValue = 'consumer-test-secret';
   const credential = new Credential({
     credentialId: 'credential-1', providerKey: 'example', credentialMethodKey, lifecycleState,
@@ -40,12 +40,13 @@ function setup({ lifecycleState = 'active', grantNames = ['apiKey', 'secondaryKe
       },
       getProviderMethodBinding(key) { return key === 'api-key' ? { methodKey: key } : null; }
     }; } },
-    auditLogService: auditLogService ?? { async record(entry) { audit.push(entry); } }
+    auditLogService: auditLogService ?? { async record(entry) { audit.push(entry); } },
+    apiTokenService
   });
   return { service, audit, secretValue, findGrantCalls };
 }
 
-test('consumer success audit is emitted only after the final authorization and lifecycle check', async () => {
+test('consumer success audit completes inside the final delivery authorization boundary', async () => {
   const events = [];
   const audit = [];
   const { service } = setup({
@@ -67,9 +68,8 @@ test('consumer success audit is emitted only after the final authorization and l
   };
 
   await service.resolve({ consumerId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] });
-  assert.equal(events.at(-1), 'audit:success');
   assert.equal(events.filter((event) => event === 'audit:success').length, 1);
-  assert.ok(events.lastIndexOf('grant-check') < events.lastIndexOf('audit:success'));
+  assert.ok(events.lastIndexOf('audit:success') > events.lastIndexOf('grant-check'));
   assert.equal(audit[0].result, 'success');
 });
 
@@ -175,6 +175,112 @@ test('consumer resolves a credential after the existing manager refreshes it whe
   const result = await service.resolve({ consumerId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] });
 
   assert.deepEqual(result.secrets, { apiKey: `${secretValue}-refreshed` });
+});
+
+test('consumer blocks secret delivery when its API token is revoked during an in-flight resolve', async () => {
+  let active = true;
+  const { service, audit } = setup({
+    credentialManager: {
+      async refreshIfDue(credential) {
+        active = false;
+        return credential;
+      }
+    },
+    apiTokenService: {
+      async getEffectiveConsumerIdentity(tokenId) {
+        return active ? { id: tokenId } : null;
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => service.resolve({
+      consumerId: 'consumer-a',
+      apiTokenId: 'consumer-a',
+      credentialKey: 'credential-1',
+      secretNames: ['apiKey']
+    }),
+    { code: ResolveDiagnosticCode.CONSUMER_NOT_FOUND }
+  );
+  assert.equal(audit.some((entry) => entry.result === 'success'), false);
+});
+
+test('consumer does not audit success when consume authority is removed before final delivery', async () => {
+  let active = true;
+  const { service, audit } = setup({
+    credentialManager: {
+      async refreshIfDue(credential) {
+        active = false;
+        return credential;
+      }
+    },
+    apiTokenService: {
+      async getEffectiveConsumerIdentity(tokenId) {
+        return active ? { id: tokenId } : null;
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => service.resolve({ consumerId: 'consumer-a', apiTokenId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] }),
+    { code: ResolveDiagnosticCode.CONSUMER_NOT_FOUND }
+  );
+  assert.equal(audit.some((entry) => entry.result === 'success'), false);
+});
+
+test('consumer blocks delivery when credentials:consume is removed before final delivery', async () => {
+  let scopeGranted = true;
+  const { service, audit } = setup({
+    credentialManager: {
+      async refreshIfDue(credential) {
+        scopeGranted = false;
+        return credential;
+      }
+    },
+    apiTokenService: {
+      async getEffectiveConsumerIdentity(tokenId) {
+        return scopeGranted ? { id: tokenId } : null;
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => service.resolve({ consumerId: 'consumer-a', apiTokenId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] }),
+    { code: ResolveDiagnosticCode.CONSUMER_NOT_FOUND }
+  );
+  assert.equal(audit.some((entry) => entry.result === 'success'), false);
+});
+
+test('consumer blocks delivery when RBAC consume authority is removed before final delivery', async () => {
+  let rbacGranted = true;
+  const { service, audit } = setup({
+    credentialManager: {
+      async refreshIfDue(credential) {
+        rbacGranted = false;
+        return credential;
+      }
+    },
+    apiTokenService: {
+      async getEffectiveConsumerIdentity(tokenId) {
+        return rbacGranted ? { id: tokenId } : null;
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => service.resolve({ consumerId: 'consumer-a', apiTokenId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] }),
+    { code: ResolveDiagnosticCode.CONSUMER_NOT_FOUND }
+  );
+  assert.equal(audit.some((entry) => entry.result === 'success'), false);
+});
+
+test('consumer delivers Secret material when final token and RBAC authority remain valid', async () => {
+  const { service, audit, secretValue } = setup({
+    apiTokenService: { async getEffectiveConsumerIdentity(tokenId) { return { id: tokenId }; } }
+  });
+  const result = await service.resolve({ consumerId: 'consumer-a', apiTokenId: 'consumer-a', credentialKey: 'credential-1', secretNames: ['apiKey'] });
+  assert.deepEqual(result.secrets, { apiKey: secretValue });
+  assert.equal(audit.filter((entry) => entry.result === 'success').length, 1);
 });
 
 test('consumer rejects malformed requests and unknown credentials', async () => {

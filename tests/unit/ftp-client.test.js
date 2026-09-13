@@ -3,8 +3,25 @@ import assert from 'node:assert/strict';
 
 import { FtpClient } from '../../src/api/ftp/ftp-client.js';
 
+const allowingPolicy = () => ({
+  async admit(host, context) {
+    return {
+      connectAddress: host,
+      addressFamily: 4,
+      verificationHost: host,
+      port: context.port,
+      hostHeader: host,
+      protocol: 'ftp',
+      scheme: 'ftp',
+      purpose: context.purpose,
+      pathId: context.pathId
+    };
+  }
+});
+
 test('FtpClient validates required connection options before connecting', async () => {
   const client = new FtpClient({
+    egressPolicy: allowingPolicy(),
     connector: {
       async connect() {
         throw new Error('should not connect');
@@ -23,6 +40,7 @@ test('FtpClient connects and disconnects through injected transport', async () =
   let disconnected = false;
 
   const client = new FtpClient({
+    egressPolicy: allowingPolicy(),
     connector: {
       async connect(options) {
         connected = true;
@@ -55,6 +73,7 @@ test('FtpClient connects and disconnects through injected transport', async () =
 
 test('FtpClient preserves the verification host when connecting to a policy-pinned address', async () => {
   const client = new FtpClient({
+    egressPolicy: allowingPolicy(),
     connector: {
       async connect(options) {
         assert.equal(options.host, '203.0.113.10');

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 
 function credential(data) {
   return {
@@ -89,20 +90,11 @@ function createServer(credentials, providerDefinitions = {}) {
   });
 }
 
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-    });
-  });
-}
-
 test('HTTP credential transfer export endpoint returns encrypted transfer payload', async () => {
   const httpServer = createServer([
     credential({ credentialId: 'cred-openai', providerKey: 'openai', externalReference: 'prod' })
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/export`, {
@@ -125,13 +117,36 @@ test('HTTP credential transfer export endpoint returns encrypted transfer payloa
   }
 });
 
+test('HTTP credential transfer export rejects a weak password sent directly to the API', async () => {
+  const httpServer = createServer([
+    credential({ credentialId: 'cred-openai', providerKey: 'openai', externalReference: 'prod' })
+  ]);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/credentials/export`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credentialIds: ['cred-openai'], encryptionPassword: 'weak' })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.success, false);
+    assert.match(body.error.message, /at least 8 characters/);
+    assert.equal(body.error.message.includes('weak'), false);
+  } finally {
+    server.close();
+  }
+});
+
 test('HTTP credential transfer import preview and import endpoints use transfer service', async () => {
   const credentials = [
     credential({ credentialId: 'cred-existing', providerKey: 'openai', externalReference: 'prod' }),
     credential({ credentialId: 'cred-new', providerKey: 'discord', externalReference: 'bot' })
   ];
   const sourceServer = createServer(credentials);
-  const source = await listen(sourceServer.app);
+  const source = await listenOAuthCallbackServer(sourceServer);
 
   let transfer;
   try {
@@ -149,7 +164,7 @@ test('HTTP credential transfer import preview and import endpoints use transfer 
     credential({ credentialId: 'cred-existing', providerKey: 'openai', externalReference: 'prod' })
   ];
   const targetServer = createServer(targetCredentials);
-  const target = await listen(targetServer.app);
+  const target = await listenOAuthCallbackServer(targetServer);
 
   try {
     const previewResponse = await fetch(`${target.baseUrl}/api/v1/credentials/import/preview`, {
@@ -185,7 +200,7 @@ test('HTTP credential transfer import preview and import endpoints use transfer 
 
 test('HTTP credential transfer preview endpoint validates request body', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/import/preview`, {
@@ -207,7 +222,7 @@ test('HTTP credential transfer preview endpoint validates request body', async (
 test('HTTP credential transfer endpoints accept CSV imports for migration', async () => {
   const credentials = [];
   const httpServer = createServer(credentials);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
   const csv = [
     'providerKey,externalReference,displayName,apiKey',
     'openai,prod,OpenAI Production,sk-live-123'
@@ -259,7 +274,7 @@ test('HTTP CSV import applies registered provider field aliases before storing a
       ]
     }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
   const csv = [
     'providerKey,externalReference,api_key,organization',
     'openai,prod,sk-live-123,org-example'

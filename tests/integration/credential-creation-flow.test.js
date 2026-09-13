@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 import { CredentialManager } from '../../src/managers/credential-manager.js';
 import { CredentialStore } from '../../src/storage/credential-store.js';
 import { CredentialCollectionStoreAdapter } from '../../src/storage/credential-collection-store-adapter.js';
@@ -19,15 +20,9 @@ const openAiFields = [
 
 function config() {
   return {
-    get(key, fallback = null) { if (key === 'BASE_PATH') return '/'; if (key === 'TOKEN_ENCRYPTION_KEY_VERSION') return 1; return fallback; },
+    get(key, fallback = null) { if (key === 'BASE_PATH') return '/'; if (key === 'TOKEN_ENCRYPTION_KEY_VERSION') return 1; if (key === 'OAUTH_CALLBACK_PORT') return 0; return fallback; },
     require(key) { if (key === 'TOKEN_ENCRYPTION_KEY') return '0123456789abcdef0123456789abcdef'; throw new Error(`Missing ${key}`); }
   };
-}
-
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => resolve({ server, baseUrl: `http://127.0.0.1:${server.address().port}` }));
-  });
 }
 
 test('credential creation persists API-key and connection credentials and returns them to the Dashboard API', async () => {
@@ -51,7 +46,7 @@ test('credential creation persists API-key and connection credentials and return
     config: config(),
     logger: { success() {}, info() {}, error() {} }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   const cases = [
     { providerKey: 'openai', externalReference: 'openai-main', metadata: { displayName: 'OpenAI Main', type: 'api-key' }, secrets: [{ name: 'apiKey', value: 'sk-example-12345678901234567890' }] },

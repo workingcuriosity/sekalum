@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Credential } from '../../src/models/credential.js';
-import { CredentialSecretVersionService, SECRET_VERSION_RETENTION_MS } from '../../src/services/credential-secret-version-service.js';
+import {
+  CredentialSecretVersionService,
+  MAX_HISTORY_BYTES_PER_CREDENTIAL,
+  MAX_VERSIONS_PER_CREDENTIAL,
+  SECRET_VERSION_RETENTION_MS
+} from '../../src/services/credential-secret-version-service.js';
 
 test('CredentialSecretVersionService records immutable secret versions per credential', async () => {
   const service = new CredentialSecretVersionService({
@@ -90,6 +95,7 @@ test('CredentialSecretVersionService rolls back credential secrets through Crede
   assert.equal(saved[0].metadata.toJSON().custom.lastSecretRollbackVersion, 1);
 
   const versions = await service.listCredentialVersions('twitch:main');
+  assert.deepEqual(versions.map((version) => version.version), [2, 1]);
   assert.equal(versions[0].reason, 'rollback');
   assert.equal(versions[0].secrets[0].value, 'access-old');
 });
@@ -260,4 +266,126 @@ test('CredentialSecretVersionService rejects rollback after expiry and for termi
   await terminalService.recordCredentialVersion({ ...credential.toJSON(), secrets: [{ name: 'token', value: 'terminal-old-secret' }] });
   await assert.rejects(() => terminalService.rollbackCredentialSecrets(credential.credentialId, 1), { code: 'SECRET_VERSION_UNAVAILABLE' });
   assert.equal(updates, 0);
+});
+
+function persistedVersionStore(initial = { versions: [] }) {
+  let state = structuredClone(initial);
+  return {
+    async load() { return structuredClone(state); },
+    async save(value) { state = structuredClone(value); },
+    snapshot() { return structuredClone(state); }
+  };
+}
+
+function versionCredential(credentialId, value = 'secret') {
+  return {
+    credentialId,
+    providerKey: 'test',
+    secrets: [{ name: 'token', value }]
+  };
+}
+
+test('Secret-version high-watermark is persistent and monotonic across restart', async () => {
+  const store = persistedVersionStore();
+  const service = new CredentialSecretVersionService({ store });
+  assert.equal((await service.recordCredentialVersion(versionCredential('watermark'))).version, 1);
+  assert.equal((await service.recordCredentialVersion(versionCredential('watermark', 'next'))).version, 2);
+  assert.equal(store.snapshot().secretVersionHighWatermarks.watermark, 2);
+
+  const restarted = new CredentialSecretVersionService({ store });
+  assert.equal((await restarted.recordCredentialVersion(versionCredential('watermark', 'restart'))).version, 3);
+  assert.equal(store.snapshot().secretVersionHighWatermarks.watermark, 3);
+});
+
+test('Secret-version count pruning preserves the high-watermark and never reuses expired or invalidated versions', async () => {
+  let now = new Date('2026-08-27T00:00:00.000Z');
+  const store = persistedVersionStore();
+  const service = new CredentialSecretVersionService({ store, clock: () => now });
+  for (let index = 0; index < MAX_VERSIONS_PER_CREDENTIAL + 2; index += 1) {
+    await service.recordCredentialVersion(versionCredential('bounded', `secret-${index}`));
+  }
+
+  assert.equal(store.snapshot().versions.filter((record) => record.credentialId === 'bounded').length, MAX_VERSIONS_PER_CREDENTIAL);
+  assert.equal(store.snapshot().secretVersionHighWatermarks.bounded, MAX_VERSIONS_PER_CREDENTIAL + 2);
+
+  now = new Date(now.getTime() + SECRET_VERSION_RETENTION_MS);
+  assert.deepEqual(await service.listCredentialVersions('bounded'), []);
+  assert.equal(store.snapshot().secretVersionHighWatermarks.bounded, MAX_VERSIONS_PER_CREDENTIAL + 2);
+  assert.equal((await service.recordCredentialVersion(versionCredential('bounded', 'after-expiry'))).version, MAX_VERSIONS_PER_CREDENTIAL + 3);
+
+  await service.invalidateHistoryForCredential('bounded', { reason: 'credential-revoked' });
+  assert.equal((await service.recordCredentialVersion(versionCredential('bounded', 'after-invalidation'))).version, MAX_VERSIONS_PER_CREDENTIAL + 4);
+});
+
+test('Secret-version history byte bound is deterministic and fails closed for one oversized record', async () => {
+  const store = persistedVersionStore();
+  const service = new CredentialSecretVersionService({ store });
+  for (let index = 0; index < 20; index += 1) {
+    await service.recordCredentialVersion(versionCredential('bytes', 'x'.repeat(220_000)));
+  }
+
+  const retained = store.snapshot().versions.filter((record) => record.credentialId === 'bytes');
+  assert.ok(Buffer.byteLength(JSON.stringify(retained), 'utf8') <= MAX_HISTORY_BYTES_PER_CREDENTIAL);
+  await assert.rejects(
+    () => service.recordCredentialVersion(versionCredential('oversized', 'x'.repeat(MAX_HISTORY_BYTES_PER_CREDENTIAL))),
+    (error) => error.code === 'SECRET_VERSION_HISTORY_LIMIT_EXCEEDED'
+  );
+  assert.equal(store.snapshot().versions.some((record) => record.credentialId === 'oversized'), false);
+});
+
+test('Secret-version legacy state converges and heals high-watermark without resetting identity', async () => {
+  const old = '2026-08-25T00:00:00.000Z';
+  const versions = Array.from({ length: MAX_VERSIONS_PER_CREDENTIAL + 12 }, (_, index) => ({
+    versionId: `legacy-${index + 1}`,
+    credentialId: 'legacy',
+    version: index + 1,
+    secrets: [{ name: 'token', value: 'expired' }],
+    reason: 'legacy',
+    createdAt: old,
+    createdBy: 'system',
+    metadata: {}
+  }));
+  const store = persistedVersionStore({ versions });
+  const service = new CredentialSecretVersionService({ store, clock: () => new Date('2026-08-27T00:00:00.000Z') });
+  assert.deepEqual(await service.listCredentialVersions('legacy'), []);
+  assert.equal(store.snapshot().versions.length, MAX_VERSIONS_PER_CREDENTIAL);
+  assert.equal(store.snapshot().secretVersionHighWatermarks.legacy, MAX_VERSIONS_PER_CREDENTIAL + 12);
+  assert.equal((await service.recordCredentialVersion(versionCredential('legacy', 'new'))).version, MAX_VERSIONS_PER_CREDENTIAL + 13);
+
+  const belowObserved = persistedVersionStore({
+    versions: [{ ...versions[6], secrets: [] }],
+    secretVersionHighWatermarks: { legacy: 2 }
+  });
+  const healing = new CredentialSecretVersionService({ store: belowObserved, clock: () => new Date('2026-08-27T00:00:00.000Z') });
+  await healing.listCredentialVersions('legacy');
+  assert.equal(belowObserved.snapshot().secretVersionHighWatermarks.legacy, 7);
+
+  const ahead = persistedVersionStore({
+    versions: [{ ...versions[0], secrets: [] }],
+    secretVersionHighWatermarks: { legacy: 20 }
+  });
+  const aheadService = new CredentialSecretVersionService({ store: ahead });
+  assert.equal((await aheadService.recordCredentialVersion(versionCredential('legacy', 'after-ahead'))).version, 21);
+});
+
+test('Secret-version malformed state fails closed without resetting version identity', async () => {
+  const malformed = persistedVersionStore({
+    versions: [{ credentialId: 'malformed', version: 0, secrets: [] }],
+    secretVersionHighWatermarks: { malformed: 4 }
+  });
+  const service = new CredentialSecretVersionService({ store: malformed });
+  await assert.rejects(() => service.recordCredentialVersion(versionCredential('malformed', 'new')), { code: 'SECRET_VERSION_STATE_INVALID' });
+  assert.equal(malformed.snapshot().secretVersionHighWatermarks.malformed, 4);
+});
+
+test('Secret-version batch persistence rolls back history and high-watermark together', async () => {
+  const store = persistedVersionStore();
+  const service = new CredentialSecretVersionService({ store });
+  await assert.rejects(
+    () => service.recordCredentialVersionsAtomically([{ credential: versionCredential('atomic'), reason: 'import' }], {
+      onCommitted: () => { throw new Error('callback failed'); }
+    }),
+    /callback failed/
+  );
+  assert.deepEqual(store.snapshot(), { versions: [], secretVersionHighWatermarks: {} });
 });

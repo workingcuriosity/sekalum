@@ -2,6 +2,7 @@ const PROFILE_TEMPLATES = Object.freeze([
   {
     id: 'none',
     label: 'No profile',
+    classification: 'FORM_SUGGESTION_ONLY',
     description: 'Keep the existing free Consumer configuration.',
     suggestedConsumerId: '',
     recommendedScopes: ['credentials:consume'],
@@ -11,6 +12,7 @@ const PROFILE_TEMPLATES = Object.freeze([
   {
     id: 'n8n',
     label: 'n8n',
+    classification: 'FORM_SUGGESTION_ONLY',
     description: 'Template for an n8n HTTP or node-based workflow.',
     suggestedConsumerId: 'n8n-consumer',
     recommendedScopes: ['credentials:consume'],
@@ -20,6 +22,7 @@ const PROFILE_TEMPLATES = Object.freeze([
   {
     id: 'make',
     label: 'Make',
+    classification: 'FORM_SUGGESTION_ONLY',
     description: 'Template for a Make scenario using the Consumer API.',
     suggestedConsumerId: 'make-consumer',
     recommendedScopes: ['credentials:consume'],
@@ -29,6 +32,7 @@ const PROFILE_TEMPLATES = Object.freeze([
   {
     id: 'zapier',
     label: 'Zapier',
+    classification: 'FORM_SUGGESTION_ONLY',
     description: 'Template for a Zapier action or webhook step.',
     suggestedConsumerId: 'zapier-consumer',
     recommendedScopes: ['credentials:consume'],
@@ -38,6 +42,7 @@ const PROFILE_TEMPLATES = Object.freeze([
   {
     id: 'home-assistant',
     label: 'Home Assistant',
+    classification: 'FORM_SUGGESTION_ONLY',
     description: 'Template for a Home Assistant integration or automation.',
     suggestedConsumerId: 'home-assistant-consumer',
     recommendedScopes: ['credentials:consume'],
@@ -71,6 +76,7 @@ export function buildConsumerProfileSuggestion(profileId, credential = null) {
   );
   return {
     profileId: template.id,
+    classification: template.classification,
     suggestedConsumerId: template.suggestedConsumerId,
     recommendedScopes: [...template.recommendedScopes],
     suggestedSecretFields: template.suggestedSecretFields.filter((name) => availableSecretFields.has(name)),

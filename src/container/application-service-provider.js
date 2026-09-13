@@ -3,6 +3,8 @@ import path from 'path';
 import { ServiceProvider } from './service-provider.js';
 import { TOKENS } from './tokens.js';
 import { HttpClient } from '../api/http-client.js';
+import { EgressPolicy, privateExceptionFromConfig } from '../services/egress-policy.js';
+import { AbuseAdmission, abuseAdmissionOptionsFromConfig } from '../security/abuse-admission.js';
 import { RefreshExpiredTokensCommand } from '../commands/refresh-expired-tokens-command.js';
 
 import { Config } from '../config/config.js';
@@ -32,6 +34,7 @@ import { LifecycleNotificationStore } from '../storage/lifecycle-notification-st
 import { ProviderConfigurationStore } from '../storage/provider-configuration-store.js';
 import { CustomProviderDefinitionStore } from '../storage/custom-provider-definition-store.js';
 import { ConsumerGrantStore } from '../storage/consumer-grant-store.js';
+import { RestoreCommitCoordinator } from '../storage/restore-commit-coordinator.js';
 
 import { TokenLifecycleService } from '../services/token-lifecycle-service.js';
 import { DashboardService } from '../services/dashboard-service.js';
@@ -41,6 +44,7 @@ import { ApiTokenService } from '../services/api-token-service.js';
 import { AuditLogService } from '../services/audit-log-service.js';
 import { ExportService } from '../services/export-service.js';
 import { BackupRestoreService } from '../services/backup-restore-service.js';
+import { RestoreAdmissionService } from '../services/restore-admission-service.js';
 import { MetricsService } from '../services/metrics-service.js';
 import { CredentialPolicyService } from '../services/credential-policy-service.js';
 import { CredentialRotationService } from '../services/credential-rotation-service.js';
@@ -78,7 +82,13 @@ export class ApplicationServiceProvider extends ServiceProvider {
 
     container.singleton(TOKENS.OAUTH_SECURITY_SERVICE, (c) => {
       const ttlMs = Number(c.resolve(TOKENS.CONFIG).get('OAUTH_WIZARD_INTENT_TTL_MS', 10 * 60 * 1000));
-      return new OAuthSecurityService({ ttlMs: Number.isFinite(ttlMs) ? ttlMs : undefined });
+      const admission = c.resolve(TOKENS.ABUSE_ADMISSION);
+      return new OAuthSecurityService({
+        ttlMs: Number.isFinite(ttlMs) ? ttlMs : undefined,
+        maxContexts: admission.maxTotalKeys,
+        maxContextsPerActor: admission.domainQuotas.actor,
+        cleanupIntervalMs: admission.cleanupIntervalMs
+      });
     });
 
     container.singleton(TOKENS.OAUTH_MANAGER, (c) => {
@@ -109,9 +119,22 @@ export class ApplicationServiceProvider extends ServiceProvider {
   });
 });
 
-    container.singleton(TOKENS.HTTP_CLIENT, () => {
-      return new HttpClient();
+    container.singleton(TOKENS.EGRESS_POLICY, (c) => {
+      const config = c.resolve(TOKENS.CONFIG);
+      const allowPrivateNetworks = String(config.get('CONNECTION_TEST_ALLOW_PRIVATE_NETWORKS', 'false')).toLowerCase() === 'true';
+      return new EgressPolicy({
+        allowPrivateNetworks,
+        privateException: allowPrivateNetworks ? privateExceptionFromConfig(config) : null
+      });
     });
+
+    container.singleton(TOKENS.HTTP_CLIENT, (c) => {
+      return new HttpClient({ egressPolicy: c.resolve(TOKENS.EGRESS_POLICY) });
+    });
+
+    container.singleton(TOKENS.ABUSE_ADMISSION, (c) => new AbuseAdmission(
+      abuseAdmissionOptionsFromConfig(c.resolve(TOKENS.CONFIG))
+    ));
 
     container.singleton(TOKENS.JSON_STORE, () => {
       return new JsonStore();
@@ -179,6 +202,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
       });
     });
 
+    container.singleton(TOKENS.RESTORE_COMMIT_COORDINATOR, () => new RestoreCommitCoordinator());
+
     container.singleton(TOKENS.CREDENTIAL_POLICY_STORE, (c) => {
       return new CredentialPolicyStore({
         jsonStore: c.resolve(TOKENS.SECURE_JSON_STORE),
@@ -224,7 +249,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
     container.singleton(TOKENS.PROVIDER_CONFIGURATION_SERVICE, (c) => {
       return new ProviderConfigurationService({
         store: c.resolve(TOKENS.PROVIDER_CONFIGURATION_STORE),
-        providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY)
+        providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY),
+        credentialStore: c.resolve(TOKENS.CREDENTIAL_STORE)
       });
     });
 
@@ -249,7 +275,10 @@ export class ApplicationServiceProvider extends ServiceProvider {
       return new TokenLifecycleService({
         tokenStore: c.resolve(TOKENS.TOKEN_STORE),
         backupStore: c.resolve(TOKENS.BACKUP_STORE),
-        logger: c.resolve(TOKENS.LOGGER)
+        logger: c.resolve(TOKENS.LOGGER),
+        credentialManagerRef: () => c.resolve(TOKENS.CREDENTIAL_MANAGER),
+        restoreAdmissionService: c.resolve(TOKENS.RESTORE_ADMISSION_SERVICE),
+        restoreCommitCoordinator: c.resolve(TOKENS.RESTORE_COMMIT_COORDINATOR)
       });
     });
 
@@ -262,7 +291,10 @@ export class ApplicationServiceProvider extends ServiceProvider {
         logger: c.resolve(TOKENS.LOGGER),
         secretVersioningService: c.resolve(TOKENS.CREDENTIAL_SECRET_VERSION_SERVICE),
         credentialHistoryService: c.resolve(TOKENS.CREDENTIAL_HISTORY_SERVICE),
-        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE),
+        consumerGrantService: c.resolve(TOKENS.CONSUMER_GRANT_SERVICE),
+        providerConfigurationService: c.resolve(TOKENS.PROVIDER_CONFIGURATION_SERVICE),
+        egressPolicy: c.resolve(TOKENS.EGRESS_POLICY)
       });
     });
 
@@ -270,7 +302,9 @@ export class ApplicationServiceProvider extends ServiceProvider {
       return new CredentialSecretVersionService({
         store: c.resolve(TOKENS.CREDENTIAL_SECRET_VERSION_STORE),
         credentialManagerRef: () => c.resolve(TOKENS.CREDENTIAL_MANAGER),
-        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE),
+        restoreAdmissionService: c.resolve(TOKENS.RESTORE_ADMISSION_SERVICE),
+        restoreCommitCoordinator: c.resolve(TOKENS.RESTORE_COMMIT_COORDINATOR)
       });
     });
 
@@ -293,6 +327,7 @@ export class ApplicationServiceProvider extends ServiceProvider {
         credentialManager: c.resolve(TOKENS.CREDENTIAL_MANAGER),
         providerManager: c.resolve(TOKENS.PROVIDER_MANAGER),
         consumerGrantService: c.resolve(TOKENS.CONSUMER_GRANT_SERVICE),
+        consumerCredentialService: c.resolve(TOKENS.CONSUMER_CREDENTIAL_SERVICE),
         schedulerService: c.resolve(TOKENS.SCHEDULER),
         credentialPolicyService: c.resolve(TOKENS.CREDENTIAL_POLICY_SERVICE),
         credentialRotationService: c.resolve(TOKENS.CREDENTIAL_ROTATION_SERVICE),
@@ -309,6 +344,13 @@ export class ApplicationServiceProvider extends ServiceProvider {
       });
     });
 
+    container.singleton(TOKENS.RESTORE_ADMISSION_SERVICE, (c) => {
+      return new RestoreAdmissionService({
+        accessManagementService: c.resolve(TOKENS.ACCESS_MANAGEMENT_SERVICE),
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
+      });
+    });
+
     container.singleton(TOKENS.ACCESS_MANAGEMENT_SERVICE, (c) => {
       return new AccessManagementService({
         store: c.resolve(TOKENS.ACCESS_MANAGEMENT_STORE),
@@ -322,7 +364,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
       return new ApiTokenService({
         store: c.resolve(TOKENS.API_TOKEN_STORE),
         auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE),
-        userIdentityProvider: (userId) => c.resolve(TOKENS.ACCESS_MANAGEMENT_SERVICE).getUserIdentity(userId)
+        userIdentityProvider: (userId) => c.resolve(TOKENS.ACCESS_MANAGEMENT_SERVICE).getUserIdentity(userId),
+        userAuthorizationProvider: (userId, permission) => c.resolve(TOKENS.ACCESS_MANAGEMENT_SERVICE).hasPermission(userId, permission)
       });
     });
 
@@ -343,7 +386,8 @@ export class ApplicationServiceProvider extends ServiceProvider {
         providerRegistry: c.resolve(TOKENS.PROVIDER_REGISTRY),
         credentialManager: c.resolve(TOKENS.CREDENTIAL_MANAGER),
         runtimePublicProjectionService: c.resolve(TOKENS.RUNTIME_PUBLIC_PROJECTION_SERVICE),
-        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE)
+        auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE),
+        apiTokenService: c.resolve(TOKENS.API_TOKEN_SERVICE)
       });
     });
 
@@ -397,7 +441,9 @@ export class ApplicationServiceProvider extends ServiceProvider {
         accessManagementService: c.resolve(TOKENS.ACCESS_MANAGEMENT_SERVICE),
         auditLogService: c.resolve(TOKENS.AUDIT_LOG_SERVICE),
         managementService: c.resolve(TOKENS.MANAGEMENT_SERVICE),
-        store: c.resolve(TOKENS.MANAGEMENT_BACKUP_STORE)
+        store: c.resolve(TOKENS.MANAGEMENT_BACKUP_STORE),
+        restoreAdmissionService: c.resolve(TOKENS.RESTORE_ADMISSION_SERVICE),
+        restoreCommitCoordinator: c.resolve(TOKENS.RESTORE_COMMIT_COORDINATOR)
       });
     });
 
@@ -447,7 +493,10 @@ export class ApplicationServiceProvider extends ServiceProvider {
         metricsService: c.resolve(TOKENS.METRICS_SERVICE),
         apiTokenService: c.resolve(TOKENS.API_TOKEN_SERVICE),
         consumerCredentialService: c.resolve(TOKENS.CONSUMER_CREDENTIAL_SERVICE),
+        restoreAdmissionService: c.resolve(TOKENS.RESTORE_ADMISSION_SERVICE),
+        restoreCommitCoordinator: c.resolve(TOKENS.RESTORE_COMMIT_COORDINATOR),
         customProviderService: c.resolve(TOKENS.CUSTOM_PROVIDER_SERVICE),
+        abuseAdmission: c.resolve(TOKENS.ABUSE_ADMISSION),
         config: c.resolve(TOKENS.CONFIG),
         logger: c.resolve(TOKENS.LOGGER)
       });

@@ -22,7 +22,8 @@ export class TwitchApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'TWITCH-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'twitch', credentialBearing: true
     });
 
     return response.data;
@@ -39,7 +40,8 @@ export class TwitchApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'TWITCH-TOKEN', purpose: 'OAUTH_REFRESH', providerKey: 'twitch', credentialBearing: true
     });
 
     return response.data;
@@ -47,7 +49,8 @@ export class TwitchApiClient {
 
   async validateAccessToken({ accessToken }) {
     const response = await this.httpClient.get(this.validateUrl, {
-      bearerToken: accessToken
+      bearerToken: accessToken,
+      pathId: 'TWITCH-VALIDATE', purpose: 'PROVIDER_VALIDATION', providerKey: 'twitch', credentialBearing: true
     });
 
     return response.data;
@@ -58,7 +61,8 @@ export class TwitchApiClient {
       bearerToken: accessToken,
       headers: {
         'Client-Id': oauthConfigurationValue({ providerConfiguration, field: 'clientId', config: this.config, environmentKey: 'TWITCH_CLIENT_ID' })
-      }
+      },
+      pathId: 'TWITCH-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'twitch', credentialBearing: true
     });
 
     const users = Array.isArray(response.data?.data)

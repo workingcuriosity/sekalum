@@ -138,14 +138,9 @@ test('REST API rejects x-credential-hub-user without a Bearer token', async () =
     });
     const body = await response.json();
 
-    if (process.env.NODE_ENV === 'test') {
-      assert.equal(response.status, 200);
-      assert.equal(body.success, true);
-    } else {
-      assert.equal(response.status, 401);
-      assert.equal(body.success, false);
-      assert.equal(body.error.code, 'API_TOKEN_AUTH_FAILED');
-    }
+    assert.equal(response.status, 401);
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, 'API_TOKEN_AUTH_FAILED');
   } finally {
     server.close();
   }
@@ -179,7 +174,7 @@ test('REST API applies RBAC after successful Bearer API token authentication', a
 
 test('REST API manages API tokens through RBAC protected endpoints', async () => {
   const setup = await createServer();
-  const management = await setup.apiTokenService.createToken({ name: 'Administrator', userId: 'admin-user', scopes: ['api-tokens:manage', 'api-tokens:read'], createdBy: 'admin-user' });
+  const management = await setup.apiTokenService.createToken({ name: 'Administrator', userId: 'admin-user', scopes: ['api-tokens:manage', 'api-tokens:read', 'providers:read'], createdBy: 'admin-user' });
   const { server, baseUrl } = await listen(setup.server.app);
 
   try {
@@ -191,7 +186,7 @@ test('REST API manages API tokens through RBAC protected endpoints', async () =>
       },
       body: JSON.stringify({
         name: 'External integration',
-        userId: 'viewer-user',
+        userId: 'admin-user',
         scopes: ['providers:read'],
         expiresAt: '2026-08-09T08:00:00.000Z'
       })
@@ -202,7 +197,7 @@ test('REST API manages API tokens through RBAC protected endpoints', async () =>
     assert.equal(createdBody.success, true);
     assert.match(createdBody.data.token, /^cht_/);
     assert.equal(createdBody.data.apiToken.name, 'External integration');
-    assert.equal(createdBody.data.apiToken.userId, 'viewer-user');
+    assert.equal(createdBody.data.apiToken.userId, 'admin-user');
     assert.equal(createdBody.data.apiToken.tokenHash, undefined);
 
     const tokenId = createdBody.data.apiToken.id;
@@ -241,6 +236,50 @@ test('REST API manages API tokens through RBAC protected endpoints', async () =>
     const explicitRevokeBody = await explicitRevokeResponse.json();
     assert.equal(explicitRevokeResponse.status, 200);
     assert.equal(explicitRevokeBody.data.status, 'revoked');
+  } finally {
+    server.close();
+  }
+});
+
+test('REST API token creation rejects scope escalation in the service layer', async () => {
+  const setup = await createServer();
+  const management = await setup.apiTokenService.createToken({ name: 'Administrator', userId: 'admin-user', scopes: ['api-tokens:manage'], createdBy: 'admin-user' });
+  const { server, baseUrl } = await listen(setup.server.app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/management/api-tokens`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${management.token}` },
+      body: JSON.stringify({ name: 'Escalated consumer', userId: 'admin-user', scopes: ['api-tokens:manage', 'credentials:consume'] })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, 'API_TOKEN_DELEGATION_DENIED');
+    assert.equal((await setup.apiTokenService.listTokens()).some((token) => token.name === 'Escalated consumer'), false);
+  } finally {
+    server.close();
+  }
+});
+
+test('REST API token creation rejects cross-principal delegation by default', async () => {
+  const setup = await createServer();
+  const management = await setup.apiTokenService.createToken({ name: 'Administrator', userId: 'admin-user', scopes: ['api-tokens:manage', 'providers:read'], createdBy: 'admin-user' });
+  const { server, baseUrl } = await listen(setup.server.app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/management/api-tokens`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${management.token}` },
+      body: JSON.stringify({ name: 'Cross-principal token', userId: 'viewer-user', scopes: ['providers:read'] })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, 'API_TOKEN_DELEGATION_DENIED');
+    assert.equal((await setup.apiTokenService.listTokens()).some((token) => token.name === 'Cross-principal token'), false);
   } finally {
     server.close();
   }

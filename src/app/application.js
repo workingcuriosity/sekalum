@@ -39,6 +39,7 @@ export class Application {
         'credentials.json',
         'credential-metadata.json',
         'access-management.json',
+        'access-management-tombstones.json',
         'api-tokens.json',
         'audit-log.json',
         'consumer-grants.json',

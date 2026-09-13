@@ -3,11 +3,14 @@ import { isProviderProfileMigrationVerified } from '../models/credential.js';
 import { DerivedRuntimeMaterial } from '../models/derived-runtime-material.js';
 import { RuntimeDerivationContract } from '../models/runtime-derivation-contract.js';
 import { ResolveDiagnosticCode, resolveDiagnostic } from './resolve-diagnostics.js';
+import { bindingValidationResult } from './binding-validation-result.js';
+import { validateNamedIdentifier, AuthorizationIdentifierError } from '../security/authorization-identifier.js';
+import { withBindingCommitLock } from '../storage/binding-commit-coordinator.js';
 
 export const BATCH_RESOLVE_MAX_REQUESTS = 20;
 
 export class ConsumerCredentialService {
-  constructor({ credentialStore, consumerGrantService, providerRegistry, credentialManager = null, runtimePublicProjectionService = null, auditLogService = null } = {}) {
+  constructor({ credentialStore, consumerGrantService, providerRegistry, credentialManager = null, runtimePublicProjectionService = null, auditLogService = null, apiTokenService = null } = {}) {
     if (!credentialStore?.load) throw new Error('ConsumerCredentialService requires CredentialStore');
     if (!consumerGrantService?.findGrant) throw new Error('ConsumerCredentialService requires ConsumerGrantService');
     if (!providerRegistry?.get) throw new Error('ConsumerCredentialService requires ProviderRegistry');
@@ -18,6 +21,93 @@ export class ConsumerCredentialService {
     this.credentialManager = credentialManager;
     this.runtimePublicProjectionService = runtimePublicProjectionService;
     this.auditLogService = auditLogService;
+    this.apiTokenService = apiTokenService;
+  }
+
+  /**
+   * Authoritative, secret-free Core projection of a Consumer's current access.
+   * This deliberately reuses the same lifecycle, generation, provider and
+   * field-contract checks as Discovery/Resolve; callers must not rebuild this
+   * relationship from management tables.
+   */
+  async getAccessScope({ consumerId, grants = null } = {}) {
+    const normalizedConsumerId = this.#requiredConsumerId(consumerId);
+    await this.#assertConsumerIdentity(normalizedConsumerId);
+    const sourceGrants = grants ?? await this.consumerGrantService.listGrants({ consumerId: normalizedConsumerId });
+    const projection = await this.#buildAccessScope(normalizedConsumerId, sourceGrants);
+    return projection;
+  }
+
+  async getCredentialAccessScope({ credentialId } = {}) {
+    const normalizedCredentialId = this.#requiredConsumerId(credentialId, 'credentialId');
+    const metadata = await this.#loadCredentialMetadata(normalizedCredentialId);
+    const grants = await this.consumerGrantService.listGrants({ credentialId: normalizedCredentialId });
+    const consumers = [];
+    for (const grant of grants) {
+      if (!grant?.consumerId) continue;
+      try {
+        await this.#assertConsumerIdentity(grant.consumerId);
+        const scope = await this.#buildAccessScope(grant.consumerId, [grant]);
+        const entry = scope.credentials.find((item) => item.credentialId === normalizedCredentialId);
+        if (entry) consumers.push({ consumerId: grant.consumerId, grantedSecretFields: entry.permittedSecretFields });
+      } catch (error) {
+        if (error?.code === 'CONSUMER_NOT_FOUND') continue;
+        throw error;
+      }
+    }
+    const assignments = consumers.reduce((count, consumer) => count + consumer.grantedSecretFields.length, 0);
+    return {
+      credential: this.#credentialScopeMetadata(metadata),
+      consumers,
+      summary: { consumerCount: consumers.length, secretFieldAssignmentCount: assignments }
+    };
+  }
+
+  async previewGrant({ consumerId, credentialId, credentialGeneration, providerKey, providerProfile, secretNames, grantId = null } = {}) {
+    const normalizedConsumerId = this.#requiredConsumerId(consumerId);
+    const currentGrants = await this.consumerGrantService.listGrants({ consumerId: normalizedConsumerId });
+    const existing = grantId ? currentGrants.find((grant) => grant.grantId === grantId) : null;
+    if (grantId && !existing) throw this.#error('GRANT_NOT_FOUND', 'Consumer grant not found', 404);
+    const proposalInput = {
+      ...(existing?.toJSON?.() ?? existing ?? {}),
+      consumerId: normalizedConsumerId,
+      credentialId: credentialId ?? existing?.credentialId,
+      credentialGeneration: credentialGeneration ?? existing?.credentialGeneration,
+      providerKey: providerKey ?? existing?.providerKey,
+      providerProfile: providerProfile ?? existing?.providerProfile,
+      secretNames: secretNames ?? existing?.secretNames,
+      ...(grantId ? { grantId } : {})
+    };
+    const binding = this.consumerGrantService.validateBinding
+      ? await this.consumerGrantService.validateBinding(proposalInput, { pathId: grantId ? 'BIND-GRANT-UPDATE' : 'BIND-GRANT-CREATE', grantId })
+      : bindingValidationResult({ decision: 'CAN_BE_SAVED', pathId: grantId ? 'BIND-GRANT-UPDATE' : 'BIND-GRANT-CREATE', referenceType: 'Credential', referenceOwner: 'Core', consumerId: normalizedConsumerId, credentialId: proposalInput.credentialId, providerKey: proposalInput.providerKey });
+    const current = await this.getAccessScope({ consumerId: normalizedConsumerId, grants: currentGrants });
+    const proposal = await this.consumerGrantService.prepareGrant(proposalInput);
+    const proposed = currentGrants.filter((grant) => !grantId || grant.grantId !== grantId);
+    if (proposed.some((grant) => grant.consumerId === proposal.consumerId && grant.credentialId === proposal.credentialId && grant.providerKey === proposal.providerKey)) {
+      throw this.#error('CONSUMER_GRANT_DUPLICATE', 'A grant for this consumer and credential already exists', 400);
+    }
+    proposed.push(proposal);
+    const next = await this.#buildAccessScope(normalizedConsumerId, proposed, { allowHypothetical: true });
+    return { binding, referenceCheck: binding, current, proposed: next, delta: this.#scopeDelta(current, next) };
+  }
+
+  async listAccessScopes() {
+    if (!this.apiTokenService?.listTokens) return [];
+    const tokens = await this.apiTokenService.listTokens();
+    const scopes = [];
+    for (const token of tokens) {
+      try {
+        if (this.apiTokenService.getEffectiveConsumerIdentity) {
+          const identity = await this.apiTokenService.getEffectiveConsumerIdentity(token.id);
+          if (!identity) continue;
+        }
+        scopes.push(await this.getAccessScope({ consumerId: token.id }));
+      } catch (error) {
+        if (error?.code !== 'CONSUMER_NOT_FOUND') throw error;
+      }
+    }
+    return scopes;
   }
 
   async discover({ consumerId, filters = undefined }) {
@@ -114,27 +204,33 @@ export class ConsumerCredentialService {
         name,
         Object.hasOwn(derivedValues, name) ? derivedValues[name] : values.get(name)
       ]));
-      // Re-read authorization immediately before recording success and returning material.
-      const finalConsistency = await this.#revalidateResolveAuthorization({
-        consumerId,
-        credential: materializedCredential,
-        providerKey,
-        requestedNames
+      // The final authorization read, success audit and delivery-result
+      // construction share the same bounded commit domain as Credential and
+      // authority mutations. This prevents a stale success audit or secret
+      // delivery after revoke, scope removal or RBAC mutation.
+      return withBindingCommitLock(async () => {
+        const finalConsistency = await this.#revalidateResolveAuthorization({
+          consumerId,
+          credential: materializedCredential,
+          providerKey,
+          requestedNames
+        });
+        if (finalConsistency.credential.version !== materializedCredential.version) {
+          throw this.#diagnosticError(ResolveDiagnosticCode.CREDENTIAL_NOT_CONSUMABLE);
+        }
+        await this.#revalidateDeliveryConsumerIdentity({ consumerId, apiTokenId });
+        try {
+          await this.#audit({ consumerId, apiTokenId, credentialId: materializedCredential.credentialId, providerKey, result: 'success', reason: 'resolved', secretFieldCount: contract.length });
+        } catch {
+          throw this.#error('INTERNAL_ERROR', 'Credential resolution could not be completed', 500);
+        }
+        return {
+          credentialKey,
+          providerKey,
+          lifecycleState: materializedCredential.lifecycleState,
+          secrets
+        };
       });
-      if (finalConsistency.credential.version !== materializedCredential.version) {
-        throw this.#diagnosticError(ResolveDiagnosticCode.CREDENTIAL_NOT_CONSUMABLE);
-      }
-      try {
-        await this.#audit({ consumerId, apiTokenId, credentialId: materializedCredential.credentialId, providerKey, result: 'success', reason: 'resolved', secretFieldCount: contract.length });
-      } catch {
-        throw this.#error('INTERNAL_ERROR', 'Credential resolution could not be completed', 500);
-      }
-      return {
-        credentialKey,
-        providerKey,
-        lifecycleState: materializedCredential.lifecycleState,
-        secrets
-      };
     } catch (error) {
       try {
         await this.#audit({ consumerId, apiTokenId, credentialId: credential?.credentialId ?? this.#safeId(credentialKey), providerKey, result: 'failure', reason: error.code ?? 'INTERNAL_ERROR', secretFieldCount: 0 });
@@ -151,9 +247,8 @@ export class ConsumerCredentialService {
     }
 
     const results = await Promise.all(requests.map(async (request, index) => {
-      const credentialKey = typeof request?.credentialKey === 'string' && request.credentialKey.trim() !== ''
-        ? request.credentialKey.trim()
-        : null;
+      let credentialKey = null;
+      try { credentialKey = validateNamedIdentifier('credentialKey', request?.credentialKey); } catch { credentialKey = null; }
       if (!credentialKey || !Array.isArray(request?.secretNames)) {
         return {
           index,
@@ -201,11 +296,170 @@ export class ConsumerCredentialService {
     }
   }
 
+  async #buildAccessScope(consumerId, grants, { allowHypothetical = false } = {}) {
+    const metadataList = typeof this.credentialStore.listMetadata === 'function'
+      ? await this.credentialStore.listMetadata()
+      : typeof this.credentialStore.list === 'function' ? await this.credentialStore.list() : [];
+    const metadataById = new Map(metadataList.map((credential) => [credential.credentialId, credential]));
+    const credentials = new Map();
+    const effectiveGrants = [];
+
+    for (const grant of grants ?? []) {
+      if (!grant?.credentialId || !grant.providerKey || grant.consumerId !== consumerId) continue;
+      const credential = metadataById.get(grant.credentialId) ?? await this.#safeLoadMetadata(grant.credentialId);
+      if (!credential) continue;
+      const entry = await this.#effectiveScopeEntry({ consumerId, grant, credential, allowHypothetical });
+      if (!entry) continue;
+      effectiveGrants.push(this.#safeGrantProjection(grant, entry.permittedSecretFields));
+      const existing = credentials.get(entry.credentialId);
+      if (existing) {
+        existing.permittedSecretFields = [...new Set([...existing.permittedSecretFields, ...entry.permittedSecretFields])].sort();
+      } else {
+        credentials.set(entry.credentialId, entry);
+      }
+    }
+
+    const credentialEntries = [...credentials.values()].sort((left, right) => left.credentialId.localeCompare(right.credentialId));
+    const secretFieldAssignmentCount = credentialEntries.reduce((count, entry) => count + entry.permittedSecretFields.length, 0);
+    return {
+      consumer: { consumerId },
+      grants: effectiveGrants,
+      credentials: credentialEntries,
+      summary: {
+        credentialCount: credentialEntries.length,
+        secretFieldAssignmentCount,
+        providerCount: new Set(credentialEntries.map((entry) => entry.providerKey)).size,
+        activeGrantCount: effectiveGrants.length
+      }
+    };
+  }
+
+  async #effectiveScopeEntry({ consumerId, grant, credential, allowHypothetical = false }) {
+    if (credential.lifecycleState !== LifecycleState.ACTIVE || credential.providerKey !== grant.providerKey) return null;
+    if (this.#isExpired(credential) || !this.#profileCompatible(credential)) return null;
+    if (!await this.#hasValidGrant({ consumerId, grant, credential, requirePersistedGrant: !allowHypothetical })) return null;
+    let provider;
+    try { provider = this.providerRegistry.get(credential.providerKey); } catch { return null; }
+    const method = provider.getCredentialMethod?.(credential.credentialMethodKey);
+    const binding = provider.getProviderMethodBinding?.(credential.credentialMethodKey);
+    if (!method || !binding) return null;
+    const fields = new Map((method.credentialFields ?? []).map((field) => [field.key, field]));
+    const inventory = Array.isArray(credential.secretInventory) ? credential.secretInventory : [];
+    const stored = new Set(inventory.length > 0
+      ? inventory.filter((secret) => secret?.hasValue === true).map((secret) => secret.name)
+      : (credential.secrets ?? []).filter((secret) => secret?.value !== undefined && secret?.value !== null && secret?.value !== '').map((secret) => secret.name));
+    const derivation = RuntimeDerivationContract.from(provider.runtimeDerivation ?? provider.providerProfile?.contract?.runtimeDerivation ?? {});
+    const configured = credential.metadata?.toJSON?.()?.custom?.runtimeDerivation ?? credential.metadata?.custom?.runtimeDerivation ?? {};
+    const durable = stored;
+    const permittedSecretFields = [...new Set((grant.secretNames ?? []).filter((name) => {
+      const field = fields.get(name);
+      if (!field?.secret) return false;
+      if (field.materialization !== 'derived') return stored.has(name);
+      return derivation.supportsRuntimeDerivation
+        && derivation.derivedFields.includes(name)
+        && derivation.requiredDurableInputs.every((input) => durable.has(input))
+        && derivation.accepts({ audience: configured.audience ?? null, scopes: Array.isArray(configured.scopes) ? configured.scopes : [] });
+    }))].sort();
+    if (permittedSecretFields.length === 0) return null;
+    return {
+      credentialId: credential.credentialId,
+      displayName: this.#publicDiscoveryMetadata(credential).displayName,
+      providerKey: credential.providerKey,
+      status: credential.lifecycleState,
+      permittedSecretFields
+    };
+  }
+
+  #scopeDelta(current, proposed) {
+    const keySet = (scope) => new Set((scope.credentials ?? []).flatMap((credential) => (credential.permittedSecretFields ?? []).map((name) => `${credential.credentialId}:${name}`)));
+    const currentSet = keySet(current);
+    const proposedSet = keySet(proposed);
+    const added = [...proposedSet].filter((key) => !currentSet.has(key)).sort();
+    const removed = [...currentSet].filter((key) => !proposedSet.has(key)).sort();
+    const status = added.length === 0 && removed.length === 0
+      ? 'unchanged'
+      : removed.length === 0
+        ? 'increased'
+        : added.length === 0
+          ? 'reduced'
+          : 'changed';
+    return { added, removed, status };
+  }
+
+  #safeGrantProjection(grant, permittedSecretFields) {
+    return {
+      grantId: grant.grantId ?? null,
+      consumerId: grant.consumerId,
+      credentialId: grant.credentialId,
+      providerKey: grant.providerKey,
+      permittedSecretFields: [...permittedSecretFields]
+    };
+  }
+
+  #credentialScopeMetadata(credential) {
+    const metadata = this.#publicDiscoveryMetadata(credential);
+    return {
+      credentialId: credential.credentialId,
+      displayName: metadata.displayName,
+      providerKey: credential.providerKey,
+      status: credential.lifecycleState
+    };
+  }
+
+  async #loadCredentialMetadata(credentialId) {
+    try {
+      return typeof this.credentialStore.loadMetadata === 'function'
+        ? await this.credentialStore.loadMetadata(credentialId)
+        : await this.credentialStore.load(credentialId);
+    } catch (error) {
+      if (error?.code === 'NOT_FOUND') throw this.#error('CREDENTIAL_NOT_FOUND', 'Credential not found', 404);
+      throw error;
+    }
+  }
+
+  async #safeLoadMetadata(credentialId) {
+    try { return await this.#loadCredentialMetadata(credentialId); } catch (error) {
+      if (error?.code === 'CREDENTIAL_NOT_FOUND') return null;
+      throw error;
+    }
+  }
+
+  #requiredConsumerId(value, name = 'consumerId') {
+    try { return validateNamedIdentifier('consumerId', value); } catch (error) {
+      if (error instanceof AuthorizationIdentifierError) throw this.#error('INVALID_CONSUMER_ID', `${name} is invalid`, 400);
+      throw error;
+    }
+  }
+
+  async #assertConsumerIdentity(consumerId) {
+    if (this.apiTokenService?.getEffectiveConsumerIdentity) {
+      const identity = await this.apiTokenService.getEffectiveConsumerIdentity(consumerId);
+      if (!identity) throw this.#error('CONSUMER_NOT_FOUND', `Consumer '${consumerId}' not found`, 404);
+      return identity;
+    }
+    if (!this.apiTokenService?.getToken) return;
+    try { await this.apiTokenService.getToken(consumerId); } catch (error) {
+      if (error?.code === 'NOT_FOUND') throw this.#error('CONSUMER_NOT_FOUND', `Consumer '${consumerId}' not found`, 404);
+      throw error;
+    }
+  }
+
+  async #revalidateDeliveryConsumerIdentity({ consumerId, apiTokenId }) {
+    if (!apiTokenId || !this.apiTokenService?.getEffectiveConsumerIdentity) return;
+    const identity = await this.apiTokenService.getEffectiveConsumerIdentity(apiTokenId);
+    if (!identity || identity.id !== consumerId) {
+      throw this.#diagnosticError(ResolveDiagnosticCode.CONSUMER_NOT_FOUND);
+    }
+  }
+
   #requestedNames(secretNames) {
-    if (!Array.isArray(secretNames) || secretNames.length === 0 || secretNames.some((name) => typeof name !== 'string' || name.trim() === '')) {
+    if (!Array.isArray(secretNames) || secretNames.length === 0) {
       throw this.#diagnosticError(ResolveDiagnosticCode.INVALID_SECRET_REQUEST);
     }
-    const names = secretNames.map((name) => name.trim());
+    let names;
+    try { names = secretNames.map((name) => validateNamedIdentifier('secretFieldKey', name)); } catch {
+      throw this.#diagnosticError(ResolveDiagnosticCode.INVALID_SECRET_REQUEST);
+    }
     if (new Set(names).size !== names.length) {
       throw this.#diagnosticError(ResolveDiagnosticCode.INVALID_SECRET_REQUEST);
     }
@@ -361,7 +615,7 @@ export class ConsumerCredentialService {
     return { credential: currentCredential, grant };
   }
 
-  async #hasValidGrant({ consumerId, grant, credential }) {
+  async #hasValidGrant({ consumerId, grant, credential, requirePersistedGrant = true }) {
     if (grant.credentialId !== credential.credentialId
       || grant.providerKey !== credential.providerKey
       || (grant.credentialGeneration ?? `legacy:${grant.credentialId}`)
@@ -369,6 +623,8 @@ export class ConsumerCredentialService {
     const profile = credential.providerProfile ?? credential.metadata?.custom?.providerProfile ?? null;
     if (profile && grant.providerProfile && profile.digest !== grant.providerProfile.digest) return false;
     if (Object.hasOwn(grant, 'consumerId') && grant.consumerId !== consumerId) return false;
+
+    if (!requirePersistedGrant) return true;
 
     let verifiedGrant;
     try {
@@ -412,7 +668,7 @@ export class ConsumerCredentialService {
   }
 
   async #resolveCredential(credentialKey) {
-    if (typeof credentialKey !== 'string' || credentialKey.trim() === '') {
+    try { validateNamedIdentifier('credentialKey', credentialKey); } catch {
       throw this.#diagnosticError(ResolveDiagnosticCode.CREDENTIAL_NOT_FOUND);
     }
 

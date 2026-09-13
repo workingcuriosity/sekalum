@@ -4,7 +4,7 @@
 
 *Maintained by Working Curiosity.*
 
-*Promotional overview of Sekalum Release Candidate 2. The documented feature scope and current limitations below are authoritative.*
+*Promotional overview of Sekalum Release Candidate 3. The documented feature scope and current limitations below are authoritative.*
 
 Sekalum is an open-source platform for managing the lifecycle of digital credentials. It provides an Admin UI for creating and managing provider credentials, OAuth connections, API tokens, encrypted imports and exports, and lifecycle status.
 
@@ -16,15 +16,15 @@ Sekalum is an open-source platform for managing the lifecycle of digital credent
 
 The Architecture Guide and Storage Guide describe these boundaries in detail.
 
-## Current RC2 Limitations
+## Current RC3 Limitations
 
-Sekalum Release Candidate 2 focuses on the core credential platform and its documented HTTP interfaces. The following boundaries are intentional and part of the current RC2 scope:
+Sekalum Release Candidate 3 focuses on the core credential platform and its documented HTTP interfaces. The following boundaries are intentional and part of the current RC3 scope:
 
 - The Sekalum n8n community node is an optional Consumer API integration. It
   uses the same public Consumer API boundary as other runtimes and does not
   receive a privileged integration path.
 - The Consumer interface is a supported Advanced Integration Flow, but it is not a Consumer-first onboarding flow. An administrator must first prepare the Credential, a dedicated Consumer API token, and an explicit grant for the permitted Secret fields.
-- Release Candidate 2 does not provide an interactive username/password login screen. Initial administrator bootstrap is performed through the local Management API.
+- Release Candidate 3 does not provide an interactive username/password login screen. Initial administrator bootstrap is performed through the local Management API.
 - Custom providers are declarative only. They can define provider metadata, methods, bindings, and field schemas, but they do not add OAuth configuration, executable adapters, runtime operations, hooks, scripts, or provider secrets.
 - The standard Release-1.0 image does not provide a production FTP or SFTP transport adapter. It must not be represented as providing live FTP/SFTP validation, file transfer, TLS verification, or SSH host-key verification.
 
@@ -32,7 +32,7 @@ Known improvements are tracked separately from this README. No future capability
 
 ![Sekalum credential lifecycle and runtime access overview](docs/assets/Sekalum_Branded_Info_Page_EN.png)
 
-## Release Candidate 2 quick start
+## Release Candidate 3 quick start
 
 ### Prerequisites
 
@@ -55,7 +55,12 @@ The Compose configuration is self-contained: it builds the versioned application
 
 ### Configure `.env`
 
-`.env.example` contains safe development placeholders. Before storing real credentials, replace `TOKEN_ENCRYPTION_KEY` with a unique 32-character secret and set a separate high-entropy `ADMIN_BOOTSTRAP_TOKEN` of at least 32 bytes. Keep `.env` private. Do not commit `.env`, OAuth client secrets, API keys, or exported credential data.
+`.env.example` contains safe development placeholders. Before the first start,
+replace `TOKEN_ENCRYPTION_KEY` with a unique 32-character secret and set a
+separate deployment-unique, high-entropy `ADMIN_BOOTSTRAP_TOKEN` of at least
+32 bytes. A shipped/example or documentation-placeholder Bootstrap value is
+invalid even when it meets the length requirement. Keep `.env` private. Do not
+commit `.env`, OAuth client secrets, API keys, or exported credential data.
 
 Optional deployment settings, including `BASE_PATH`, `PUBLIC_BASE_URL`, and encryption-key rotation, are documented in the [Configuration Reference](docs/configuration-reference/index.md).
 
@@ -70,12 +75,13 @@ After the container reports that it is listening, open:
 
 ### Bootstrap and First Administrator
 
-Release Candidate 2 does not provide an interactive username/password login
+Release Candidate 3 does not provide an interactive username/password login
 screen. When the persisted user collection is empty, the application is in
 **Bootstrap** mode, but an empty user collection alone is not authorization.
-Configure a high-entropy `ADMIN_BOOTSTRAP_TOKEN` (at least 32 bytes) and use
-the required proof header to create exactly the **First Administrator** through
-the local Management API:
+Configure a deployment-unique, high-entropy `ADMIN_BOOTSTRAP_TOKEN` (at least
+32 bytes, never a shipped/example or documentation placeholder) and use the
+required proof header to create exactly the **First Administrator** through the
+local Management API:
 
 ```bash
 curl --request POST http://localhost:3000/api/v1/management/users \
@@ -84,10 +90,11 @@ curl --request POST http://localhost:3000/api/v1/management/users \
   --data '{"userId":"admin","displayName":"First Administrator","roleKey":"admin"}'
 ```
 
-Missing, weak or incorrect bootstrap proof is rejected. Create the **First
-Administrator** before exposing the service beyond the local machine. Bootstrap
-ends as soon as that administrator is persisted; subsequent management
-requests are no longer unauthenticated. The Admin UI then requires an
+Missing, shipped/example, documentation-placeholder, weak or incorrect
+bootstrap proof is rejected. Create the **First Administrator** before exposing
+the service beyond the local machine. Bootstrap ends as soon as that
+administrator is persisted; subsequent management requests are no longer
+unauthenticated. The Admin UI then requires an
 authorized **Management Token**, sent as
 `Authorization: Bearer <management-token>`. The Admin UI opens with a
 Management Token gate; the Dashboard and Admin navigation become available
@@ -110,9 +117,19 @@ Installation Workflow](docs/installation-guide/index.md#complete-first-installat
 
 For detailed provider, API-token, and credential-management guidance, see the [User Guide](docs/user-guide/index.md).
 
-### Open the Consumer interface (RC2 Advanced Integration Flow)
+### Open the Consumer interface (RC3 Advanced Integration Flow)
 
-After an administrator has activated a Credential, created a dedicated Consumer API token, and granted the required secret fields, open the Consumer interface at [http://localhost:3000/consumer/](http://localhost:3000/consumer/). This is the RC2-supported Advanced Integration Flow: a technically complete, separate runtime surface for Discovery and Resolve, not the primary Consumer-first onboarding path. It does not receive or use a Management Token. Enter the dedicated Consumer API token directly in the Consumer interface. Consumer-first onboarding improvements remain future work under Issue #141.
+After an administrator has activated a Credential, created a dedicated Consumer API token, and granted the required secret fields, open the Consumer interface at [http://localhost:3000/consumer/](http://localhost:3000/consumer/). This is the RC3-supported Advanced Integration Flow: a technically complete, separate runtime surface for Discovery and Resolve, not the primary Consumer-first onboarding path. It does not receive or use a Management Token. Enter the dedicated Consumer API token directly in the Consumer interface. Consumer-first onboarding improvements remain future work under Issue #141.
+
+Use the Consumer flow as a short-lived handoff: authenticate with the
+dedicated Consumer token, discover one granted Credential, carry only its
+logical `credentialKey`, request the minimum named Secret fields, and use the
+resolved values for the immediate target operation where practical. The
+logical key is not a Secret Version or Secret material. Do not copy, persist,
+log, export, pin or place resolved values in URLs, source control, workflow
+state, retry payloads, screenshots or recordings. Sekalum controls delivery
+and future authorization; the external runtime controls handling after
+delivery and Sekalum cannot guarantee erasure of plaintext already delivered.
 
 ### Troubleshooting
 

@@ -103,6 +103,7 @@ export class BackupStore {
       provider: tokenRecord.provider,
       accountId: tokenRecord.accountId,
       accountName: tokenRecord.accountName,
+      ...(tokenRecord.credentialGeneration ? { credentialGeneration: tokenRecord.credentialGeneration } : {}),
       accessToken: tokenRecord.accessToken,
       refreshToken: tokenRecord.refreshToken,
       expiresAt: tokenRecord.expiresAt,

@@ -283,6 +283,30 @@ test('CLI credentials update returns updated credential', () => {
   assert.equal(response.data.version, 2);
 });
 
+test('CLI credentials update rejects immutable binding changes without persistence', () => {
+  const credentialId = uniqueCredentialId('cli-binding-guard');
+  const createResult = runCredentials(['create', '--stdin'], JSON.stringify(credentialPayload(credentialId)));
+  assert.equal(createResult.status, 0, createResult.stderr || createResult.stdout);
+
+  const updateResult = runCredentials(
+    ['update', credentialId, '--stdin'],
+    JSON.stringify({
+      externalReference: `${credentialId}-rebound`,
+      metadata: { displayName: 'must-not-persist' }
+    })
+  );
+  const getResult = runCredentials(['get', credentialId]);
+  cleanupCredential(credentialId);
+
+  assert.equal(updateResult.status, 1, updateResult.stdout || updateResult.stderr);
+  const updateResponse = parseOutput(updateResult);
+  assert.equal(updateResponse.success, false);
+  assert.equal(updateResponse.error.code, 'CREDENTIAL_LIFECYCLE_CONFLICT');
+  assert.doesNotMatch(updateResponse.error.message, /rebound/);
+  assert.equal(getResult.status, 0, getResult.stderr || getResult.stdout);
+  assert.equal(parseOutput(getResult).data.externalReference, credentialId.split(':')[1]);
+});
+
 test('CLI credentials delete removes a credential', () => {
   const credentialId = uniqueCredentialId('cli-delete');
 

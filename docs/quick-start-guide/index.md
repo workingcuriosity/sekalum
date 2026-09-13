@@ -3,7 +3,7 @@ title: Quick Start Guide
 document_id: DOC-QUICK-START-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.0.9
+version: 1.0.11
 status: Active
 category: Quick Start
 canonical: true
@@ -23,6 +23,12 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/project/THIRD_PARTY_SOFTWARE.md
 change_history:
+  - version: 1.0.11
+    date: 2026-09-13
+    change: Updates the active Quick Start release-candidate reference to 1.0.0-rc.3; onboarding behavior and security boundaries remain unchanged.
+  - version: 1.0.10
+    date: 2026-09-05
+    change: Adds the RC3-10 Consumer safe-use reminders for minimum named fields, immediate target handling, Secret-sprawl destinations, logical reference rotation and the external-runtime responsibility boundary.
   - version: 1.0.9
     date: 2026-08-26
     change: Documents the configured proof-of-possession requirement and terminal First Administrator Bootstrap boundary.
@@ -59,7 +65,7 @@ change_history:
 
 ## Purpose
 
-Sekalum manages the lifecycle of digital credentials, including provider credentials, OAuth connections, API tokens, encrypted import and export data, and lifecycle status. This guide is the English onboarding path for Release Candidate 1.0.0-rc.2. It does not translate the complete product documentation.
+Sekalum manages the lifecycle of digital credentials, including provider credentials, OAuth connections, API tokens, encrypted import and export data, and lifecycle status. This guide is the English onboarding path for Release Candidate 1.0.0-rc.3. It does not translate the complete product documentation.
 
 ## Prerequisites
 
@@ -110,7 +116,7 @@ To run below a public prefix, set `BASE_PATH` to a value such as `/credential-hu
 
 ## Bootstrap and Admin access
 
-RC2 has no username/password login screen. On a new installation with an
+RC3 has no username/password login screen. On a new installation with an
 empty persisted user collection, **Bootstrap** is active but the empty state
 alone is not authorization. Configure a high-entropy `ADMIN_BOOTSTRAP_TOKEN`
 with at least 32 bytes, then create the **First Administrator** through the
@@ -235,7 +241,7 @@ Open **API Tokens** from the Dashboard. Create a token with a technical name, us
 
 ## Using the Consumer Interface (Advanced Integration Flow)
 
-This is the RC2-supported Advanced Integration Flow for applications that need to consume an already configured credential. It is technically complete and usable, but it is not the primary Consumer-first onboarding flow.
+This is the RC3-supported Advanced Integration Flow for applications that need to consume an already configured credential. It is technically complete and usable, but it is not the primary Consumer-first onboarding flow.
 
 ![Consumer integration overview from setup to secure disposal](../developer-guide/images/consumer-integration-overview.svg)
 
@@ -245,6 +251,16 @@ path after an administrator has prepared the grant.*
 **Prerequisites:** An administrator has already created and activated the credential, created a dedicated Consumer API token with the `credentials:consume` scope, and granted the Consumer access to the credential and the specific secret fields it may resolve. A Management Token is not a Consumer token.
 
 Consumer-first onboarding improvements are planned outside RC2 under Issue #141.
+
+**Safe-use reminder:** use the smallest practical Consumer boundary and request
+only the named fields needed for the next operation. Use a resolved value
+directly for the immediate target where practical. Do not copy, persist, log,
+export or pin it; do not place it in Set/Edit Fields or Code-node data, URLs or
+query strings, retry payloads, source control, workflow exports, screenshots
+or recordings. The stable logical `credentialKey` is not Secret Version or
+Secret material. Rotation can replace material behind a still-valid key;
+revocation or Grant removal blocks future Resolve but cannot erase plaintext
+already delivered to an external runtime.
 
 1. After a successful Consumer Grant setup and Resolve verification in the Credential Wizard, choose **Open Consumer interface**. You can also open the Consumer view directly at `/consumer/`. The link opens a separate Consumer context and does not transfer a Management Token. Enter the dedicated Consumer API token there and treat it as sensitive: use it only for the current session and do not put it in screenshots, logs, source code, or browser persistence.
 
