@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
+import { AbuseAdmission, AbusePolicyClass } from '../../src/security/abuse-admission.js';
 
 function createServer(credentials, providerSummaries = {}) {
   return new OAuthCallbackServer({
@@ -246,6 +248,13 @@ function createServer(credentials, providerSummaries = {}) {
         return credential;
       }
     },
+    abuseAdmission: new AbuseAdmission({
+      policyOverrides: {
+        [AbusePolicyClass.PRE_AUTH_FAILURE]: { capacity: 100 },
+        [AbusePolicyClass.MANAGEMENT_AUTHENTICATED]: { capacity: 100 },
+        [AbusePolicyClass.MANAGEMENT_MUTATION]: { capacity: 100 }
+      }
+    }),
     config: {
       get() {
         return 0;
@@ -255,15 +264,6 @@ function createServer(credentials, providerSummaries = {}) {
       success() {},
       error() {}
     }
-  });
-}
-
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-    });
   });
 }
 
@@ -281,7 +281,7 @@ test('HTTP credentials list endpoint returns success response with pagination', 
     }
   ]);
 
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials?limit=1&offset=1`);
@@ -352,7 +352,7 @@ test('HTTP credentials list endpoint supports search, filters, sorting and page 
     }
   ]);
 
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials?search=calendar&provider=google&type=oauth&state=active&sort=name&order=desc&page=1&pageSize=5`);
@@ -390,7 +390,7 @@ test('HTTP credentials list endpoint returns UI metadata for filter and sorting 
     }
   ]);
 
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials?provider=google&type=oauth&sort=name&order=desc&page=1&pageSize=10`);
@@ -417,7 +417,7 @@ test('HTTP credentials list endpoint returns UI metadata for filter and sorting 
 
 test('HTTP credentials meta endpoint describes the UI contract without loading credentials', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/meta`);
@@ -441,7 +441,7 @@ test('HTTP credentials meta endpoint describes the UI contract without loading c
 
 test('HTTP credentials list endpoint rejects unsupported sort fields', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials?sort=secretValue`);
@@ -459,7 +459,7 @@ test('HTTP credentials list endpoint rejects unsupported sort fields', async () 
 
 test('HTTP credentials list endpoint rejects invalid pagination', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials?limit=0`);
@@ -484,7 +484,7 @@ test('HTTP credentials get endpoint returns a credential by id', async () => {
     }
   ]);
 
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-1`);
@@ -542,7 +542,7 @@ test('HTTP credentials get endpoint returns detail view with provider metadata, 
     }
   });
 
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-google-main`);
@@ -580,7 +580,7 @@ test('HTTP credentials get endpoint returns detail view with provider metadata, 
 
 test('HTTP credentials get endpoint returns not found for unknown credential', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/missing`);
@@ -598,7 +598,7 @@ test('HTTP credentials get endpoint returns not found for unknown credential', a
 test('HTTP credentials create endpoint returns created credential', async () => {
   const credentials = [];
   const httpServer = createServer(credentials);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials`, {
@@ -629,7 +629,7 @@ test('HTTP credentials create endpoint returns created credential', async () => 
 
 test('HTTP credentials create endpoint rejects invalid body', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials`, {
@@ -664,7 +664,7 @@ test('HTTP credentials update endpoint updates a credential', async () => {
       }
     }
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-1`, {
@@ -691,7 +691,7 @@ test('HTTP credentials update endpoint updates a credential', async () => {
 
 test('HTTP credentials update endpoint returns not found for unknown credential', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/missing`, {
@@ -722,7 +722,7 @@ test('HTTP credentials delete endpoint deletes a credential', async () => {
     }
   ];
   const httpServer = createServer(credentials);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-1`, {
@@ -739,7 +739,7 @@ test('HTTP credentials delete endpoint deletes a credential', async () => {
 
 test('HTTP credentials delete endpoint returns not found for unknown credential', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/missing`, {
@@ -765,7 +765,7 @@ test('HTTP credentials validate endpoint executes lifecycle action', async () =>
       }
     }
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-1/validate`, {
@@ -784,7 +784,7 @@ test('HTTP credentials validate endpoint executes lifecycle action', async () =>
 
 test('HTTP credential connection-test endpoint is BASE_PATH-safe and never returns submitted secrets', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/test-connection`, {
@@ -821,7 +821,7 @@ test('HTTP credentials refresh endpoint executes lifecycle action', async () => 
       }
     }
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-1/refresh`, {
@@ -846,7 +846,7 @@ test('HTTP credentials revoke endpoint executes lifecycle action', async () => {
       }
     }
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-1/revoke`, {
@@ -871,7 +871,7 @@ test('HTTP credentials health-check endpoint executes lifecycle action', async (
       }
     }
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/credential-1/health-check`, {
@@ -890,7 +890,7 @@ test('HTTP credentials health-check endpoint executes lifecycle action', async (
 
 test('HTTP credentials lifecycle endpoint returns not found for unknown credential', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/missing/validate`, {
@@ -921,7 +921,7 @@ test('HTTP credentials bulk endpoint executes lifecycle action for multiple cred
       }
     }
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/bulk`, {
@@ -955,7 +955,7 @@ test('HTTP credentials bulk endpoint reports partial failures without aborting t
       }
     }
   ]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/bulk`, {
@@ -996,7 +996,7 @@ test('HTTP credentials bulk endpoint deletes multiple credentials', async () => 
     }
   ];
   const httpServer = createServer(credentials);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/credentials/bulk`, {
@@ -1020,7 +1020,7 @@ test('HTTP credentials bulk endpoint deletes multiple credentials', async () => 
 
 test('HTTP credentials bulk endpoint rejects invalid requests', async () => {
   const httpServer = createServer([]);
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const emptyIdsResponse = await fetch(`${baseUrl}/api/v1/credentials/bulk`, {

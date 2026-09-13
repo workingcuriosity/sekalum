@@ -3,7 +3,7 @@ title: Canonical UI Interaction Model
 document_id: DOC-UI-CANONICAL-UI-INTERACTION-MODEL
 classification: PUBLIC
 language: en
-version: 0.7.3
+version: 0.9.3
 status: Active
 category: UI Governance
 canonical: true
@@ -26,7 +26,29 @@ dependent_documents:
   - docs/ui/canonical-ui-interaction-model.schema.json
   - docs/ui/generated/ui-tree.md
   - docs/ui/generated/ui-flow.mmd
+  - docs/adr/ADR-028-Revoke-First-Decommissioning-and-Orphan-Safety.md
+  - docs/adr/ADR-029-Restore-Anti-Rollback.md
+  - docs/ui/RESTORE_ANTI_ROLLBACK_UI_UX_ARCHITECTURE.md
+  - docs/adr/ADR-030-Central-SSRF-and-Egress-Policy.md
+  - docs/ui/CENTRAL_EGRESS_POLICY_UI_UX_ARCHITECTURE.md
+  - docs/adr/ADR-031-OAuth-Context-Binding.md
+  - docs/ui/OAUTH_CONTEXT_BINDING_UI_UX_ARCHITECTURE.md
 change_history:
+  - version: 0.9.3
+    date: 2026-09-04
+    change: Links the RC3-08 OAuth Context Binding UI/UX projection and records the existing-Wizard, no-new-page and no-YAML-change boundary; no visible interaction or generated view is changed.
+  - version: 0.9.2
+    date: 2026-09-03
+    change: Links the RC3-07 central Egress UI/UX projection and records the no-new-page, no-browser-authority and no-YAML-change boundary; no visible interaction or generated view is changed.
+  - version: 0.9.1
+    date: 2026-09-03
+    change: Records RC3-06 Owner Review acceptance of the API-only management-backup boundary and its explicit no-UI-model-impact disposition; no YAML interaction or generated view is changed.
+  - version: 0.9.0
+    date: 2026-09-03
+    change: Links the supporting RC3-06 Restore Anti-Rollback UI/UX projection; current management backups remain API-only, so the canonical YAML model and generated views are unchanged and no new UI route or page is authorized.
+  - version: 0.8.0
+    date: 2026-09-02
+    change: Institutionalizes the accepted RC3-05 revoke-first, containment-first cleanup/retry, orphan zero-authority and dependency-safe deletion decision set on existing UI surfaces; no UI implementation or new route is authorized.
   - version: 0.7.3
     date: 2026-08-24
     change: Records explicit English as the current governed documentation language.
@@ -209,8 +231,8 @@ report are the authoritative rendered locations for current totals; this
 document deliberately contains no independently maintained count.
 
 The audit identifies API-only management capabilities for users, roles,
-audit-log, metrics and backups. They are classified as intentional pending
-owner review; no UI exposure is inferred. The source also records the
+audit-log, metrics and backups. They are accepted as intentional API-only
+capabilities; no UI exposure is inferred. The source also records the
 application route matrix and intentional terminal UI paths so each modeled
 surface has an explicit entry or terminal disposition. Interaction-level `live_verified`
 values remain false because the available live evidence was limited to
@@ -335,3 +357,18 @@ npm run ui:model:check
 
 `ui:model:check` validates the YAML source, checks the JSON Schema and
 compares generated Markdown and Mermaid output with the committed files.
+
+## RC3-08 OAuth Context Binding projection
+
+The [OAuth Context Binding UI/UX architecture](OAUTH_CONTEXT_BINDING_UI_UX_ARCHITECTURE.md)
+uses the existing Credential Wizard and callback result surface. It introduces
+no page, navigation item, security center, override control or browser-owned
+authority. Safe provider, method, requested-scope and redirect-origin context
+may be shown before handoff; tokens, codes, secrets, raw provider messages and
+internal configuration values must not be shown.
+
+Success is visible only after server-side provider evidence admission and
+Credential persistence. Mismatch, replay, expiry, unavailable evidence and
+version races use stable non-enumerating outcomes and require a fresh retry.
+The canonical YAML and generated views are intentionally unchanged for RC3-08;
+this Markdown section is a traceability projection, not a new interaction.

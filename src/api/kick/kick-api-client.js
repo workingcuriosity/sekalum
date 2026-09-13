@@ -27,7 +27,8 @@ export class KickApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'KICK-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'kick', credentialBearing: true
     });
 
     return response.data;
@@ -44,7 +45,8 @@ export class KickApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'KICK-TOKEN', purpose: 'OAUTH_REFRESH', providerKey: 'kick', credentialBearing: true
     });
 
     return response.data;
@@ -55,7 +57,8 @@ export class KickApiClient {
       bearerToken: accessToken,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'KICK-INTROSPECT', purpose: 'OAUTH_INTROSPECTION', providerKey: 'kick', credentialBearing: true
     });
 
     return response.data;
@@ -63,7 +66,8 @@ export class KickApiClient {
 
   async getCurrentUser({ accessToken }) {
     const response = await this.httpClient.get(this.usersUrl, {
-      bearerToken: accessToken
+      bearerToken: accessToken,
+      pathId: 'KICK-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'kick', credentialBearing: true
     });
 
     const users = Array.isArray(response.data?.data)

@@ -3,7 +3,7 @@ title: Developer Guide
 document_id: DOC-DEVELOPER-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.8.0
+version: 1.9.0
 status: Active
 category: Developer Guide
 canonical: false
@@ -23,6 +23,9 @@ dependent_documents:
   - docs/adr/ADR-021-Generic-Credential-Method-Model.md
   - docs/security-guide/index.md
 change_history:
+  - version: 1.9.0
+    date: 2026-09-05
+    change: Completes the RC3-10 platform-neutral safe-use procedure with explicit logical credentialKey versus version/material handling, direct-target disposal guidance, external-runtime limits and ordinary n8n reference boundaries.
   - version: 1.8.0
     date: 2026-08-27
     change: Documents bounded, preflighted and atomic Credential transfer imports with lifecycle-safe CAS handling.
@@ -216,6 +219,23 @@ An integration follows this sequence:
 6. The Consumer uses the resolved values for its target operation and then
    discards them as far as the runtime permits.
 
+Treat this sequence as a transient handoff. Use a dedicated Consumer token,
+not a Management Token; request only the named Secret fields required for the
+next target operation; and carry only the stable logical `credentialKey` into
+Resolve. The key is not a Secret Version and is never Secret material.
+
+Use the resolved values directly for the immediate target where practical.
+Never place them in static or pinned workflow data, Set/Edit Fields data,
+Code-node constants, logs, execution output, retry payloads, URLs or query
+strings, source control, workflow exports, screenshots or recordings. The
+external runtime owns handling after delivery, so `Cache-Control: no-store`
+does not guarantee external erasure.
+
+Rotation replaces Secret material behind the same logical reference while its
+Credential and Grant remain valid. Revocation, deactivation or Grant removal
+blocks future Resolve; a runtime must not fall back to cached plaintext or a
+different Credential.
+
 The complete HTTP contract, response shapes, error handling and selection rules
 are defined by the API Reference.
 The [Quick Start Guide](../quick-start-guide/index.md#using-the-consumer-interface-advanced-integration-flow)
@@ -393,13 +413,13 @@ It uses public Discovery metadata to select exactly one Credential, carries
 only the opaque `credentialKey` into Resolve, uses the authorized result for a
 target operation, and clears the in-memory reference in `finally`.
 
-Set `CREDENTIAL_HUB_URL`, `CREDENTIAL_HUB_TOKEN` and
+Set `CREDENTIAL_HUB_URL`, `CREDENTIAL_HUB_CONSUMER_TOKEN` and
 `CREDENTIAL_DISPLAY_NAME` in the runtime environment. Do not put the token or
 resolved values in source files, URLs, logs or persistent workflow data.
 
 ```js
 const hubUrl = process.env.CREDENTIAL_HUB_URL;
-const consumerToken = process.env.CREDENTIAL_HUB_TOKEN;
+const consumerToken = process.env.CREDENTIAL_HUB_CONSUMER_TOKEN;
 const targetDisplayName = process.env.CREDENTIAL_DISPLAY_NAME;
 const requiredSecretNames = ['apiKey'];
 
@@ -517,7 +537,7 @@ the Node.js example: public Discovery, deterministic public selection,
 explicit Resolve, immediate target use and best-effort release of the in-memory
 Secret mapping.
 
-Set `CREDENTIAL_HUB_URL`, `CREDENTIAL_HUB_TOKEN` and
+Set `CREDENTIAL_HUB_URL`, `CREDENTIAL_HUB_CONSUMER_TOKEN` and
 `CREDENTIAL_DISPLAY_NAME` in the runtime environment. Do not put the token or
 resolved values in source files, URLs, logs or persistent workflow data.
 
@@ -627,7 +647,7 @@ def use_credential(credential_key, secrets):
 
 def run_consumer():
     base_url = os.environ.get("CREDENTIAL_HUB_URL")
-    token = os.environ.get("CREDENTIAL_HUB_TOKEN")
+    token = os.environ.get("CREDENTIAL_HUB_CONSUMER_TOKEN")
     display_name = os.environ.get("CREDENTIAL_DISPLAY_NAME")
     required_secret_names = ("apiKey",)
     resolved_secrets = None
@@ -729,6 +749,14 @@ node data or other uncontrolled storage. Resolved values are transient runtime
 data and must be discarded after the target operation. The [Security
 Guide](../security-guide/index.md#consumer-trust-boundary) defines the
 responsibility boundary after delivery.
+
+The existing native n8n node is the preferred n8n reference UX for the
+completed Issue #131 work, but it consumes the same generic Consumer API and
+creates no special authority. Issue #173 adoption, video and reference-
+workflow assets remain separate external evidence; they do not authorize a
+new node or product-runtime capability. The same dedicated-token, minimum-
+Grant, explicit-field and immediate-target rules apply to Make, Zapier,
+Node-RED and custom services.
 
 For the official n8n examples, connect Resolve directly to the immediate target
 HTTP Request. Read the authorized Secret in that request expression only, for

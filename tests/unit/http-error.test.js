@@ -62,32 +62,38 @@ test('HttpError fails closed for malformed secret-bearing request targets', () =
   assert.equal(JSON.stringify(error).includes(sentinel), false);
 });
 
-test('HttpClient keeps the raw query only at the transient fetch boundary', async () => {
+test('HttpClient keeps the raw query only at the transient transport boundary', async () => {
   const sentinel = 'PKG03_SENTINEL_ACCESS_TOKEN';
-  const originalFetch = globalThis.fetch;
   let observedTarget;
-  globalThis.fetch = async (target, options) => {
-    observedTarget = String(target);
-    assert.equal(options.redirect, 'error');
-    return new Response(JSON.stringify({ error: 'invalid_token' }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' }
-    });
-  };
-
-  try {
-    await assert.rejects(
-      new HttpClient().get('https://provider.example.test/me', { query: { access_token: sentinel } }),
-      (error) => {
-        assert.equal(JSON.stringify(error).includes(sentinel), false);
-        assert.equal(error.url.includes(sentinel), false);
-        assert.equal(error.message.includes(sentinel), false);
-        return true;
+  const client = new HttpClient({
+    egressPolicy: {
+      async admit(target) {
+        observedTarget = String(target);
+        return {
+          connectAddress: '8.8.8.8', addressFamily: 4, verificationHost: 'provider.example.test',
+          hostHeader: 'provider.example.test', port: 443
+        };
       }
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+    },
+    transport: async ({ url }) => ({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: 'invalid_token' }),
+      url
+    })
+  });
+
+  await assert.rejects(
+    client.get('https://provider.example.test/me', {
+      query: { access_token: sentinel }, pathId: 'HTTP-SHARED', purpose: 'PROVIDER_VALIDATION'
+    }),
+    (error) => {
+      assert.equal(JSON.stringify(error).includes(sentinel), false);
+      assert.equal(error.url.includes(sentinel), false);
+      assert.equal(error.message.includes(sentinel), false);
+      return true;
+    }
+  );
 
   assert.equal(observedTarget.includes(sentinel), true);
 });

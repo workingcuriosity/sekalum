@@ -12,6 +12,7 @@ import { CredentialFieldDefinition } from './credential-field-definition.js';
 import { CredentialMethod } from './credential-method.js';
 import { ProviderMethodBinding } from './provider-method-binding.js';
 import { RuntimeDerivationContract } from './runtime-derivation-contract.js';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
 import crypto from 'node:crypto';
 
 function canonicalize(value) {
@@ -29,10 +30,10 @@ function profileDigest(value) {
 /** Immutable, non-secret identity of the provider contract used by a credential operation. */
 export class ProviderProfile {
   constructor({ providerKey, version = '1.0.0', providerKind = 'repository-provider', contract = {} } = {}) {
-    if (typeof providerKey !== 'string' || providerKey.trim() === '') throw new Error("ProviderProfile: 'providerKey' is required");
+    validateNamedIdentifier('providerKey', providerKey);
     if (typeof version !== 'string' || version.trim() === '') throw new Error(`ProviderProfile '${providerKey}': version is required`);
     if (!contract || typeof contract !== 'object' || Array.isArray(contract)) throw new Error(`ProviderProfile '${providerKey}': contract must be an object`);
-    this.providerKey = providerKey.trim();
+    this.providerKey = providerKey;
     this.version = version.trim();
     this.providerKind = providerKind;
     this.contract = Object.freeze(canonicalize(contract));
@@ -105,9 +106,7 @@ export class ProviderDefinition {
     providerProfile = null,
     runtimeDerivation = null
   }) {
-    if (!name) {
-      throw new Error("ProviderDefinition: 'name' is required");
-    }
+    validateNamedIdentifier('providerKey', name);
 
     if (!provider) {
       throw new Error(`ProviderDefinition '${name}': provider is required`);

@@ -19,6 +19,7 @@ const editSubmit = document.getElementById('credential-edit-submit');
 const detailPanel = document.getElementById('credential-detail-panel');
 const detailMeta = document.getElementById('credential-detail-meta');
 const detailFields = document.getElementById('credential-detail-fields');
+const accessScopeResult = document.getElementById('credential-access-scope-result');
 const detailError = document.getElementById('credential-detail-error');
 const deletePanel = document.getElementById('credential-delete-panel');
 const deleteMessage = document.getElementById('credential-delete-message');
@@ -124,12 +125,14 @@ function renderCredentials(items) {
     status.append(pill); row.append(status);
     row.append(textCell(formatDate(credential.updatedAt ?? credential.createdAt)));
     const actions = document.createElement('td');
-    if (canValidate(credential)) actions.append(actionButton('validate', credential, t('credentials.validate'), 'secondary'));
-    actions.append(actionButton('view', credential, t('credentials.details'), 'secondary'), actionButton('edit', credential, t('credentials.edit'), 'secondary'));
-    if ((credential.supportedActions ?? []).includes('revoke') && credential.status !== 'revoked') {
-      actions.append(actionButton('revoke', credential, t('credentials.revoke'), 'danger'));
+    if (canValidate(credential) && credential.status === 'active') actions.append(actionButton('validate', credential, t('credentials.validate'), 'secondary'));
+    actions.append(actionButton('view', credential, t('credentials.details'), 'secondary'));
+    if (credential.status !== 'revoked' && credential.status !== 'deleted') actions.append(actionButton('edit', credential, t('credentials.edit'), 'secondary'));
+    if ((credential.supportedActions ?? []).includes('revoke') || (credential.supportedActions ?? []).includes('retry_cleanup')) {
+      const label = (credential.supportedActions ?? []).includes('retry_cleanup') ? t('credentials.retryCleanup') : t('credentials.revoke');
+      actions.append(actionButton('revoke', credential, label, 'danger'));
     }
-    actions.append(actionButton('delete', credential, t('credentials.delete'), 'danger'));
+    if (credential.status !== 'deleted') actions.append(actionButton('delete', credential, t('credentials.delete'), 'danger'));
     row.append(actions); tableBody.append(row);
   }
 }
@@ -203,10 +206,29 @@ async function openDetail(credential) {
       const description = document.createElement('dd'); description.className = 'credential-detail-field'; description.textContent = value;
       detailFields.append(term, description);
     }
+    await loadCredentialAccessScope(detail.credentialId);
     document.getElementById('credential-detail-close').focus();
   } catch (error) {
     showError(detailError, credentialError(error, 'load'));
   }
+}
+
+async function loadCredentialAccessScope(credentialId) {
+  if (!accessScopeResult) return;
+  accessScopeResult.textContent = t('credentials.accessScopeLoading');
+  try {
+    const response = await request(`/api/v1/management/credentials/${encodeURIComponent(credentialId)}/access-scope`);
+    const data = response.data;
+    accessScopeResult.replaceChildren();
+    const summary = document.createElement('p');
+    summary.textContent = `${t('credentials.accessScopeSummary')}: ${data.summary.consumerCount} ${t('credentials.accessScopeConsumers')}, ${data.summary.secretFieldAssignmentCount} ${t('credentials.accessScopeFields')}`;
+    accessScopeResult.append(summary);
+    for (const consumer of data.consumers ?? []) {
+      const item = document.createElement('p');
+      item.textContent = `${consumer.consumerId} — ${(consumer.grantedSecretFields ?? []).join(', ')}`;
+      accessScopeResult.append(item);
+    }
+  } catch (error) { accessScopeResult.textContent = credentialError(error, 'load'); }
 }
 
 function editableFields(fields) {
@@ -345,7 +367,9 @@ function openDelete(credential) {
 }
 function openRevoke(credential) {
   hideMessages(); hideError(revokeError); revokeState = credential;
-  revokeMessage.textContent = t('credentials.revokeMessage', { name: displayName(credential), provider: credential.providerName ?? credential.providerKey ?? t('common.unknown') });
+  revokeMessage.textContent = credential.decommissioning
+    ? t('credentials.retryCleanupMessage', { name: displayName(credential) })
+    : t('credentials.revokeMessage', { name: displayName(credential), provider: credential.providerName ?? credential.providerKey ?? t('common.unknown') });
   revokePanel.classList.remove('hidden'); revokeCancel.focus();
 }
 async function confirmRevoke() {

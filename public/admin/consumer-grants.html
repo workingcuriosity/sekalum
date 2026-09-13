@@ -36,6 +36,7 @@
         <p><strong data-i18n="consumerGrants.consumerNeverSeesTitle">The Consumer never sees</strong><br><span data-i18n="consumerGrants.consumerNeverSeesHelp">Secret values that are not permitted, other Credentials, provider internals, or Management Token values.</span></p>
         <p><strong data-i18n="consumerGrants.discoveryResolveTitle">Discovery and Resolve</strong><br><span data-i18n="consumerGrants.discoveryResolveHelp">Discovery returns the available Credential and field contract. Resolve returns only explicitly requested Secret fields allowed by this access entry; there is no wildcard access.</span></p>
         <p class="grant-access-note" data-i18n="consumerGrants.tokenBoundaryHelp">A Consumer API Token authenticates the Consumer. A Management Token is for administration only and is never a Consumer permission.</p>
+        <p class="grant-warning" data-i18n="consumerGrants.safeUseHelp">Use a dedicated Consumer identity for the smallest practical workload boundary. Grant only the named fields required; a Grant limits delivery but cannot erase plaintext already delivered to an external runtime.</p>
       </div>
       <form class="grant-filter-form" id="consumer-grants-filter-form">
         <label><span data-i18n="consumerGrants.filterConsumer">Consumer</span><input name="consumerId" type="search" autocomplete="off"><small data-i18n="consumerGrants.filterTechnicalHelp">Filter by technical ID when needed.</small></label>
@@ -50,6 +51,12 @@
         </table>
       </div>
       <p class="grant-refresh-status" id="consumer-grants-refresh-status" role="status" aria-live="polite"></p>
+      <section class="grant-access-card" id="consumer-access-scope" aria-labelledby="consumer-access-scope-heading">
+        <h2 id="consumer-access-scope-heading" data-i18n="consumerGrants.scopeTitle">Consumer Access Scope</h2>
+        <p data-i18n="consumerGrants.scopeHelp">This read-only view comes from Core authorization truth. Secret values are never returned.</p>
+        <label class="field"><span data-i18n="consumerGrants.filterConsumer">Consumer</span><input id="consumer-access-scope-consumer" type="search" autocomplete="off" placeholder="consumer id"><button class="secondary small" type="button" id="consumer-access-scope-load" data-i18n="consumerGrants.scopeLoad">Load scope</button></label>
+        <div id="consumer-access-scope-result" class="grant-preview-content"></div>
+      </section>
     </section>
     <section class="panel-dialog hidden" id="consumer-grant-create-panel" role="dialog" aria-modal="true" aria-labelledby="consumer-grant-create-heading">
       <div class="dialog-card">
@@ -62,8 +69,13 @@
           <label class="field"><span data-i18n="consumerGrants.credential">Credential</span><select name="credentialId" id="consumer-grant-create-credential" required></select></label>
           <output id="consumer-grant-create-provider" class="readonly-value"></output>
           <fieldset class="field"><legend data-i18n="consumerGrants.secrets">Granted secret fields</legend><div id="consumer-grant-create-secrets" data-testid="consumer-grant-create-secrets"></div><small data-i18n="consumerGrants.createSecretsHelp">Select the fields this consumer may use. No secret values are shown.</small></fieldset>
+          <section class="grant-preview" aria-labelledby="consumer-grant-create-reference-heading">
+            <h3 id="consumer-grant-create-reference-heading" data-i18n="consumerGrants.referenceCheckTitle">Reference Check</h3>
+            <p data-i18n="consumerGrants.referenceCheckHelp">Core re-checks the current Consumer, Credential, provider profile, method, and selected fields at save time.</p>
+            <div id="consumer-grant-create-reference-check" class="grant-preview-content" role="status" aria-live="polite"></div>
+          </section>
           <section class="grant-preview" id="consumer-grant-create-preview" aria-labelledby="consumer-grant-create-preview-heading">
-            <h3 id="consumer-grant-create-preview-heading" data-i18n="consumerGrants.previewTitle">Permission preview before saving</h3>
+            <h3 id="consumer-grant-create-preview-heading" data-i18n="consumerGrants.accessImpactTitle">Access Impact preview</h3>
             <p data-i18n="consumerGrants.previewHelp">This is a read-only summary of the existing grant and Consumer API rules. It does not execute Discovery or Resolve.</p>
             <div class="grant-preview-content"></div>
           </section>
@@ -82,8 +94,13 @@
           <div class="field"><span class="field-label" data-i18n="consumerGrants.credential">Credential</span><output id="consumer-grant-edit-credential" class="readonly-value"></output><small data-i18n="consumerGrants.readOnlyBindingHelp">Fixed for this existing grant in Beta 1.</small></div>
           <div class="field"><span class="field-label" data-i18n="common.provider">Provider</span><output id="consumer-grant-edit-provider" class="readonly-value"></output></div>
           <label class="field"><span data-i18n="consumerGrants.secrets">Granted secret fields</span><textarea name="secretNames" rows="3" required aria-describedby="consumer-grant-secrets-help"></textarea><small id="consumer-grant-secrets-help" data-i18n="consumerGrants.secretsHelp">One field name per line or separated with commas. Empty values are not accepted.</small></label>
+          <section class="grant-preview" aria-labelledby="consumer-grant-edit-reference-heading">
+            <h3 id="consumer-grant-edit-reference-heading" data-i18n="consumerGrants.referenceCheckTitle">Reference Check</h3>
+            <p data-i18n="consumerGrants.referenceCheckHelp">Core re-checks the current Consumer, Credential, provider profile, method, and selected fields at save time.</p>
+            <div id="consumer-grant-edit-reference-check" class="grant-preview-content" role="status" aria-live="polite"></div>
+          </section>
           <section class="grant-preview" id="consumer-grant-edit-preview" aria-labelledby="consumer-grant-edit-preview-heading">
-            <h3 id="consumer-grant-edit-preview-heading" data-i18n="consumerGrants.previewTitle">Permission preview before saving</h3>
+            <h3 id="consumer-grant-edit-preview-heading" data-i18n="consumerGrants.accessImpactTitle">Access Impact preview</h3>
             <p data-i18n="consumerGrants.previewHelp">This is a read-only summary of the existing grant and Consumer API rules. It does not execute Discovery or Resolve.</p>
             <div class="grant-preview-content"></div>
           </section>

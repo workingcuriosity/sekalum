@@ -30,7 +30,8 @@ export class XApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'X-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'x', credentialBearing: true
     });
 
     return response.data;
@@ -51,7 +52,8 @@ export class XApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'X-TOKEN', purpose: 'OAUTH_REFRESH', providerKey: 'x', credentialBearing: true
     });
 
     return response.data;
@@ -62,7 +64,8 @@ export class XApiClient {
       bearerToken: accessToken,
       query: {
         'user.fields': 'id,name,username,verified,profile_image_url'
-      }
+      },
+      pathId: 'X-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'x', credentialBearing: true
     });
 
     const user = response.data?.data ?? response.data;

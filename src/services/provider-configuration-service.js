@@ -1,17 +1,20 @@
 import crypto from 'node:crypto';
 import { assertResolvedValue } from '../oauth/oauth-provider-configuration.js';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
+import { withBindingCommitLock } from '../storage/binding-commit-coordinator.js';
 
 export const PROVIDER_CONFIGURATION_LIFECYCLE = Object.freeze({
   TEMPORARY_OAUTH_FLOW: 'temporary_oauth_flow'
 });
 
 export class ProviderConfigurationService {
-  constructor({ store, providerRegistry = null }) {
+  constructor({ store, providerRegistry = null, credentialStore = null }) {
     if (!store?.load || !store?.save) {
       throw new Error('ProviderConfigurationService requires ProviderConfigurationStore');
     }
     this.store = store;
     this.providerRegistry = providerRegistry;
+    this.credentialStore = credentialStore;
   }
 
   async prepare({
@@ -23,6 +26,8 @@ export class ProviderConfigurationService {
     temporary = false,
     expiresAt = null
   }) {
+    validateNamedIdentifier('providerKey', providerKey);
+    if (configurationId !== null && configurationId !== undefined) validateNamedIdentifier('providerConfigurationId', configurationId);
     const definitions = fields.filter((field) => field.section === 'providerConfiguration');
     const input = values && typeof values === 'object' && !Array.isArray(values)
       ? values
@@ -77,6 +82,8 @@ export class ProviderConfigurationService {
   }
 
   async load(configurationId, providerKey = null, providerProfile = null) {
+    validateNamedIdentifier('providerConfigurationId', configurationId);
+    if (providerKey !== null && providerKey !== undefined) validateNamedIdentifier('providerKey', providerKey);
     const record = await this.store.load(configurationId);
     if (providerKey && record.providerKey !== providerKey) {
       const error = new Error('Provider configuration does not match provider');
@@ -114,8 +121,25 @@ export class ProviderConfigurationService {
 
   async remove(configurationId, providerKey = null) {
     if (!configurationId) return false;
-    await this.load(configurationId, providerKey);
-    return this.store.delete(configurationId);
+    validateNamedIdentifier('providerConfigurationId', configurationId);
+    return withBindingCommitLock(async () => {
+      await this.load(configurationId, providerKey);
+      const credentials = typeof this.credentialStore?.listMetadata === 'function'
+        ? await this.credentialStore.listMetadata()
+        : typeof this.credentialStore?.list === 'function' ? await this.credentialStore.list() : [];
+      const dependents = credentials.filter((credential) => (
+        credential.providerConfigurationId === configurationId
+        && credential.lifecycleState !== 'deleted'
+      ));
+      if (dependents.length > 0) {
+        const error = new Error(`Provider configuration '${configurationId}' is still referenced by Credentials`);
+        error.code = 'PROVIDER_CONFIGURATION_IN_USE';
+        error.statusCode = 409;
+        error.details = { configurationId, credentialCount: dependents.length };
+        throw error;
+      }
+      return this.store.delete(configurationId);
+    });
   }
 
   async removeExpiredTemporaryFlowConfigurations(referencedConfigurationIds = [], now = new Date()) {

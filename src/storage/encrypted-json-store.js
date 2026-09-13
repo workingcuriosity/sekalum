@@ -216,6 +216,7 @@ export class EncryptedJsonStore {
       'credentials.json': 'credentials',
       'credential-metadata.json': 'credentials',
       'access-management.json': 'users',
+      'access-management-tombstones.json': 'tombstones',
       'api-tokens.json': 'tokens',
       'audit-log.json': 'events',
       'consumer-grants.json': 'grants',

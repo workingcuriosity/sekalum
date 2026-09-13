@@ -14,11 +14,12 @@ try {
   const { model } = await loadModel(process.cwd());
   const hasExecutableProfile = model.interactions.some((interaction) => interaction.verification);
   const scripts = ['ui:test:seed'];
-  if (hasExecutableProfile) scripts.push('ui:test:smoke');
-  scripts.push('ui:verification:report');
-  for (const script of scripts) {
-    if (await run(script) !== 0) failures.push(script);
+  for (const script of scripts) if (await run(script) !== 0) failures.push(script);
+
+  if (hasExecutableProfile && await run('ui:test:smoke') !== 0) {
+      failures.push('ui:test:smoke');
   }
+  if (await run('ui:verification:report') !== 0) failures.push('ui:verification:report');
 } finally {
   if (await run('ui:test:cleanup') !== 0) failures.push('ui:test:cleanup');
 }

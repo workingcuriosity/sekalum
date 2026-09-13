@@ -68,8 +68,24 @@ test('ConnectionTargetPolicy reports DNS failures without exposing resolver deta
   );
 });
 
-test('ConnectionTargetPolicy permits configured private networks but never local-only targets', async () => {
-  const policy = new ConnectionTargetPolicy({ allowPrivateNetworks: true });
+test('ConnectionTargetPolicy requires an exact private exception and never permits local-only targets', async () => {
+  const missingException = new ConnectionTargetPolicy({ allowPrivateNetworks: true });
+
+  await assert.rejects(
+    () => missingException.resolveAllowedTarget('10.0.0.8'),
+    (error) => error.code === 'CREDENTIAL_CONNECTION_TARGET_BLOCKED'
+  );
+
+  const policy = new ConnectionTargetPolicy({
+    allowPrivateNetworks: true,
+    privateException: {
+      protocol: 'ftp',
+      purpose: 'CREDENTIAL_CONNECTION_TEST',
+      hostname: '10.0.0.8',
+      cidr: '10.0.0.0/24',
+      port: 21
+    }
+  });
 
   const privateTarget = await policy.resolveAllowedTarget('10.0.0.8');
   assert.equal(privateTarget.address, '10.0.0.8');

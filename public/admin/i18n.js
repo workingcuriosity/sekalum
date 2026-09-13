@@ -176,7 +176,12 @@ export function translationOr(key, fallback, params = {}, language = currentLang
 export function userFacingError(error) {
   const code = error?.code;
   const known = code ? `errors.${code}` : null;
-  return known && catalogs.en[known] ? t(known, error) : t('errors.unexpected');
+  if (error?.status === 429 || error?.code === 'RATE_LIMITED') {
+    const retryAfter = error.retryAfterSeconds ? ` (retry after ${error.retryAfterSeconds}s)` : '';
+    return t('errors.RATE_LIMITED', { retryAfter });
+  }
+  if (known && catalogs.en[known]) return t(known, error);
+  return t('errors.unexpected');
 }
 
 export function setLanguage(language, storage = globalThis.localStorage) {

@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
-import { CredentialTransferService } from '../../src/services/credential-transfer-service.js';
+import {
+  CredentialTransferService,
+  EXPORT_ENCRYPTION_PASSWORD_MIN_LENGTH
+} from '../../src/services/credential-transfer-service.js';
 import { Credential } from '../../src/models/credential.js';
 
 function createCredential(overrides = {}) {
@@ -219,6 +222,26 @@ test('CredentialTransferService rejects missing, empty and invalid export passwo
   await assert.rejects(() => service.exportCredentials({ credentialIds: ['cred-1'] }), /requires a non-empty encryption password/);
   await assert.rejects(() => service.exportCredentials({ credentialIds: ['cred-1'], encryptionPassword: '' }), /requires a non-empty encryption password/);
   await assert.rejects(() => service.exportCredentials({ credentialIds: ['cred-1'], encryptionPassword: 42 }), /requires a non-empty encryption password/);
+});
+
+test('CredentialTransferService enforces the shared server-side export password policy', async () => {
+  const service = new CredentialTransferService({ credentialManager: createCredentialManager([createCredential()]) });
+
+  await assert.rejects(
+    () => service.exportCredentials({ credentialIds: ['cred-1'], encryptionPassword: '1234567' }),
+    new RegExp(`at least ${EXPORT_ENCRYPTION_PASSWORD_MIN_LENGTH} characters`)
+  );
+
+  const boundary = '12345678';
+  const boundaryExport = await service.exportCredentials({ credentialIds: ['cred-1'], encryptionPassword: boundary });
+  assert.equal(boundaryExport.encrypted, true);
+
+  const strongExport = await service.exportCredentials({
+    credentialIds: ['cred-1'],
+    encryptionPassword: 'correct horse battery staple'
+  });
+  assert.equal(strongExport.encrypted, true);
+  assert.equal(strongExport.content.includes('correct horse battery staple'), false);
 });
 
 test('CredentialTransferService exports encrypted transfer envelopes when a password is supplied', async () => {

@@ -56,14 +56,17 @@ flowchart TB
         UI_CREDENTIALS_TABLE["Credentials table<br/>UI-CREDENTIALS-TABLE"]
         UI_CREDENTIAL_DETAIL["Credential detail view<br/>UI-CREDENTIAL-DETAIL"]
         UI_CREDENTIAL_EDIT["Edit credential dialog<br/>UI-CREDENTIAL-EDIT"]
-        UI_CREDENTIAL_DELETE["Delete credential confirmation<br/>UI-CREDENTIAL-DELETE"]
+        UI_CREDENTIAL_DECOMMISSIONING["Credential revoke and delete status<br/>UI-CREDENTIAL-DECOMMISSIONING"]
+        UI_CREDENTIAL_DELETE["Revoke or delete credential confirmation<br/>UI-CREDENTIAL-DELETE"]
         UI_ADMIN_CREDENTIALS --> UI_CREDENTIALS_TABLE
         UI_ADMIN_CREDENTIALS --> UI_CREDENTIAL_DETAIL
         UI_ADMIN_CREDENTIALS --> UI_CREDENTIAL_EDIT
+        UI_ADMIN_CREDENTIALS --> UI_CREDENTIAL_DECOMMISSIONING
         UI_ADMIN_CREDENTIALS --> UI_CREDENTIAL_DELETE
         UI_CREDENTIALS_TABLE ~~~ UI_CREDENTIAL_DETAIL
         UI_CREDENTIAL_DETAIL ~~~ UI_CREDENTIAL_EDIT
-        UI_CREDENTIAL_EDIT ~~~ UI_CREDENTIAL_DELETE
+        UI_CREDENTIAL_EDIT ~~~ UI_CREDENTIAL_DECOMMISSIONING
+        UI_CREDENTIAL_DECOMMISSIONING ~~~ UI_CREDENTIAL_DELETE
       end
       subgraph UI_ADMIN_GRANTS_GROUP["Consumer Grants"]
         direction TB
@@ -174,7 +177,7 @@ flowchart TB
   subgraph EXECUTION_CLASSIFICATIONS["Interaction execution classifications — outside the UI hierarchy"]
     direction LR
     EXECUTION_BLOCKED["BLOCKED<br/>1 interaction"]
-    EXECUTION_NOT_EXECUTED["NOT_EXECUTED<br/>57 interactions"]
+    EXECUTION_NOT_EXECUTED["NOT_EXECUTED<br/>58 interactions"]
   end
   subgraph LEGEND["Legend"]
     direction LR
@@ -211,6 +214,7 @@ flowchart TB
   class UI_CREDENTIALS_TABLE view
   class UI_CREDENTIAL_DETAIL dialog
   class UI_CREDENTIAL_EDIT dialog
+  class UI_CREDENTIAL_DECOMMISSIONING view
   class UI_CREDENTIAL_DELETE dialog
   class UI_GRANTS_TABLE view
   class UI_GRANT_EDIT dialog

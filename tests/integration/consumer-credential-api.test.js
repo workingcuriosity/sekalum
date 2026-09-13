@@ -47,7 +47,9 @@ async function setup({ lifecycleState = 'active', runtimePublic = false, runtime
     store: new InMemoryApiTokenStore(),
     auditLogService,
     clock: () => new Date('2026-07-16T08:00:00.000Z'),
-    randomBytes: () => Buffer.alloc(ApiTokenServiceConstants.TOKEN_BYTES, ++entropy)
+    randomBytes: () => Buffer.alloc(ApiTokenServiceConstants.TOKEN_BYTES, ++entropy),
+    userIdentityProvider: (userId) => accessManagementService.getUserIdentity(userId),
+    userAuthorizationProvider: (userId, permission) => accessManagementService.hasPermission(userId, permission)
   });
   const credentials = new Map([
     ['threads-credential', new Credential({
@@ -60,7 +62,6 @@ async function setup({ lifecycleState = 'active', runtimePublic = false, runtime
       secrets: [{ name: 'apiKey', value: 'consumer-openai-secret' }]
     })]
   ]);
-  const consumerGrantService = new ConsumerGrantService();
   const providerRegistry = {
     get(providerKey) {
       const methods = {
@@ -91,23 +92,26 @@ async function setup({ lifecycleState = 'active', runtimePublic = false, runtime
     },
     providerRegistry
   });
-  const consumerCredentialService = new ConsumerCredentialService({
-    credentialStore: {
-      async load(credentialId) {
-        const credential = credentials.get(credentialId);
-        if (!credential) {
-          const error = new Error('missing');
-          error.code = 'NOT_FOUND';
-          throw error;
-        }
-        return credential;
-      },
-      async list() { return [...credentials.values()]; }
+  const credentialStore = {
+    async load(credentialId) {
+      const credential = credentials.get(credentialId);
+      if (!credential) {
+        const error = new Error('missing');
+        error.code = 'NOT_FOUND';
+        throw error;
+      }
+      return credential;
     },
+    async list() { return [...credentials.values()]; }
+  };
+  const consumerGrantService = new ConsumerGrantService({ apiTokenService, credentialStore, providerRegistry });
+  const consumerCredentialService = new ConsumerCredentialService({
+    credentialStore,
     consumerGrantService,
     providerRegistry,
     runtimePublicProjectionService,
-    auditLogService
+    auditLogService,
+    apiTokenService
   });
   const server = new OAuthCallbackServer({
     providerManager: { listProviders() { return []; }, getProvider() { return null; }, getProviderCapabilities() { return null; } },
@@ -121,8 +125,8 @@ async function setup({ lifecycleState = 'active', runtimePublic = false, runtime
     config: { get() { return 0; } },
     logger: { success() {}, error() {}, info() {} }
   });
-  const managementToken = await apiTokenService.createToken({ name: 'Grant administrator', userId: 'admin-user', scopes: ['consumer-grants:manage'], createdBy: 'admin-user' });
-  return { apiTokenService, auditLogService, consumerGrantService, consumerCredentialService, credentials, providerRegistry, server, managementToken: managementToken.token };
+  const managementToken = await apiTokenService.createToken({ name: 'Grant administrator', userId: 'admin-user', scopes: ['consumer-grants:manage', 'credentials:read'], createdBy: 'admin-user' });
+  return { accessManagementService, apiTokenService, auditLogService, consumerGrantService, consumerCredentialService, credentials, providerRegistry, server, managementToken: managementToken.token };
 }
 
 async function resolve(baseUrl, credentialKey, headers, secretNames) {
@@ -176,6 +180,282 @@ test('Consumer REST API discovers only active granted public credential projecti
   } finally {
     server.close();
   }
+});
+
+test('Core Access Scope projection is authoritative, deduplicated and secret-free', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Scope consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  await setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'openai-credential', providerKey: 'openai', secretNames: ['apiKey'] });
+  const scope = await setupResult.consumerCredentialService.getAccessScope({ consumerId: consumer.apiToken.id });
+  assert.deepEqual(scope.summary, { credentialCount: 2, secretFieldAssignmentCount: 2, providerCount: 2, activeGrantCount: 2 });
+  assert.deepEqual(scope.credentials.map(({ credentialId, providerKey, permittedSecretFields }) => ({ credentialId, providerKey, permittedSecretFields })), [
+    { credentialId: 'openai-credential', providerKey: 'openai', permittedSecretFields: ['apiKey'] },
+    { credentialId: 'threads-credential', providerKey: 'threads', permittedSecretFields: ['accessToken'] }
+  ]);
+  assert.doesNotMatch(JSON.stringify(scope), /consumer-(integration|refresh|openai)-secret/);
+  await assert.rejects(() => setupResult.consumerCredentialService.getAccessScope({ consumerId: 'unknown-consumer' }), { code: 'CONSUMER_NOT_FOUND' });
+});
+
+test('Access Scope includes only currently effective Consumer identities', async () => {
+  const setupResult = await setup();
+  const active = await setupResult.apiTokenService.createToken({ name: 'Active consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const revoked = await setupResult.apiTokenService.createToken({ name: 'Revoked consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const expired = await setupResult.apiTokenService.createToken({ name: 'Expired consumer', userId: 'admin-user', scopes: ['credentials:consume'], expiresAt: '2026-07-15T08:00:00.000Z', createdBy: 'admin-user' });
+  const nonConsumer = await setupResult.apiTokenService.createToken({ name: 'Management token', userId: 'admin-user', scopes: ['credentials:read'], createdBy: 'admin-user' });
+  const disabledOwner = await setupResult.apiTokenService.createToken({ name: 'Disabled owner consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.apiTokenService.revokeToken(revoked.apiToken.id);
+  for (const token of [active, revoked, expired, nonConsumer]) {
+    await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] }).catch((error) => {
+      if (token !== active) assert.equal(error.code, 'CONSUMER_NOT_FOUND');
+      else throw error;
+    });
+  }
+  const scopes = await setupResult.consumerCredentialService.listAccessScopes();
+  assert.deepEqual(scopes.map((scope) => scope.consumer.consumerId).sort(), [active.apiToken.id, disabledOwner.apiToken.id].sort());
+  await setupResult.accessManagementService.updateUser('admin-user', { status: 'disabled' });
+  assert.deepEqual(await setupResult.consumerCredentialService.listAccessScopes(), []);
+  await assert.rejects(() => setupResult.consumerCredentialService.getAccessScope({ consumerId: revoked.apiToken.id }), { code: 'CONSUMER_NOT_FOUND' });
+  await assert.rejects(() => setupResult.consumerCredentialService.getAccessScope({ consumerId: expired.apiToken.id }), { code: 'CONSUMER_NOT_FOUND' });
+  await assert.rejects(() => setupResult.consumerCredentialService.getAccessScope({ consumerId: nonConsumer.apiToken.id }), { code: 'CONSUMER_NOT_FOUND' });
+  await assert.rejects(() => setupResult.consumerCredentialService.getAccessScope({ consumerId: disabledOwner.apiToken.id }), { code: 'CONSUMER_NOT_FOUND' });
+});
+
+test('Core Access Scope uses the metadata-index secret inventory without loading values', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Metadata scope consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  const metadataOnlyStore = {
+    async load() { throw new Error('secret payload must not be loaded'); },
+    async listMetadata() { return [...setupResult.credentials.values()].map((credential) => credential.toMetadataJSON()); }
+  };
+  const metadataService = new (setupResult.consumerCredentialService.constructor)({
+    credentialStore: metadataOnlyStore,
+    consumerGrantService: setupResult.consumerGrantService,
+    providerRegistry: setupResult.providerRegistry,
+    apiTokenService: setupResult.apiTokenService
+  });
+  const scope = await metadataService.getAccessScope({ consumerId: consumer.apiToken.id });
+  assert.equal(scope.summary.credentialCount, 1);
+  assert.deepEqual(scope.credentials[0].permittedSecretFields, ['accessToken']);
+});
+
+test('Production metadata-only CredentialStore validates Grant create/update/preview without loading Secret payloads', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Production metadata consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const credential = setupResult.credentials.get('threads-credential');
+  let loadCalls = 0;
+  let metadata = credential.toInternalMetadataJSON();
+  const credentialStore = {
+    async load() {
+      loadCalls += 1;
+      throw new Error('Secret payload must not be loaded');
+    },
+    async loadMetadata(credentialId) {
+      if (credentialId !== credential.credentialId) {
+        const error = new Error('missing');
+        error.code = 'NOT_FOUND';
+        throw error;
+      }
+      return metadata;
+    },
+    async listMetadata() { return [metadata]; }
+  };
+  const grantState = { revision: 0, grants: [] };
+  const grantStore = {
+    async load() { return grantState; },
+    async save(next) {
+      grantState.revision += 1;
+      grantState.grants = next.grants;
+    }
+  };
+  const grantService = new ConsumerGrantService({
+    store: grantStore,
+    credentialStore,
+    providerRegistry: setupResult.providerRegistry,
+    apiTokenService: setupResult.apiTokenService
+  });
+  const credentialService = new ConsumerCredentialService({
+    credentialStore,
+    consumerGrantService: grantService,
+    providerRegistry: setupResult.providerRegistry,
+    apiTokenService: setupResult.apiTokenService
+  });
+  const input = { consumerId: consumer.apiToken.id, credentialId: credential.credentialId, providerKey: 'threads', secretNames: ['accessToken'] };
+  const prepared = await grantService.prepareGrant(input);
+  const createPreview = await credentialService.previewGrant(input);
+  assert.equal(createPreview.binding.decision, 'CAN_BE_SAVED');
+  assert.equal(createPreview.referenceCheck.referenceOwner, 'Core');
+  assert.equal(Object.hasOwn(createPreview.binding, 'secret'), false);
+  const created = await grantService.createGrant(input);
+  const updatePreview = await credentialService.previewGrant({ ...input, grantId: created.grantId, secretNames: ['refreshToken'] });
+  const updated = await grantService.updateGrant(created.grantId, { secretNames: ['refreshToken'] });
+
+  assert.deepEqual(
+    { consumerId: created.consumerId, credentialId: created.credentialId, credentialGeneration: created.credentialGeneration, providerKey: created.providerKey, secretNames: created.secretNames },
+    { consumerId: prepared.consumerId, credentialId: prepared.credentialId, credentialGeneration: prepared.credentialGeneration, providerKey: prepared.providerKey, secretNames: prepared.secretNames }
+  );
+  assert.deepEqual(createPreview.proposed.credentials[0].permittedSecretFields, ['accessToken']);
+  assert.deepEqual(updatePreview.proposed.credentials[0].permittedSecretFields, ['refreshToken']);
+  assert.deepEqual(updated.secretNames, ['refreshToken']);
+  assert.equal(loadCalls, 0);
+  assert.equal(grantState.grants.length, 1);
+});
+
+test('Production metadata-only Grant validation fails closed for missing or unavailable Secret values', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Metadata fail-closed consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const credential = setupResult.credentials.get('threads-credential');
+  let loadCalls = 0;
+  let metadata = { ...credential.toInternalMetadataJSON(), secretNames: ['accessToken'], secretInventory: [{ name: 'accessToken', hasValue: false }] };
+  const credentialStore = {
+    async load() {
+      loadCalls += 1;
+      throw new Error('Secret payload must not be loaded');
+    },
+    async loadMetadata() { return metadata; },
+    async listMetadata() { return [metadata]; }
+  };
+  const grantService = new ConsumerGrantService({
+    credentialStore,
+    providerRegistry: setupResult.providerRegistry,
+    apiTokenService: setupResult.apiTokenService
+  });
+  const credentialService = new ConsumerCredentialService({
+    credentialStore,
+    consumerGrantService: grantService,
+    providerRegistry: setupResult.providerRegistry,
+    apiTokenService: setupResult.apiTokenService
+  });
+  const input = { consumerId: consumer.apiToken.id, credentialId: credential.credentialId, providerKey: 'threads', secretNames: ['accessToken'] };
+  await assert.rejects(() => grantService.createGrant(input), { code: 'CONSUMER_GRANT_SECRET_INVALID' });
+  await assert.rejects(() => credentialService.previewGrant(input), { code: 'CONSUMER_GRANT_SECRET_INVALID' });
+
+  metadata = { ...metadata, secretInventory: [] };
+  await assert.rejects(() => grantService.createGrant(input), { code: 'CONSUMER_GRANT_SECRET_INVALID' });
+  assert.equal(loadCalls, 0);
+});
+
+test('Access Scope preview is read-only and reports deterministic delta', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Preview consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const grant = await setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  const preview = await setupResult.consumerCredentialService.previewGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken', 'refreshToken'], grantId: grant.grantId });
+  assert.deepEqual(preview.delta, { added: ['threads-credential:refreshToken'], removed: [], status: 'increased' });
+  assert.equal((await setupResult.consumerGrantService.listGrants({ consumerId: consumer.apiToken.id }))[0].secretNames.length, 1);
+});
+
+test('Create preview validates and projects a hypothetical Grant without persistence', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Create preview consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const preview = await setupResult.consumerCredentialService.previewGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  assert.equal(preview.current.summary.activeGrantCount, 0);
+  assert.equal(preview.proposed.summary.activeGrantCount, 1);
+  assert.deepEqual(preview.delta, { added: ['threads-credential:accessToken'], removed: [], status: 'increased' });
+  assert.deepEqual(await setupResult.consumerGrantService.listGrants({ consumerId: consumer.apiToken.id }), []);
+});
+
+test('Generation/profile-bound Grant preview matches actual binding and rejects stale bindings', async () => {
+  const setupResult = await setup();
+  const profile = { providerKey: 'threads', version: '2.0.0', providerKind: 'oauth', digest: 'threads-profile-current' };
+  const originalGet = setupResult.providerRegistry.get.bind(setupResult.providerRegistry);
+  setupResult.providerRegistry.get = (providerKey) => {
+    const provider = originalGet(providerKey);
+    return providerKey === 'threads' ? { ...provider, providerProfile: profile } : provider;
+  };
+  setupResult.credentials.set('profile-credential', new Credential({
+    credentialId: 'profile-credential', credentialKey: 'profile-public-key', providerKey: 'threads',
+    credentialGeneration: 'generation-2', providerProfile: profile,
+    providerProfileMigration: { migrationComplete: true, migrationVerified: true, profileDigest: profile.digest, source: 'test' },
+    credentialMethodKey: 'oauth2', lifecycleState: 'active',
+    secrets: [{ name: 'accessToken', value: 'profile-bound-secret' }, { name: 'refreshToken', value: 'profile-bound-refresh' }]
+  }));
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Profile preview consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const input = { consumerId: consumer.apiToken.id, credentialId: 'profile-credential', providerKey: 'threads', secretNames: ['accessToken'] };
+  const prepared = await setupResult.consumerGrantService.prepareGrant(input);
+  const preview = await setupResult.consumerCredentialService.previewGrant(input);
+  assert.deepEqual(preview.proposed.credentials[0].permittedSecretFields, ['accessToken']);
+  assert.deepEqual(await setupResult.consumerGrantService.listGrants({ consumerId: consumer.apiToken.id }), []);
+  const created = await setupResult.consumerGrantService.createGrant(input);
+  assert.deepEqual(
+    { consumerId: created.consumerId, credentialId: created.credentialId, credentialGeneration: created.credentialGeneration, providerKey: created.providerKey, profileDigest: created.providerProfile.digest, secretNames: created.secretNames },
+    { consumerId: prepared.consumerId, credentialId: prepared.credentialId, credentialGeneration: prepared.credentialGeneration, providerKey: prepared.providerKey, profileDigest: prepared.providerProfile.digest, secretNames: prepared.secretNames }
+  );
+  const editPreview = await setupResult.consumerCredentialService.previewGrant({ ...input, secretNames: ['refreshToken'], grantId: created.grantId });
+  assert.deepEqual(editPreview.proposed.credentials[0].permittedSecretFields, ['refreshToken']);
+  const updated = await setupResult.consumerGrantService.updateGrant(created.grantId, { secretNames: ['refreshToken'] });
+  assert.equal(updated.credentialGeneration, created.credentialGeneration);
+  assert.equal(updated.providerProfile.digest, profile.digest);
+  await assert.rejects(
+    () => setupResult.consumerCredentialService.previewGrant({ ...input, credentialGeneration: 'stale-generation' }),
+    { code: 'CONSUMER_GRANT_GENERATION_MISMATCH' }
+  );
+  await assert.rejects(
+    () => setupResult.consumerCredentialService.previewGrant({ ...input, providerProfile: { ...profile, digest: 'stale-profile' } }),
+    { code: 'CONSUMER_GRANT_PROFILE_MISMATCH' }
+  );
+});
+
+test('Generation/profile-bound Grant mutation fails closed for unverified profile migration', async () => {
+  const setupResult = await setup();
+  const profile = { providerKey: 'threads', version: '2.0.0', providerKind: 'oauth', digest: 'threads-profile-current' };
+  const originalGet = setupResult.providerRegistry.get.bind(setupResult.providerRegistry);
+  setupResult.providerRegistry.get = (providerKey) => {
+    const provider = originalGet(providerKey);
+    return providerKey === 'threads' ? { ...provider, providerProfile: profile } : provider;
+  };
+  setupResult.credentials.set('unverified-profile-credential', new Credential({
+    credentialId: 'unverified-profile-credential', credentialKey: 'unverified-public-key', providerKey: 'threads',
+    credentialGeneration: 'generation-3', providerProfile: profile,
+    providerProfileMigration: { migrationComplete: true, migrationVerified: false, profileDigest: profile.digest, source: 'test' },
+    credentialMethodKey: 'oauth2', lifecycleState: 'active',
+    secrets: [{ name: 'accessToken', value: 'unverified-profile-secret' }]
+  }));
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Unverified profile consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await assert.rejects(
+    () => setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'unverified-profile-credential', providerKey: 'threads', secretNames: ['accessToken'] }),
+    { code: 'CONSUMER_GRANT_PROFILE_MISMATCH' }
+  );
+});
+
+test('Preview reports changed for equal-cardinality field replacement', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Replacement preview consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const grant = await setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  const preview = await setupResult.consumerCredentialService.previewGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['refreshToken'], grantId: grant.grantId });
+  assert.deepEqual(preview.delta, { added: ['threads-credential:refreshToken'], removed: ['threads-credential:accessToken'], status: 'changed' });
+  assert.deepEqual((await setupResult.consumerGrantService.listGrants({ consumerId: consumer.apiToken.id }))[0].secretNames, ['accessToken']);
+});
+
+test('Preview reports unchanged and reduced set relations and rejects invalid proposals', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'Delta preview consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  const grant = await setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken', 'refreshToken'] });
+  const unchanged = await setupResult.consumerCredentialService.previewGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken', 'refreshToken'], grantId: grant.grantId });
+  assert.deepEqual(unchanged.delta, { added: [], removed: [], status: 'unchanged' });
+  const reduced = await setupResult.consumerCredentialService.previewGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'], grantId: grant.grantId });
+  assert.deepEqual(reduced.delta, { added: [], removed: ['threads-credential:refreshToken'], status: 'reduced' });
+  await assert.rejects(() => setupResult.consumerCredentialService.previewGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['clientId'] }), { code: 'CONSUMER_GRANT_SECRET_INVALID' });
+});
+
+test('HTTP management Access Scope and Credential reverse projection never expose secret values', async () => {
+  const setupResult = await setup();
+  const consumer = await setupResult.apiTokenService.createToken({ name: 'HTTP scope consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
+  await setupResult.consumerGrantService.createGrant({ consumerId: consumer.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  const { server, baseUrl } = await listen(setupResult.server.app);
+  try {
+    const management = { authorization: `Bearer ${setupResult.managementToken}` };
+    const scopeResponse = await fetch(`${baseUrl}/api/v1/management/consumer-grants/access-scope?consumerId=${encodeURIComponent(consumer.apiToken.id)}`, { headers: management });
+    const scopeBody = await scopeResponse.json();
+    assert.equal(scopeResponse.status, 200);
+    assert.equal(scopeBody.data.summary.activeGrantCount, 1);
+    assert.doesNotMatch(JSON.stringify(scopeBody), /consumer-(integration|refresh)-secret/);
+    const reverseResponse = await fetch(`${baseUrl}/api/v1/management/credentials/threads-credential/access-scope`, { headers: management });
+    const reverseBody = await reverseResponse.json();
+    assert.equal(reverseResponse.status, 200);
+    assert.deepEqual(reverseBody.data.consumers, [{ consumerId: consumer.apiToken.id, grantedSecretFields: ['accessToken'] }]);
+    assert.doesNotMatch(JSON.stringify(reverseBody), /consumer-(integration|refresh)-secret/);
+  } finally { server.close(); }
 });
 
 test('Consumer Discovery includes the optional Runtime-Public projection', async () => {
@@ -682,7 +962,7 @@ test('Consumer Resolve isolates same-provider credentials across sequential, ite
 test('Consumer REST API permits only secret fields of the credential selected method', async () => {
   const setupResult = await setup();
   const token = await setupResult.apiTokenService.createToken({ name: 'Consumer', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
-  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['clientId', 'accessToken'] });
+  await setupResult.consumerGrantService.createGrant({ consumerId: token.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
   const { server, baseUrl } = await listen(setupResult.server.app);
   try {
     const nonSecret = await resolve(baseUrl, 'threads-credential', { authorization: `Bearer ${token.token}` }, ['clientId']);
@@ -746,12 +1026,13 @@ test('Consumer grant API preserves existing consumer bindings and updates only t
 });
 
 test('Consumer REST API denies header fallback, missing scope, missing grants, revoked tokens and non-active credentials', async () => {
-  const setupResult = await setup({ lifecycleState: 'revoked' });
+  const setupResult = await setup();
   const scoped = await setupResult.apiTokenService.createToken({ name: 'Scoped', userId: 'admin-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
   const unscoped = await setupResult.apiTokenService.createToken({ name: 'Unscoped', userId: 'admin-user', scopes: ['credentials:read'], createdBy: 'admin-user' });
   const unauthorizedOwner = await setupResult.apiTokenService.createToken({ name: 'Viewer', userId: 'viewer-user', scopes: ['credentials:consume'], createdBy: 'admin-user' });
   const expired = await setupResult.apiTokenService.createToken({ name: 'Expired', userId: 'admin-user', scopes: ['credentials:consume'], expiresAt: '2026-07-15T08:00:00.000Z', createdBy: 'admin-user' });
   await setupResult.consumerGrantService.createGrant({ consumerId: scoped.apiToken.id, credentialId: 'threads-credential', providerKey: 'threads', secretNames: ['accessToken'] });
+  setupResult.credentials.set('threads-credential', new Credential({ ...setupResult.credentials.get('threads-credential').toJSON(), lifecycleState: 'revoked' }));
   const { server, baseUrl } = await listen(setupResult.server.app);
 
   try {

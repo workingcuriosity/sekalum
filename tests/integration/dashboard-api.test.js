@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 
 function createServer({ credentials = [], providers = [], schedulerJobs = [] } = {}) {
   return new OAuthCallbackServer({
@@ -39,15 +40,6 @@ function createServer({ credentials = [], providers = [], schedulerJobs = [] } =
       success() {},
       error() {}
     }
-  });
-}
-
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-    });
   });
 }
 
@@ -92,7 +84,7 @@ test('HTTP dashboard endpoint aggregates credential, provider and scheduler stat
     schedulerJobs: [{ name: 'refresh-expired-tokens', intervalHours: 12 }]
   });
 
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/dashboard?expiringWithinDays=14`);
@@ -141,7 +133,7 @@ test('HTTP dashboard endpoint aggregates credential, provider and scheduler stat
 
 test('HTTP dashboard endpoint rejects invalid expiring window', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/dashboard?expiringWithinDays=0`);

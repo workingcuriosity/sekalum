@@ -14,8 +14,8 @@ import { FtpProvider } from './ftp-provider.js';
 
 export class FtpServiceProvider extends ServiceProvider {
   register(container) {
-    container.singleton(TOKENS.FTP_CLIENT, () => {
-      return new FtpClient();
+    container.singleton(TOKENS.FTP_CLIENT, (c) => {
+      return new FtpClient({ egressPolicy: c.resolve(TOKENS.EGRESS_POLICY) });
     });
 
     container.singleton(TOKENS.FTP_CONNECTION_SERVICE, (c) => {

@@ -1,8 +1,18 @@
 import crypto from 'node:crypto';
 
 import { SerializedMutationQueue } from '../storage/serialized-mutation-queue.js';
+import { withBindingCommitLock } from '../storage/binding-commit-coordinator.js';
+import { validateNamedIdentifier, AuthorizationIdentifierError } from '../security/authorization-identifier.js';
 
 const BOOTSTRAP_SECRET_MIN_BYTES = 32;
+const BOOTSTRAP_SECRET_MIN_DISTINCT_BYTES = 8;
+const BOOTSTRAP_SECRET_MIN_ENTROPY_BITS_PER_BYTE = 3.5;
+const BOOTSTRAP_SECRET_MAX_REPEATED_PATTERN_BYTES = 16;
+const BOOTSTRAP_SECRET_MIN_MONOTONIC_RUN = 8;
+const KNOWN_BOOTSTRAP_PLACEHOLDERS = new Set([
+  'REPLACE_WITH_A_UNIQUE_HIGH_ENTROPY_BOOTSTRAP_TOKEN',
+  'YOUR_HIGH_ENTROPY_BOOTSTRAP_TOKEN'
+]);
 
 const DEFAULT_ROLES = Object.freeze([
   {
@@ -25,6 +35,51 @@ const DEFAULT_ROLES = Object.freeze([
   }
 ]);
 
+function hasRepeatedPattern(bytes) {
+  const maxPeriod = Math.min(BOOTSTRAP_SECRET_MAX_REPEATED_PATTERN_BYTES, Math.floor(bytes.length / 2));
+  for (let period = 1; period <= maxPeriod; period += 1) {
+    let repeated = true;
+    for (let index = period; index < bytes.length; index += 1) {
+      if (bytes[index] !== bytes[index % period]) {
+        repeated = false;
+        break;
+      }
+    }
+    if (repeated) return true;
+  }
+  return false;
+}
+
+function hasMonotonicRun(bytes) {
+  let previousDelta = null;
+  let runLength = 1;
+  for (let index = 1; index < bytes.length; index += 1) {
+    const delta = bytes[index] - bytes[index - 1];
+    if ((delta === 1 || delta === -1) && delta === previousDelta) {
+      runLength += 1;
+    } else {
+      runLength = 2;
+    }
+    previousDelta = delta;
+    if (runLength >= BOOTSTRAP_SECRET_MIN_MONOTONIC_RUN) return true;
+  }
+  return false;
+}
+
+function meetsBootstrapEntropyRequirement(value) {
+  const bytes = Buffer.from(value, 'utf8');
+  if (new Set(bytes).size < BOOTSTRAP_SECRET_MIN_DISTINCT_BYTES) return false;
+  if (hasRepeatedPattern(bytes) || hasMonotonicRun(bytes)) return false;
+
+  const frequencies = new Map();
+  for (const byte of bytes) frequencies.set(byte, (frequencies.get(byte) ?? 0) + 1);
+  const entropy = [...frequencies.values()].reduce((sum, count) => {
+    const probability = count / bytes.length;
+    return sum - (probability * Math.log2(probability));
+  }, 0);
+  return entropy >= BOOTSTRAP_SECRET_MIN_ENTROPY_BITS_PER_BYTE;
+}
+
 export class AccessManagementService {
   constructor({ store = null, auditLogService = null, config = null, bootstrapSecret = undefined, apiTokenService = null } = {}) {
     this.store = store;
@@ -36,6 +91,7 @@ export class AccessManagementService {
     this.apiTokenService = apiTokenService;
     this.roles = DEFAULT_ROLES.map((role) => ({ ...role, permissions: [...role.permissions] }));
     this.users = [];
+    this.principalTombstones = [];
     this.bootstrapCompleted = false;
     this.mutationQueue = new SerializedMutationQueue();
   }
@@ -49,12 +105,48 @@ export class AccessManagementService {
     return records.map((user) => this.#userItem(user));
   }
 
+  async getRestoreState() {
+    const [users, principalTombstones] = await Promise.all([
+      this.#loadUsers(),
+      this.#loadPrincipalTombstones()
+    ]);
+    return {
+      users: users.map((user) => ({ ...user })),
+      roles: await this.listRoles(),
+      principalTombstones: principalTombstones.map((tombstone) => ({ ...tombstone }))
+    };
+  }
+
+  async getRestoreSnapshot() {
+    const state = await this.getRestoreState();
+    return {
+      users: state.users.map((user) => ({ ...user })),
+      roles: state.roles.map((role) => ({ ...role, permissions: [...role.permissions] })),
+      principalTombstones: state.principalTombstones.map((tombstone) => ({ ...tombstone })),
+      bootstrapCompleted: this.bootstrapCompleted
+    };
+  }
+
+  async restoreSnapshot(snapshot = {}) {
+    return withBindingCommitLock(() => this.mutationQueue.run(async () => {
+      await this.#savePrincipalTombstones(snapshot.principalTombstones ?? []);
+      await this.#saveUsers(snapshot.users ?? [], {
+        bootstrapCompleted: snapshot.bootstrapCompleted === true || (snapshot.users ?? []).length > 0
+      });
+      return (snapshot.users ?? []).map((user) => this.#userItem(user));
+    }));
+  }
+
+  async isDeletedIdentity(userId) {
+    return (await this.#loadPrincipalTombstones()).some((tombstone) => tombstone.userId === userId);
+  }
+
   async createUser(input = {}) {
-    return this.mutationQueue.run(() => this.#createUser(input));
+    return withBindingCommitLock(() => this.mutationQueue.run(() => this.#createUser(input)));
   }
 
   async bootstrapFirstAdministrator(input = {}, proof = null) {
-    return this.mutationQueue.run(() => this.#bootstrapFirstAdministrator(input, proof));
+    return withBindingCommitLock(() => this.mutationQueue.run(() => this.#bootstrapFirstAdministrator(input, proof)));
   }
 
   async #bootstrapFirstAdministrator(input = {}, proof = null) {
@@ -73,6 +165,8 @@ export class AccessManagementService {
     }
 
     const user = this.#normalizeFirstAdministratorInput(input);
+    const tombstones = await this.#loadPrincipalTombstones();
+    this.#assertPrincipalIdentityAvailable(user.userId, tombstones);
     const now = new Date().toISOString();
     const record = {
       ...user,
@@ -95,10 +189,13 @@ export class AccessManagementService {
   async #createUser(input = {}) {
     const user = this.#normalizeUserInput(input);
     const users = await this.#loadUsers();
+    const tombstones = await this.#loadPrincipalTombstones();
 
     if (users.some((item) => item.userId === user.userId)) {
       throw this.#badRequest(`User '${user.userId}' already exists`);
     }
+
+    this.#assertPrincipalIdentityAvailable(user.userId, tombstones);
 
     this.#assertKnownRole(user.roleKey);
 
@@ -124,7 +221,7 @@ export class AccessManagementService {
   }
 
   async updateUser(userId, input = {}) {
-    return this.mutationQueue.run(() => this.#updateUser(userId, input));
+    return withBindingCommitLock(() => this.mutationQueue.run(() => this.#updateUser(userId, input)));
   }
 
   async #updateUser(userId, input = {}) {
@@ -161,12 +258,14 @@ export class AccessManagementService {
   }
 
   async deleteUser(userId, options = {}) {
-    return this.mutationQueue.run(() => this.#deleteUser(userId, options));
+    return withBindingCommitLock(() => this.mutationQueue.run(() => this.#deleteUser(userId, options)));
   }
 
   async #deleteUser(userId, options = {}) {
     const normalizedUserId = this.#normalizeRequiredString(userId, 'userId');
     const users = await this.#loadUsers();
+    const tombstones = await this.#loadPrincipalTombstones();
+    const deletedUser = users.find((user) => user.userId === normalizedUserId);
     const next = users.filter((user) => user.userId !== normalizedUserId);
 
     if (next.length === users.length) {
@@ -177,6 +276,15 @@ export class AccessManagementService {
       await this.apiTokenService.revokeTokensForUser(normalizedUserId, { revokedBy: options.actorUserId ?? 'system' });
     }
 
+    const nextTombstones = tombstones.some((tombstone) => tombstone.userId === normalizedUserId)
+      ? tombstones
+      : [...tombstones, {
+        userId: deletedUser.userId,
+        principalGeneration: deletedUser.principalGeneration,
+        deletedAt: new Date().toISOString(),
+        reason: 'user-deleted'
+      }];
+    await this.#savePrincipalTombstones(nextTombstones);
     await this.#saveUsers(next);
     await this.#audit({
       action: 'user.deleted',
@@ -188,7 +296,7 @@ export class AccessManagementService {
 
 
   async replaceUsers(users = [], options = {}) {
-    return this.mutationQueue.run(() => this.#replaceUsers(users, options));
+    return withBindingCommitLock(() => this.mutationQueue.run(() => this.#replaceUsers(users, options)));
   }
 
   async #replaceUsers(users = [], options = {}) {
@@ -196,21 +304,35 @@ export class AccessManagementService {
       throw this.#badRequest('users must be an array');
     }
 
+    const tombstones = await this.#loadPrincipalTombstones();
     const records = users.map((user) => {
       const normalized = this.#normalizeUserInput(user);
       this.#assertKnownRole(normalized.roleKey);
-      return {
+      const record = {
         ...normalized,
         principalGeneration: this.#normalizePrincipalGeneration(user.principalGeneration, normalized.userId),
         status: normalized.status ?? 'active',
         createdAt: user.createdAt ?? new Date().toISOString(),
         updatedAt: user.updatedAt ?? new Date().toISOString()
       };
+      this.#assertPrincipalIdentityAvailable(record.userId, tombstones);
+      return record;
     });
 
     const previousUsers = await this.#loadUsers();
     const nextById = new Map(records.map((user) => [user.userId, user]));
-    if (this.apiTokenService?.revokeTokensForUser) {
+    const nextTombstones = [...tombstones];
+    for (const previous of previousUsers) {
+      if (nextById.has(previous.userId)) continue;
+      if (nextTombstones.some((tombstone) => tombstone.userId === previous.userId)) continue;
+      nextTombstones.push({
+        userId: previous.userId,
+        principalGeneration: previous.principalGeneration,
+        deletedAt: new Date().toISOString(),
+        reason: 'user-replaced'
+      });
+    }
+    if (this.apiTokenService?.revokeTokensForUser && options.skipTokenRevocation !== true) {
       for (const previous of previousUsers) {
         const next = nextById.get(previous.userId);
         if (!next || next.principalGeneration !== previous.principalGeneration) {
@@ -221,6 +343,7 @@ export class AccessManagementService {
       }
     }
 
+    await this.#savePrincipalTombstones(nextTombstones);
     await this.#saveUsers(records, { bootstrapCompleted: this.bootstrapCompleted || records.length > 0 });
 
     if (!options.skipAudit) {
@@ -276,6 +399,33 @@ export class AccessManagementService {
     };
   }
 
+  async authorizeCurrentPrincipal(userId, principalGeneration, permission) {
+    return this.#authorizeCurrentPrincipal(userId, principalGeneration, permission);
+  }
+
+  async withAuthorizedCurrentPrincipal(userId, principalGeneration, permission, operation) {
+    if (typeof operation !== 'function') {
+      throw new TypeError('operation must be a function');
+    }
+    return this.mutationQueue.run(async () => {
+      await this.#authorizeCurrentPrincipal(userId, principalGeneration, permission);
+      return operation();
+    });
+  }
+
+  async #authorizeCurrentPrincipal(userId, principalGeneration, permission) {
+    const normalizedUserId = this.#normalizeRequiredString(userId, 'userId');
+    const user = await this.#findActiveUser(normalizedUserId);
+    if (typeof principalGeneration !== 'string' || user.principalGeneration !== principalGeneration) {
+      throw this.#forbidden('OAuth actor generation is no longer current');
+    }
+    const role = this.roles.find((item) => item.roleKey === user.roleKey);
+    if (!role || !role.permissions.includes(permission)) {
+      throw this.#forbidden(`User '${normalizedUserId}' is missing permission '${permission}'`);
+    }
+    return { userId: normalizedUserId, principalGeneration: user.principalGeneration, permission, permissions: [...role.permissions] };
+  }
+
   async isAuthorizationRequired() {
     const users = await this.#loadUsers();
     return users.length > 0;
@@ -313,6 +463,40 @@ export class AccessManagementService {
       }
       throw error;
     }
+  }
+
+  async #loadPrincipalTombstones() {
+    if (!this.store?.loadPrincipalTombstones) {
+      return this.principalTombstones.map((tombstone) => ({ ...tombstone }));
+    }
+
+    try {
+      const data = await this.store.loadPrincipalTombstones();
+      const tombstones = Array.isArray(data?.tombstones) ? data.tombstones : [];
+      this.principalTombstones = tombstones.map((tombstone) => ({ ...tombstone }));
+      return this.principalTombstones.map((tombstone) => ({ ...tombstone }));
+    } catch (error) {
+      if (error?.code === 'ENOENT') return [];
+      throw error;
+    }
+  }
+
+  async #savePrincipalTombstones(tombstones) {
+    const records = tombstones.map((tombstone) => ({ ...tombstone }));
+    if (!this.store?.savePrincipalTombstones) {
+      this.principalTombstones = records;
+      return;
+    }
+    await this.store.savePrincipalTombstones({ schemaVersion: 1, tombstones: records });
+    this.principalTombstones = records;
+  }
+
+  #assertPrincipalIdentityAvailable(userId, tombstones) {
+    if (!tombstones.some((tombstone) => tombstone.userId === userId)) return;
+    const error = new Error('Principal identity is blocked by a deletion barrier');
+    error.code = 'RESTORE_DELETED_IDENTITY_BARRIER';
+    error.statusCode = 409;
+    throw error;
   }
 
   async #saveUsers(users, { bootstrapCompleted = this.bootstrapCompleted || users.length > 0 } = {}) {
@@ -362,11 +546,12 @@ export class AccessManagementService {
   }
 
   #normalizeUserInput(input) {
+    this.#assertKnownRole(input.roleKey);
     return {
-      userId: this.#normalizeRequiredString(input.userId, 'userId'),
+      userId: this.#normalizeIdentity(input.userId, 'userId'),
       displayName: this.#normalizeRequiredString(input.displayName, 'displayName'),
       email: this.#normalizeOptionalString(input.email),
-      roleKey: this.#normalizeRequiredString(input.roleKey, 'roleKey'),
+      roleKey: this.#normalizeIdentity(input.roleKey, 'roleKey'),
       status: this.#normalizeStatus(input.status ?? 'active')
     };
   }
@@ -378,14 +563,14 @@ export class AccessManagementService {
   }
 
   #normalizePrincipalGeneration(value, userId) {
-    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+    if (value !== undefined && value !== null) return this.#normalizeIdentity(value, 'principalGeneration');
     return `legacy:${userId}`;
   }
 
   #normalizeFirstAdministratorInput(input) {
     const roleKey = input.roleKey === undefined
       ? 'admin'
-      : this.#normalizeRequiredString(input.roleKey, 'roleKey');
+      : this.#normalizeIdentity(input.roleKey, 'roleKey');
     if (roleKey !== 'admin') {
       throw this.#badRequest('Bootstrap first user roleKey must be admin');
     }
@@ -398,7 +583,7 @@ export class AccessManagementService {
     }
 
     return {
-      userId: this.#normalizeRequiredString(input.userId, 'userId'),
+      userId: this.#normalizeIdentity(input.userId, 'userId'),
       displayName: this.#normalizeRequiredString(input.displayName, 'displayName'),
       email: this.#normalizeOptionalString(input.email),
       roleKey: 'admin',
@@ -407,7 +592,9 @@ export class AccessManagementService {
   }
 
   #normalizeBootstrapSecret(value) {
-    if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') < BOOTSTRAP_SECRET_MIN_BYTES) {
+    if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') < BOOTSTRAP_SECRET_MIN_BYTES
+      || KNOWN_BOOTSTRAP_PLACEHOLDERS.has(value)
+      || !meetsBootstrapEntropyRequirement(value)) {
       return null;
     }
     return value;
@@ -454,7 +641,7 @@ export class AccessManagementService {
       patch.email = this.#normalizeOptionalString(input.email);
     }
     if (input.roleKey !== undefined) {
-      patch.roleKey = this.#normalizeRequiredString(input.roleKey, 'roleKey');
+      patch.roleKey = this.#normalizeIdentity(input.roleKey, 'roleKey');
     }
     if (input.status !== undefined) {
       patch.status = this.#normalizeStatus(input.status);
@@ -469,6 +656,13 @@ export class AccessManagementService {
     }
 
     return value.trim();
+  }
+
+  #normalizeIdentity(value, name) {
+    try { return validateNamedIdentifier(name, value); } catch (error) {
+      if (error instanceof AuthorizationIdentifierError) throw this.#badRequest(`${name} is invalid`);
+      throw error;
+    }
   }
 
   #normalizeOptionalString(value) {
@@ -498,6 +692,7 @@ export class AccessManagementService {
     if (!this.roles.some((role) => role.roleKey === roleKey)) {
       throw this.#badRequest(`Unknown role '${roleKey}'`);
     }
+    this.#normalizeIdentity(roleKey, 'roleKey');
   }
 
   #userItem(user) {

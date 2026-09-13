@@ -26,14 +26,16 @@ test('FtpConnectionService validates a username/password credential', async () =
   const service = new FtpConnectionService({
     client: {
       async testConnection(options) {
-        assert.deepEqual(options, {
-          host: 'ftp.example.test',
-          port: 21,
-          username: 'deploy',
-          password: 'secret',
-          timeoutMs: undefined,
-          verificationHost: 'ftp.example.test'
-        });
+      assert.deepEqual(options, {
+        host: 'ftp.example.test',
+        port: 21,
+        username: 'deploy',
+        password: 'secret',
+        timeoutMs: undefined,
+        verificationHost: 'ftp.example.test',
+        purpose: 'PROVIDER_VALIDATION',
+        pathId: 'FTP-STORED'
+      });
 
         return { host: options.host, port: options.port };
       }

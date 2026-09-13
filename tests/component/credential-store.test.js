@@ -87,6 +87,61 @@ test('CredentialStore saves Credential through legacy TokenStore', async () => {
   assert.equal(saved[0].accessToken, 'access-token');
 });
 
+test('CredentialStore rejects legacy existing-record binding changes before persistence', async () => {
+  const tokenRecord = createTokenRecord({ id: 'legacy-guarded' });
+  let writes = 0;
+  const store = new CredentialStore({
+    tokenStore: {
+      async loadById(id) {
+        if (id !== tokenRecord.id) {
+          const error = new Error('not found');
+          error.code = 'NOT_FOUND';
+          throw error;
+        }
+        return tokenRecord;
+      },
+      async save() { writes += 1; }
+    }
+  });
+
+  await assert.rejects(
+    () => store.save({
+      credentialId: tokenRecord.id,
+      credentialKey: tokenRecord.credentialKey,
+      providerKey: tokenRecord.provider,
+      externalReference: 'other-account',
+      secrets: [{ name: 'accessToken', value: 'replacement' }]
+    }),
+    (error) => error.code === 'CREDENTIAL_LIFECYCLE_CONFLICT'
+      && error.details.reason === 'IMMUTABLE_BINDING'
+  );
+  assert.equal(writes, 0);
+});
+
+test('CredentialStore guards legacy stores that expose only load and save', async () => {
+  const tokenRecord = createTokenRecord({ id: 'legacy-minimal-guarded' });
+  const writes = [];
+  const store = new CredentialStore({
+    tokenStore: {
+      async load() { return tokenRecord; },
+      async save(record) { writes.push(record); }
+    }
+  });
+
+  await assert.rejects(
+    () => store.save({
+      credentialId: tokenRecord.id,
+      credentialKey: tokenRecord.credentialKey,
+      providerKey: tokenRecord.provider,
+      externalReference: 'attacker-account',
+      secrets: [{ name: 'accessToken', value: 'replacement' }]
+    }),
+    (error) => error.code === 'CREDENTIAL_LIFECYCLE_CONFLICT'
+      && error.details.reason === 'IMMUTABLE_BINDING'
+  );
+  assert.equal(writes.length, 0);
+});
+
 test('TokenRecord rejects invalid public credentialKey values', () => {
   for (const credentialKey of [undefined, null, '', '   ', 42, {}, []]) {
     assert.throws(

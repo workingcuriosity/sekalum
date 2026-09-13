@@ -10,6 +10,12 @@ import { ProviderCapability } from '../models/provider-capability.js';
 import { ProviderResult } from '../models/provider-result.js';
 import { isProviderProfileMigrationVerified } from '../models/credential.js';
 import { OAuthResult } from '../models/oauth-result.js';
+import {
+  OAuthClientBindingIdentity,
+  OAuthCredentialBinding,
+  compareOAuthContextEvidence,
+  normalizeScopes
+} from '../models/oauth-context-binding.js';
 
 function compareCanonical(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -78,7 +84,11 @@ getProviderCapabilities(providerName) {
             }
           : options;
         const credentialMethodKey = this.#oauthCredentialMethodKey(definition, configuredOptions);
-        const boundOptions = { ...configuredOptions, credentialMethodKey };
+        const boundOptions = {
+          ...configuredOptions,
+          credentialMethodKey,
+          scopes: this.#resolveOAuthScopes(definition, configuredOptions)
+        };
         let securityContext = null;
         try {
           securityContext = this.#createOAuthSecurityContext({
@@ -124,7 +134,11 @@ getProviderCapabilities(providerName) {
     });
   }
 
-  async handleOAuthCallback(providerName, callbackData = {}, { expectedActorUserId = null } = {}) {
+  async handleOAuthCallback(providerName, callbackData = {}, {
+    expectedActorUserId = null,
+    publicOrigin = null,
+    redirectUri = null
+  } = {}) {
     await this.cleanupExpiredOAuthContexts();
     const providerCallbackData = callbackData;
     return this.#execute({
@@ -134,14 +148,21 @@ getProviderCapabilities(providerName) {
       action: async (provider, definition) => {
         let securityContext;
         try {
-          securityContext = this.#consumeOAuthSecurityContext({
+        securityContext = this.#consumeOAuthSecurityContext({
             providerName,
             callbackData,
             providerProfile: definition.providerProfile,
-            expectedActorUserId: expectedActorUserId ?? null
-          });
+          expectedActorUserId: expectedActorUserId ?? null
+        });
+        await this.#revalidateOAuthSecurityContext({
+          providerName,
+          definition,
+          securityContext,
+          publicOrigin,
+          redirectUri
+        });
         } catch (error) {
-          await this.#removeOAuthFlowConfiguration(error, error.providerKey ?? providerName);
+          await this.#removeOAuthFlowConfiguration(securityContext ?? error, error.providerKey ?? providerName);
           throw error;
         }
 
@@ -149,6 +170,11 @@ getProviderCapabilities(providerName) {
           const result = await provider.handleOAuthCallback({
             ...providerCallbackData,
             ...this.#callbackOptionsFromSecurityContext(securityContext),
+            providerConfiguration: await this.#configurationForOAuthContext(
+              securityContext,
+              providerName,
+              definition
+            ),
             oauthSecurityContext: securityContext
           });
           if (!result?.success) {
@@ -161,7 +187,14 @@ getProviderCapabilities(providerName) {
             error.statusCode = 400;
             throw error;
           }
-          return this.#attachProviderConfigurationReference(result, securityContext);
+          const admission = compareOAuthContextEvidence({
+            providerKey: providerName,
+            binding: this.#bindingFromSecurityContext(securityContext),
+            currentBinding: this.#bindingFromSecurityContext(securityContext),
+            oauthResult: result.data
+          });
+          if (!admission.pass) throw admission.failures[0];
+          return this.#attachProviderConfigurationReference(result, securityContext, admission);
         } catch (error) {
           await this.#removeOAuthFlowConfiguration(securityContext, providerName);
           throw error;
@@ -278,14 +311,15 @@ getProviderCapabilities(providerName) {
     });
   }
 
-  async validateCredential(credential) {
+  async validateCredential(credential, operationContext = {}) {
     return this.#executeCredentialOperation({
       credential,
       operation: 'validateCredential',
       capability: ProviderCapability.VALIDATION,
-      action: (provider) => {
+      operationContext,
+      action: (provider, _definition, context) => {
         if (typeof provider.validateCredential === 'function') {
-          return provider.validateCredential(credential);
+          return provider.validateCredential(credential, context);
         }
         return provider.validateToken(credential);
       }
@@ -328,12 +362,13 @@ getProviderCapabilities(providerName) {
     });
   }
 
-  async healthCheckCredential(credential) {
+  async healthCheckCredential(credential, operationContext = {}) {
     return this.#executeCredentialOperation({
       credential,
       operation: 'healthCheckCredential',
       capability: ProviderCapability.HEALTH_CHECK,
-      action: (provider) => provider.healthCheck(credential)
+      operationContext,
+      action: (provider, _definition, context) => provider.healthCheck(credential, context)
     });
   }
 
@@ -382,6 +417,84 @@ getProviderCapabilities(providerName) {
     });
   }
 
+  async getOAuthClientBinding(credential) {
+    const providerName = credential?.providerKey;
+    const definition = this.providerRegistry.get(providerName);
+    const configuration = await this.#configurationForCredential(credential, definition);
+    const environmentKeys = {
+      x: ['X_CLIENT_ID', 'X_REDIRECT_URI'],
+      kick: ['KICK_CLIENT_ID', 'KICK_REDIRECT_URI'],
+      twitch: ['TWITCH_CLIENT_ID', 'TWITCH_REDIRECT_URI'],
+      google: ['GOOGLE_CLIENT_ID', 'GOOGLE_REDIRECT_URI'],
+      discord: ['DISCORD_CLIENT_ID', 'DISCORD_REDIRECT_URI'],
+      threads: ['THREADS_CLIENT_ID', 'THREADS_REDIRECT_URI'],
+      facebook: ['FACEBOOK_CLIENT_ID', 'FACEBOOK_REDIRECT_URI'],
+      instagram: ['INSTAGRAM_CLIENT_ID', 'INSTAGRAM_REDIRECT_URI']
+    }[providerName] ?? [];
+    const config = definition.oauthService?.config;
+    const methodKey = credential.credentialMethodKey ?? this.#oauthCredentialMethodKey(definition);
+    const redirectUri = configuration?.redirectUri
+      ?? config?.get?.(environmentKeys[1])
+      ?? 'https://invalid.invalid/oauth/callback';
+    return OAuthClientBindingIdentity.from({
+      providerKey: providerName,
+      providerProfile: definition.providerProfile,
+      credentialMethodKey: methodKey,
+      providerConfigurationId: credential.providerConfigurationId
+        ?? credential.metadata?.custom?.providerConfigurationId
+        ?? null,
+      clientId: configuration?.clientId ?? config?.get?.(environmentKeys[0]) ?? 'environment-client',
+      redirectUri,
+      publicOrigin: redirectUri
+    });
+  }
+
+  async validateOAuthResultBinding(contextBinding) {
+    if (!contextBinding) return true;
+    const providerName = contextBinding.providerKey;
+    const definition = this.providerRegistry.get(providerName);
+    const currentProfile = definition.providerProfile?.identity?.() ?? definition.providerProfile ?? null;
+    if (contextBinding.providerProfile?.digest && currentProfile?.digest
+      && contextBinding.providerProfile.digest !== currentProfile.digest) {
+      const error = new Error('OAuth provider profile changed before Credential commit');
+      error.code = 'OAUTH_PROFILE_MISMATCH';
+      error.statusCode = 409;
+      throw error;
+    }
+    const methodKey = this.#oauthCredentialMethodKey(definition, { credentialMethodKey: contextBinding.credentialMethodKey });
+    if (methodKey !== contextBinding.credentialMethodKey) {
+      const error = new Error('OAuth credential method changed before Credential commit');
+      error.code = 'OAUTH_METHOD_MISMATCH';
+      error.statusCode = 409;
+      throw error;
+    }
+    let configuration = null;
+    if (contextBinding.providerConfigurationId && this.providerConfigurationService?.load) {
+      const record = await this.providerConfigurationService.load(
+        contextBinding.providerConfigurationId,
+        providerName,
+        currentProfile
+      );
+      configuration = record?.configuration ?? record ?? null;
+    }
+    const currentBinding = new OAuthClientBindingIdentity({
+      providerKey: providerName,
+      providerProfile: currentProfile,
+      credentialMethodKey: methodKey,
+      providerConfigurationId: contextBinding.providerConfigurationId,
+      clientId: configuration?.clientId ?? this.#oauthClientId(definition, providerName),
+      redirectUri: contextBinding.redirectUri,
+      publicOrigin: contextBinding.publicOrigin
+    });
+    if (currentBinding.clientBindingFingerprint !== contextBinding.clientBindingFingerprint) {
+      const error = new Error('OAuth client binding changed before Credential commit');
+      error.code = 'OAUTH_CLIENT_MISMATCH';
+      error.statusCode = 409;
+      throw error;
+    }
+    return true;
+  }
+
 
 
 
@@ -401,7 +514,12 @@ getProviderCapabilities(providerName) {
       providerConfigurationTemporary: options.providerConfigurationTemporary ?? false,
       actorUserId: options.actorUserId ?? null,
       providerProfile: definition.providerProfile,
-      credentialMethodKey: options.credentialMethodKey ?? this.#oauthCredentialMethodKey(definition, options)
+      credentialMethodKey: options.credentialMethodKey ?? this.#oauthCredentialMethodKey(definition, options),
+      publicOrigin: options.publicOrigin ?? null,
+      redirectUri: options.redirectUri ?? options.providerConfiguration?.redirectUri ?? null,
+      clientId: options.clientId ?? options.providerConfiguration?.clientId ?? this.#oauthClientId(definition, providerName),
+      requiredScopes: options.requiredScopes ?? this.#oauthRequiredScopes(definition, options.credentialMethodKey),
+      credentialBinding: options.credentialBinding ?? null
     });
   }
 
@@ -444,11 +562,116 @@ getProviderCapabilities(providerName) {
     return {
       codeVerifier: securityContext.codeVerifier,
       nonce: securityContext.nonce,
-      providerConfiguration: securityContext.providerConfiguration ?? null,
       providerConfigurationId: securityContext.providerConfigurationId ?? null,
       providerProfile: securityContext.providerProfile ?? null,
-      credentialMethodKey: securityContext.credentialMethodKey ?? null
+      credentialMethodKey: securityContext.credentialMethodKey ?? null,
+      redirectUri: securityContext.redirectUri ?? null,
+      publicOrigin: securityContext.publicOrigin ?? null,
+      clientBindingFingerprint: securityContext.clientBindingFingerprint ?? null,
+      requestedScopes: securityContext.requestedScopes ?? securityContext.scopes ?? [],
+      requiredScopes: securityContext.requiredScopes ?? []
     };
+  }
+
+  async #configurationForOAuthContext(securityContext, providerName, definition) {
+    if (!securityContext?.providerConfigurationId || !this.providerConfigurationService?.load) return null;
+    const record = await this.providerConfigurationService.load(
+      securityContext.providerConfigurationId,
+      providerName,
+      definition.providerProfile
+    );
+    return record?.configuration ?? record ?? null;
+  }
+
+  #resolveOAuthScopes(definition, options = {}) {
+    const preserveScopeOrder = (scopes) => {
+      normalizeScopes(scopes);
+      return [...new Set(scopes.map((scope) => scope.trim()))];
+    };
+    if (Array.isArray(options.scopes) && options.scopes.length > 0) return preserveScopeOrder(options.scopes);
+    const method = definition.getCredentialMethod?.(options.credentialMethodKey)
+      ?? definition.credentialMethods?.find((candidate) => candidate.key === options.credentialMethodKey);
+    const field = method?.credentialFields?.find((candidate) => candidate.key === 'scopes');
+    return preserveScopeOrder(definition.metadata?.defaultScopes ?? field?.defaultValue ?? []);
+  }
+
+  #oauthRequiredScopes(definition, methodKey = null) {
+    const method = definition.getCredentialMethod?.(methodKey)
+      ?? definition.credentialMethods?.find((candidate) => candidate.key === methodKey);
+    return normalizeScopes(method?.requiredScopes ?? []);
+  }
+
+  #oauthClientId(definition, providerName) {
+    const environmentKey = {
+      x: 'X_CLIENT_ID', kick: 'KICK_CLIENT_ID', twitch: 'TWITCH_CLIENT_ID',
+      google: 'GOOGLE_CLIENT_ID', discord: 'DISCORD_CLIENT_ID', threads: 'THREADS_CLIENT_ID',
+      facebook: 'FACEBOOK_CLIENT_ID', instagram: 'INSTAGRAM_CLIENT_ID'
+    }[providerName];
+    return definition.oauthService?.config?.get?.(environmentKey) ?? 'environment-client';
+  }
+
+  #bindingFromSecurityContext(securityContext, overrides = {}) {
+    return {
+      providerKey: securityContext.provider,
+      providerProfile: securityContext.providerProfile,
+      credentialMethodKey: securityContext.credentialMethodKey,
+      providerConfigurationId: securityContext.providerConfigurationId,
+      clientBindingFingerprint: securityContext.clientBindingFingerprint,
+      publicOrigin: overrides.publicOrigin ?? securityContext.publicOrigin,
+      redirectUri: overrides.redirectUri ?? securityContext.redirectUri,
+      requestedScopes: securityContext.requestedScopes ?? securityContext.scopes ?? [],
+      requiredScopes: securityContext.requiredScopes ?? [],
+      accountId: securityContext.account ?? null
+    };
+  }
+
+  async #revalidateOAuthSecurityContext({ providerName, definition, securityContext, publicOrigin, redirectUri }) {
+    const currentProfile = definition.providerProfile?.identity?.() ?? definition.providerProfile ?? null;
+    if (securityContext.providerProfile?.digest && currentProfile?.digest
+      && securityContext.providerProfile.digest !== currentProfile.digest) {
+      const error = new Error('OAuth provider profile changed during the transaction');
+      error.code = 'OAUTH_PROFILE_MISMATCH';
+      error.statusCode = 400;
+      throw error;
+    }
+    const methodKey = this.#oauthCredentialMethodKey(definition, { credentialMethodKey: securityContext.credentialMethodKey });
+    if (methodKey !== securityContext.credentialMethodKey) {
+      const error = new Error('OAuth credential method changed during the transaction');
+      error.code = 'OAUTH_METHOD_MISMATCH';
+      error.statusCode = 400;
+      throw error;
+    }
+    let currentConfiguration = securityContext.providerConfiguration;
+    if (securityContext.providerConfigurationId && this.providerConfigurationService?.load) {
+      const record = await this.providerConfigurationService.load(
+        securityContext.providerConfigurationId,
+        providerName,
+        currentProfile
+      );
+      currentConfiguration = record?.configuration ?? record ?? null;
+    }
+    const currentBinding = new OAuthClientBindingIdentity({
+      providerKey: providerName,
+      providerProfile: currentProfile,
+      credentialMethodKey: methodKey,
+      providerConfigurationId: securityContext.providerConfigurationId,
+      clientId: currentConfiguration?.clientId ?? this.#oauthClientId(definition, providerName),
+      redirectUri: redirectUri ?? securityContext.redirectUri,
+      publicOrigin: publicOrigin ?? securityContext.publicOrigin
+    });
+    if (currentBinding.clientBindingFingerprint !== securityContext.clientBindingFingerprint) {
+      const error = new Error('OAuth client binding changed during the transaction');
+      error.code = 'OAUTH_CLIENT_MISMATCH';
+      error.statusCode = 400;
+      throw error;
+    }
+    if ((redirectUri && redirectUri !== securityContext.redirectUri)
+      || (publicOrigin && publicOrigin !== securityContext.publicOrigin)) {
+      const error = new Error('OAuth redirect or public origin changed during the transaction');
+      error.code = 'OAUTH_REDIRECT_URI_MISMATCH';
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   async #prepareProviderConfiguration({ providerName, definition, options }) {
@@ -480,7 +703,8 @@ getProviderCapabilities(providerName) {
   }
 
   async #configurationForCredential(credential, definition = null) {
-    const configurationId = credential?.metadata?.providerConfigurationId
+    const configurationId = credential?.providerConfigurationId
+      ?? credential?.metadata?.providerConfigurationId
       ?? credential?.metadata?.custom?.providerConfigurationId
       ?? null;
     if (!configurationId || !this.providerConfigurationService) return null;
@@ -501,7 +725,7 @@ getProviderCapabilities(providerName) {
     return this.#removeProviderConfiguration(context.providerConfigurationId, providerName);
   }
 
-  #attachProviderConfigurationReference(result, securityContext) {
+  #attachProviderConfigurationReference(result, securityContext, admission = null) {
     const configurationId = securityContext?.providerConfigurationId;
     if (!result?.success || !(result.data instanceof OAuthResult)) return result;
     const data = result.data;
@@ -522,6 +746,18 @@ getProviderCapabilities(providerName) {
       refreshToken: data.refreshToken,
       expiresAt: data.expiresAt,
       scopes: data.scopes,
+      contextBinding: new OAuthCredentialBinding({
+        providerKey: securityContext.provider,
+        providerProfile: securityContext.providerProfile,
+        credentialMethodKey: securityContext.credentialMethodKey,
+        providerConfigurationId: securityContext.providerConfigurationId,
+        clientBindingFingerprint: securityContext.clientBindingFingerprint,
+        accountId: data.accountId,
+        grantedScopes: admission?.grantedScopes ?? data.scopes ?? [],
+        redirectUri: securityContext.redirectUri,
+        publicOrigin: securityContext.publicOrigin
+      }).toJSON(),
+      evidence: admission?.evidence?.map((entry) => entry.toJSON?.() ?? entry) ?? [],
       metadata: {
         ...data.metadata,
         ...(configurationId ? { providerConfigurationId: configurationId } : {}),

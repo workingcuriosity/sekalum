@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 
 function createServer(basePath) {
   return new OAuthCallbackServer({
@@ -18,6 +19,7 @@ function createServer(basePath) {
     config: {
       get(key, fallback) {
         if (key === 'BASE_PATH') return basePath;
+        if (key === 'OAUTH_CALLBACK_PORT') return 0;
         return fallback;
       }
     },
@@ -25,18 +27,9 @@ function createServer(basePath) {
   });
 }
 
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-    });
-  });
-}
-
 test('serves admin, health, and API metadata below a configured base path', async () => {
   const httpServer = createServer('/credential-hub/');
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const root = await fetch(`${baseUrl}/`, { redirect: 'manual' });
@@ -52,9 +45,13 @@ test('serves admin, health, and API metadata below a configured base path', asyn
 
     const admin = await fetch(`${baseUrl}/credential-hub/admin/`);
     assert.equal(admin.status, 200);
+    assert.equal(admin.headers.get('content-security-policy'), "frame-ancestors 'none'");
+    assert.equal(admin.headers.get('x-frame-options'), 'DENY');
     assert.match(await admin.text(), /Credential Wizard/);
 
     const metadata = await fetch(`${baseUrl}/credential-hub/api/v1/credentials/meta`);
+    assert.equal(metadata.headers.get('content-security-policy'), "frame-ancestors 'none'");
+    assert.equal(metadata.headers.get('x-frame-options'), 'DENY');
     const body = await metadata.json();
     assert.equal(metadata.status, 200);
     assert.equal(body.data.endpoints.list.path, '/credential-hub/api/v1/credentials');

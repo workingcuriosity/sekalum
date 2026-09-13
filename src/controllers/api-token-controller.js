@@ -32,7 +32,8 @@ export class ApiTokenController {
     try {
       const created = await this.apiTokenService.createToken({
         ...(req.body ?? {}),
-        createdBy: this.#userIdFromRequest(req)
+        createdBy: this.#userIdFromRequest(req),
+        issuer: req.auth ?? null
       });
 
       this.#sendSuccess(res, {

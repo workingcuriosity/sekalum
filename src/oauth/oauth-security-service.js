@@ -4,15 +4,38 @@ import {
   OAuthSecurityRequirement,
   OAuthSecurityRequirements
 } from '../models/oauth-security-requirements.js';
+import {
+  OAuthClientBindingIdentity,
+  OAuthCredentialBinding,
+  normalizeScopes
+} from '../models/oauth-context-binding.js';
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_MAX_CONTEXTS = 10_000;
+const DEFAULT_MAX_CONTEXTS_PER_ACTOR = 2_000;
+const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000;
 
 export class OAuthSecurityService {
-  constructor({ ttlMs = DEFAULT_TTL_MS, random = crypto.randomBytes, now = () => Date.now() } = {}) {
+  constructor({
+    ttlMs = DEFAULT_TTL_MS,
+    maxContexts = DEFAULT_MAX_CONTEXTS,
+    maxContextsPerActor = DEFAULT_MAX_CONTEXTS_PER_ACTOR,
+    cleanupIntervalMs = DEFAULT_CLEANUP_INTERVAL_MS,
+    random = crypto.randomBytes,
+    now = () => Date.now(),
+    schedule = setInterval,
+    cancelSchedule = clearInterval
+  } = {}) {
     this.ttlMs = ttlMs;
+    this.maxContexts = this.#boundedPositiveInteger(maxContexts, DEFAULT_MAX_CONTEXTS);
+    this.maxContextsPerActor = this.#boundedPositiveInteger(maxContextsPerActor, DEFAULT_MAX_CONTEXTS_PER_ACTOR);
+    this.cleanupIntervalMs = this.#boundedPositiveInteger(cleanupIntervalMs, DEFAULT_CLEANUP_INTERVAL_MS);
     this.random = random;
     this.now = now;
     this.contexts = new Map();
+    this.cancelSchedule = cancelSchedule;
+    this.cleanupTimer = schedule(() => this.purgeExpiredContexts(), this.cleanupIntervalMs);
+    this.cleanupTimer?.unref?.();
   }
 
   createAuthorizationContext({
@@ -27,6 +50,13 @@ export class OAuthSecurityService {
     actorUserId = null,
     providerProfile = null,
     credentialMethodKey = null,
+    publicOrigin = null,
+    redirectUri = null,
+    clientId = null,
+    clientIdentity = null,
+    requiredScopes = [],
+    credentialBinding = null,
+    transactionId = crypto.randomUUID(),
     now = this.now()
   } = {}) {
     if (!provider) {
@@ -36,17 +66,35 @@ export class OAuthSecurityService {
     const securityRequirements = OAuthSecurityRequirements.from(requirements);
     const finalState = this.#resolveState({ state, requirements: securityRequirements });
     const expiresAt = new Date(now + this.ttlMs);
+    const requestedScopes = normalizeScopes(scopes ?? []);
+    const normalizedRequiredScopes = normalizeScopes(requiredScopes ?? []);
+    const clientBinding = new OAuthClientBindingIdentity({
+      providerKey: provider,
+      providerProfile,
+      credentialMethodKey: credentialMethodKey ?? 'oauth2',
+      providerConfigurationId,
+      clientId: clientId ?? providerConfiguration?.clientId ?? 'environment-client',
+      clientIdentity,
+      redirectUri: redirectUri ?? providerConfiguration?.redirectUri ?? 'https://invalid.invalid/oauth/callback',
+      publicOrigin: publicOrigin ?? redirectUri ?? providerConfiguration?.redirectUri ?? 'https://invalid.invalid'
+    });
 
     const context = {
       provider,
       account,
-      providerConfiguration: providerConfiguration ? { ...providerConfiguration } : null,
       providerConfigurationId,
       providerConfigurationTemporary: Boolean(providerConfigurationTemporary),
       actorUserId: actorUserId ?? null,
       providerProfile: providerProfile?.identity?.() ?? providerProfile ?? null,
       credentialMethodKey,
-      scopes: Array.isArray(scopes) ? [...scopes] : null,
+      scopes: requestedScopes,
+      requestedScopes,
+      requiredScopes: normalizedRequiredScopes,
+      publicOrigin: clientBinding.publicOrigin,
+      redirectUri: clientBinding.redirectUri,
+      clientBindingFingerprint: clientBinding.clientBindingFingerprint,
+      transactionId,
+      credentialBinding: OAuthCredentialBinding.from(credentialBinding)?.toJSON?.() ?? null,
       state: finalState,
       nonce: null,
       codeVerifier: null,
@@ -68,6 +116,8 @@ export class OAuthSecurityService {
     }
 
     if (finalState) {
+      this.purgeExpiredContexts(now);
+      this.#assertContextCapacity(context.actorUserId);
       this.contexts.set(finalState, context);
     }
 
@@ -105,11 +155,12 @@ export class OAuthSecurityService {
     }
 
     if (context.expiresAt.getTime() <= now) {
+      this.contexts.delete(state);
       throw this.#stateError('OAuth state expired', context);
     }
 
     this.contexts.delete(state);
-    return this.#publicContext(context, { includeProviderConfiguration: true });
+    return this.#publicContext(context);
   }
 
   purgeExpiredContexts(now = this.now()) {
@@ -126,6 +177,12 @@ export class OAuthSecurityService {
   discardAuthorizationContext(state) {
     if (!state) return false;
     return this.contexts.delete(state);
+  }
+
+  dispose() {
+    if (!this.cleanupTimer) return;
+    this.cancelSchedule(this.cleanupTimer);
+    this.cleanupTimer = null;
   }
 
   createCodeVerifier() {
@@ -168,11 +225,37 @@ export class OAuthSecurityService {
     return error;
   }
 
-  #publicContext(context, { includeProviderConfiguration = false } = {}) {
+  #assertContextCapacity(actorUserId) {
+    if (this.contexts.size >= this.maxContexts) {
+      throw this.#stateError('OAuth state capacity exceeded');
+    }
+    const actor = actorUserId ?? 'anonymous';
+    let actorContexts = 0;
+    for (const context of this.contexts.values()) {
+      if ((context.actorUserId ?? 'anonymous') === actor) actorContexts += 1;
+    }
+    if (actorContexts >= this.maxContextsPerActor) {
+      throw this.#stateError('OAuth state actor capacity exceeded');
+    }
+  }
+
+  #boundedPositiveInteger(value, fallback) {
+    const number = Number(value);
+    return Number.isInteger(number) && number > 0 ? number : fallback;
+  }
+
+  #publicContext(context) {
     return Object.freeze({
       provider: context.provider,
       account: context.account,
       scopes: Array.isArray(context.scopes) ? Object.freeze([...context.scopes]) : null,
+      requestedScopes: Object.freeze([...(context.requestedScopes ?? context.scopes ?? [])]),
+      requiredScopes: Object.freeze([...(context.requiredScopes ?? [])]),
+      transactionId: context.transactionId,
+      publicOrigin: context.publicOrigin,
+      redirectUri: context.redirectUri,
+      clientBindingFingerprint: context.clientBindingFingerprint,
+      credentialBinding: context.credentialBinding,
       state: context.state,
       nonce: context.nonce,
       codeVerifier: context.codeVerifier,
@@ -184,10 +267,7 @@ export class OAuthSecurityService {
       providerConfigurationId: context.providerConfigurationId,
       providerConfigurationTemporary: context.providerConfigurationTemporary,
       providerProfile: context.providerProfile,
-      credentialMethodKey: context.credentialMethodKey,
-      ...(includeProviderConfiguration
-        ? { providerConfiguration: Object.freeze({ ...(context.providerConfiguration ?? {}) }) }
-        : {})
+      credentialMethodKey: context.credentialMethodKey
     });
   }
 }

@@ -8,7 +8,7 @@ import { ProviderManager } from '../../src/managers/provider-manager.js';
 import { ProviderDefinition } from '../../src/models/provider-definition.js';
 import { ProviderCapabilities } from '../../src/models/provider-capabilities.js';
 
-function createService(records = [], { auditLogService = null, credentialStore = null, consumerGrantStore = null } = {}) {
+function createService(records = [], { auditLogService = { async record() {} }, credentialStore = null, consumerGrantStore = null } = {}) {
   const store = {
     async list() { return structuredClone(records); },
     async get(key) { return structuredClone(records.find((entry) => entry.key === key) ?? null); },
@@ -54,6 +54,30 @@ test('CustomProviderService persists and immediately registers a declarative pro
   assert.deepEqual(registry.get('acme-service').providerMethodBindings[0].toJSON(), {
     methodKey: 'api-key', displayName: 'Acme API key', description: 'Use an API key', metadata: {}, operationCapabilities: []
   });
+});
+
+test('CustomProviderService records one actor-attributed, secret-free success audit after create commits', async () => {
+  const events = [];
+  const rawRequestOnlyValue = 'synthetic-raw-request-only-value';
+  const { service, registry, records } = createService([], {
+    auditLogService: { async record(entry) { events.push(structuredClone(entry)); } }
+  });
+  const input = { ...provider(), description: rawRequestOnlyValue };
+
+  await service.create(input, { actorUserId: 'admin-user' });
+
+  assert.equal(records.length, 1);
+  assert.equal(registry.has('acme-service'), true);
+  assert.deepEqual(events, [{
+    userId: 'admin-user',
+    action: 'custom_provider_created',
+    targetType: 'provider',
+    targetId: 'acme-service',
+    result: 'success',
+    details: { credentialMethodCount: 1, credentialFieldCount: 1 }
+  }]);
+  assert.equal(JSON.stringify(events).includes(rawRequestOnlyValue), false);
+  assert.equal(JSON.stringify(events).includes('apiKey'), false);
 });
 
 test('CustomProviderService edits metadata and replaces the registered definition', async () => {
@@ -113,6 +137,7 @@ test('CustomProviderService deletes an unused provider and records canonical aud
   assert.equal(records.length, 0);
   assert.equal(registry.has('acme-service'), false);
   assert.deepEqual(events.map((event) => event.action), [
+    'custom_provider_created',
     'custom_provider_delete_attempted',
     'custom_provider_deleted'
   ]);
@@ -184,6 +209,7 @@ test('CustomProviderService hydrates persisted definitions on restart', async ()
 
 test('CustomProviderService rolls back persistence when registration fails', async () => {
   const records = [];
+  const events = [];
   const store = {
     async list() { return structuredClone(records); },
     async save(definition) { records.push(structuredClone(definition)); return definition; },
@@ -196,10 +222,26 @@ test('CustomProviderService rolls back persistence when registration fails', asy
     has() { return false; },
     register() { throw new Error('Registry unavailable'); }
   };
-  const service = new CustomProviderService({ store, providerRegistry: registry });
+  const service = new CustomProviderService({
+    store,
+    providerRegistry: registry,
+    auditLogService: { async record(entry) { events.push(entry); } }
+  });
 
-  await assert.rejects(service.create(provider()), /Registry unavailable/);
+  await assert.rejects(service.create(provider(), { actorUserId: 'admin-user' }), /Registry unavailable/);
   assert.deepEqual(records, []);
+  assert.equal(events.some((entry) => entry.action === 'custom_provider_created' && entry.result === 'success'), false);
+});
+
+test('CustomProviderService rolls back a registered create when success auditing fails', async () => {
+  const { service, registry, records } = createService([], {
+    auditLogService: { async record() { throw new Error('audit unavailable'); } }
+  });
+
+  await assert.rejects(service.create(provider(), { actorUserId: 'admin-user' }), /audit unavailable/);
+
+  assert.deepEqual(records, []);
+  assert.equal(registry.has('acme-service'), false);
 });
 
 test('CustomProviderService rejects executable, OAuth, configuration, and secret values', async () => {

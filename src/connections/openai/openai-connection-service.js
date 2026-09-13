@@ -9,9 +9,9 @@ export class OpenAIConnectionService {
     this.client = client;
   }
 
-  async validateCredential(credential) {
+  async validateCredential(credential, { purpose = 'PROVIDER_VALIDATION' } = {}) {
     const options = this.#optionsFromCredential(credential);
-    const result = await this.client.validateApiKey(options);
+    const result = await this.client.validateApiKey({ ...options, purpose });
 
     return {
       valid: true,
@@ -21,9 +21,12 @@ export class OpenAIConnectionService {
     };
   }
 
-  async healthCheck(credential) {
+  async healthCheck(credential, context = {}) {
     try {
-      const validation = await this.validateCredential(credential);
+      const validation = await this.validateCredential(credential, {
+        ...context,
+        purpose: 'PROVIDER_HEALTH_CHECK'
+      });
 
       return {
         healthy: true,
@@ -39,7 +42,8 @@ export class OpenAIConnectionService {
         status: 'down',
         provider: 'openai',
         checkedAt: new Date().toISOString(),
-        message: safeErrorMessage(error, 'OpenAI health check failed')
+        message: safeErrorMessage(error, 'OpenAI health check failed'),
+        code: error?.code ?? null
       };
     }
   }

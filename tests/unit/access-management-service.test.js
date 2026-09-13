@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import { AccessManagementService } from '../../src/services/access-management-service.js';
+
+const VALID_BOOTSTRAP_SECRET = crypto.createHash('sha256')
+  .update('access-management-bootstrap-test-fixture-v2')
+  .digest('hex');
 
 test('AccessManagementService exposes fixed MS12 roles', async () => {
   const service = new AccessManagementService();
@@ -88,6 +93,38 @@ test('AccessManagementService rejects disabled users during authorization', asyn
   );
 });
 
+test('AccessManagementService serializes a current-principal operation with role revocation', async () => {
+  const service = new AccessManagementService();
+  await service.createUser({ userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' });
+  const { principalGeneration } = await service.getUserIdentity('admin-1');
+  let releaseCommit;
+  let startedCommit;
+  const commitStarted = new Promise((resolve) => { startedCommit = resolve; });
+  let committed = false;
+
+  const protectedCommit = service.withAuthorizedCurrentPrincipal(
+    'admin-1',
+    principalGeneration,
+    'providers:manage',
+    async () => {
+      startedCommit();
+      await new Promise((resolve) => { releaseCommit = resolve; });
+      committed = true;
+    }
+  );
+  await commitStarted;
+  const revoke = service.updateUser('admin-1', { roleKey: 'viewer' });
+  releaseCommit();
+  await protectedCommit;
+  await revoke;
+
+  assert.equal(committed, true);
+  await assert.rejects(
+    () => service.authorizeCurrentPrincipal('admin-1', principalGeneration, 'providers:manage'),
+    /missing permission 'providers:manage'/
+  );
+});
+
 test('AccessManagementService writes audit entries for user changes', async () => {
   const entries = [];
   const service = new AccessManagementService({
@@ -106,7 +143,7 @@ test('AccessManagementService writes audit entries for user changes', async () =
 });
 
 test('AccessManagementService requires a strong bootstrap proof and creates an active administrator', async () => {
-  const bootstrapSecret = 'b'.repeat(32);
+  const bootstrapSecret = VALID_BOOTSTRAP_SECRET;
   const entries = [];
   const service = new AccessManagementService({
     config: { get(key) { return key === 'ADMIN_BOOTSTRAP_TOKEN' ? bootstrapSecret : null; } },
@@ -140,7 +177,7 @@ test('AccessManagementService requires a strong bootstrap proof and creates an a
 });
 
 test('AccessManagementService atomically permits exactly one concurrent bootstrap', async () => {
-  const bootstrapSecret = 'b'.repeat(32);
+  const bootstrapSecret = VALID_BOOTSTRAP_SECRET;
   const service = new AccessManagementService({ bootstrapSecret });
   const results = await Promise.allSettled(Array.from({ length: 12 }, (_, index) => service.bootstrapFirstAdministrator({
     userId: `admin-${index}`,
@@ -163,7 +200,7 @@ test('AccessManagementService rejects missing or weak bootstrap configuration', 
 });
 
 test('AccessManagementService can retry bootstrap after a failed user write without opening a second path', async () => {
-  const bootstrapSecret = 'b'.repeat(32);
+  const bootstrapSecret = VALID_BOOTSTRAP_SECRET;
   let saved = null;
   let saveAttempts = 0;
   const service = new AccessManagementService({
@@ -188,7 +225,7 @@ test('AccessManagementService can retry bootstrap after a failed user write with
 });
 
 test('AccessManagementService does not reopen bootstrap when audit persistence fails after the user write', async () => {
-  const bootstrapSecret = 'b'.repeat(32);
+  const bootstrapSecret = VALID_BOOTSTRAP_SECRET;
   let auditAttempts = 0;
   const service = new AccessManagementService({
     bootstrapSecret,
@@ -212,7 +249,7 @@ test('AccessManagementService does not reopen bootstrap when audit persistence f
 });
 
 test('AccessManagementService persists terminal bootstrap state after deleting the last administrator', async () => {
-  const bootstrapSecret = 'b'.repeat(32);
+  const bootstrapSecret = VALID_BOOTSTRAP_SECRET;
   let saved = { users: [] };
   const store = {
     async load() { return saved; },
@@ -228,4 +265,27 @@ test('AccessManagementService persists terminal bootstrap state after deleting t
     () => restarted.bootstrapFirstAdministrator({ userId: 'admin-2', displayName: 'Second Admin' }, bootstrapSecret),
     { code: 'BOOTSTRAP_CLOSED' }
   );
+});
+test('BOOTSTRAP-ATTACK-001: known placeholder fails closed while a deployment-unique proof bootstraps once', async () => {
+  const placeholder = 'REPLACE_WITH_A_UNIQUE_HIGH_ENTROPY_BOOTSTRAP_TOKEN';
+  const blocked = new AccessManagementService({ bootstrapSecret: placeholder });
+  await assert.rejects(() => blocked.bootstrapFirstAdministrator({ userId: 'attacker', displayName: 'Attacker' }, placeholder), { code: 'BOOTSTRAP_UNAVAILABLE' });
+  assert.deepEqual(await blocked.listUsers(), []);
+  const unique = new AccessManagementService({ bootstrapSecret: VALID_BOOTSTRAP_SECRET });
+  const first = await unique.bootstrapFirstAdministrator({ userId: 'admin', displayName: 'Admin' }, VALID_BOOTSTRAP_SECRET);
+  assert.equal(first.userId, 'admin');
+});
+
+test('AccessManagementService rejects predictable bootstrap secrets at the configuration boundary', async () => {
+  for (const weakSecret of [
+    'a'.repeat(32),
+    '01234567890123456789012345678901',
+    'abcdefghijklmnopqrstuvwxyzabcdef'
+  ]) {
+    const service = new AccessManagementService({ bootstrapSecret: weakSecret });
+    await assert.rejects(
+      () => service.bootstrapFirstAdministrator({ userId: 'admin-weak', displayName: 'Admin' }, weakSecret),
+      { code: 'BOOTSTRAP_UNAVAILABLE' }
+    );
+  }
 });

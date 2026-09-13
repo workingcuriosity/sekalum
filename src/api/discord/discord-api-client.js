@@ -21,7 +21,8 @@ export class DiscordApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'DISCORD-TOKEN', purpose: 'OAUTH_TOKEN_EXCHANGE', providerKey: 'discord', credentialBearing: true
     });
 
     return response.data;
@@ -38,7 +39,8 @@ export class DiscordApiClient {
     const response = await this.httpClient.post(this.tokenUrl, body, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      pathId: 'DISCORD-TOKEN', purpose: 'OAUTH_REFRESH', providerKey: 'discord', credentialBearing: true
     });
 
     return response.data;
@@ -46,7 +48,8 @@ export class DiscordApiClient {
 
   async getCurrentUser({ accessToken }) {
     const response = await this.httpClient.get(this.currentUserUrl, {
-      bearerToken: accessToken
+      bearerToken: accessToken,
+      pathId: 'DISCORD-PROFILE', purpose: 'OAUTH_PROFILE_LOOKUP', providerKey: 'discord', credentialBearing: true
     });
 
     if (!response.data?.id) {

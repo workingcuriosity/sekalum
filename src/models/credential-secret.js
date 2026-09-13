@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
 
 export class CredentialSecret {
   constructor({
@@ -10,7 +11,7 @@ export class CredentialSecret {
     updatedAt = new Date()
   }) {
     if (!id) throw new Error("CredentialSecret: 'id' is required");
-    if (!name) throw new Error("CredentialSecret: 'name' is required");
+    validateNamedIdentifier('secretFieldKey', name);
     if (value === undefined || value === null || value === '') {
       throw new Error("CredentialSecret: 'value' is required");
     }

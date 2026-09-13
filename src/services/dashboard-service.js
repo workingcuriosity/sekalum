@@ -5,6 +5,7 @@ export class DashboardService {
     credentialManager,
     providerManager,
     consumerGrantService = null,
+    consumerCredentialService = null,
     schedulerService = null,
     credentialPolicyService = null,
     credentialRotationService = null,
@@ -15,6 +16,7 @@ export class DashboardService {
     this.credentialManager = credentialManager;
     this.providerManager = providerManager;
     this.consumerGrantService = consumerGrantService;
+    this.consumerCredentialService = consumerCredentialService;
     this.schedulerService = schedulerService;
     this.credentialPolicyService = credentialPolicyService;
     this.credentialRotationService = credentialRotationService;
@@ -46,6 +48,10 @@ export class DashboardService {
     if (!this.consumerGrantService?.listGrants) return [];
     return (await this.consumerGrantService.listGrants()).map((grant) => this.#toJSON(grant));
   });
+  const consumerAccessResult = await this.#safeSection('consumerAccess', async () => {
+    if (!this.consumerCredentialService?.listAccessScopes) return [];
+    return this.consumerCredentialService.listAccessScopes();
+  });
   const lifecycleResult = await this.#safeSection('lifecycle', async () => this.#lifecycleSummary({
     credentials: credentialResult.data ?? [],
     referenceDate: now
@@ -58,7 +64,7 @@ export class DashboardService {
   const normalizedCredentials = credentialResult.data ?? [];
   const normalizedProviders = providerResult.data ?? [];
   const normalizedGrants = grantResult.data ?? [];
-  const serviceErrors = [credentialResult.error, providerResult.error, schedulerResult.error, grantResult.error, lifecycleResult.error, observabilityResult.error].filter(Boolean);
+  const serviceErrors = [credentialResult.error, providerResult.error, schedulerResult.error, grantResult.error, consumerAccessResult.error, lifecycleResult.error, observabilityResult.error].filter(Boolean);
 
   return {
     generatedAt: now.toISOString(),
@@ -87,6 +93,7 @@ export class DashboardService {
         rotation: lifecycleResult.data?.rotation ?? null,
         observability: observabilityResult.data ?? null
       }),
+    consumerAccess: consumerAccessResult.error ? { status: 'unknown', consumers: [], summary: { consumerCount: 0, credentialCount: 0, providerCount: 0, secretFieldAssignmentCount: 0 } } : this.#consumerAccessSummary(consumerAccessResult.data ?? []),
     warnings: this.#warnings({
       credentials: normalizedCredentials,
       providers: normalizedProviders,
@@ -95,6 +102,19 @@ export class DashboardService {
     })
   };
 }
+
+ #consumerAccessSummary(scopes) {
+  return {
+    status: 'healthy',
+    consumers: scopes.map((scope) => ({ consumerId: scope.consumer?.consumerId, summary: scope.summary })),
+    summary: {
+      consumerCount: scopes.length,
+      credentialCount: new Set(scopes.flatMap((scope) => (scope.credentials ?? []).map((entry) => entry.credentialId))).size,
+      providerCount: new Set(scopes.flatMap((scope) => (scope.credentials ?? []).map((entry) => entry.providerKey))).size,
+      secretFieldAssignmentCount: scopes.reduce((count, scope) => count + Number(scope.summary?.secretFieldAssignmentCount ?? 0), 0)
+    }
+  };
+ }
 
  #integrationHealth({ credentials, providers, grants, history, rotation, observability }) {
   const providerByKey = new Map(providers.map((provider) => [provider.providerKey, provider]));

@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
 import { AccessManagementService } from '../../src/services/access-management-service.js';
 import { AuditLogService } from '../../src/services/audit-log-service.js';
 import { ApiTokenService, ApiTokenServiceConstants } from '../../src/services/api-token-service.js';
+import { AbuseAdmission, AbusePolicyClass } from '../../src/security/abuse-admission.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 
-const BOOTSTRAP_TOKEN = 'b'.repeat(32);
+const BOOTSTRAP_TOKEN = crypto.createHash('sha256')
+  .update('access-management-bootstrap-test-fixture-v2')
+  .digest('hex');
 
 class InMemoryApiTokenStore {
   constructor() {
@@ -48,6 +53,14 @@ function createServer() {
     schedulerService: { getStatus() { return { started: false, running: false, jobs: [] }; } },
     accessManagementService,
     auditLogService,
+    abuseAdmission: new AbuseAdmission({
+      policyOverrides: {
+        [AbusePolicyClass.PRE_AUTH_FAILURE]: { capacity: 100 },
+        [AbusePolicyClass.BOOTSTRAP]: { capacity: 10 },
+        [AbusePolicyClass.MANAGEMENT_AUTHENTICATED]: { capacity: 100 },
+        [AbusePolicyClass.MANAGEMENT_MUTATION]: { capacity: 100 }
+      }
+    }),
     config: { get() { return 0; } },
     logger: { success() {}, error() {}, info() {} }
   });
@@ -55,7 +68,7 @@ function createServer() {
   return server;
 }
 
-function createBootstrapServer({ nodeEnv = 'test' } = {}) {
+function createBootstrapServer({ nodeEnv = 'test', hostedMode = false, bindHost = null } = {}) {
   const auditLogService = new AuditLogService();
   const accessManagementService = new AccessManagementService({ auditLogService, bootstrapSecret: BOOTSTRAP_TOKEN });
   const apiTokenService = new ApiTokenService({
@@ -63,6 +76,19 @@ function createBootstrapServer({ nodeEnv = 'test' } = {}) {
     auditLogService,
     randomBytes: () => Buffer.alloc(ApiTokenServiceConstants.TOKEN_BYTES, 13)
   });
+  const configValues = {
+    NODE_ENV: nodeEnv,
+    OAUTH_CALLBACK_PORT: 0,
+    ...(hostedMode ? {
+      HOSTED_MODE: 'true',
+      APP_BIND_HOST: bindHost ?? '0.0.0.0',
+      TRUSTED_PROXY: '127.0.0.1',
+      PUBLIC_BASE_URL: 'https://sekalum.example.test'
+    } : {
+      ...(bindHost ? { APP_BIND_HOST: bindHost } : {}),
+      ...(nodeEnv === 'production' ? { PUBLIC_BASE_URL: 'https://sekalum.example.test' } : {})
+    })
+  };
 
   return {
     accessManagementService,
@@ -75,19 +101,25 @@ function createBootstrapServer({ nodeEnv = 'test' } = {}) {
       accessManagementService,
       auditLogService,
       apiTokenService,
+      abuseAdmission: new AbuseAdmission({
+          policyOverrides: {
+            [AbusePolicyClass.PRE_AUTH_FAILURE]: { capacity: 100 },
+            [AbusePolicyClass.BOOTSTRAP]: { capacity: 10 },
+            [AbusePolicyClass.MANAGEMENT_AUTHENTICATED]: { capacity: 100 },
+            [AbusePolicyClass.MANAGEMENT_MUTATION]: { capacity: 100 }
+        }
+      }),
       config: { get(key, fallback = null) {
-        if (key === 'NODE_ENV') return nodeEnv;
-        if (key === 'PUBLIC_BASE_URL' && nodeEnv === 'production') return 'https://sekalum.example.test';
-        return fallback;
+        return Object.hasOwn(configValues, key) ? configValues[key] : fallback;
       } },
       logger: { success() {}, error() {}, info() {} }
     })
   };
 }
 
-function listen(app) {
+function listen(app, host = '127.0.0.1') {
   return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
+    const server = app.listen(0, host, () => {
       const { port } = server.address();
       resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
     });
@@ -96,7 +128,7 @@ function listen(app) {
 
 test('HTTP management roles endpoint returns available roles', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/management/roles`);
@@ -110,9 +142,92 @@ test('HTTP management roles endpoint returns available roles', async () => {
   }
 });
 
+test('TEST-AUTH-ATTACK-001: test header compatibility requires the canonical loopback listener and hosted mode requires Bearer authentication', async () => {
+  const standalone = createBootstrapServer();
+  const standaloneHttp = await listenOAuthCallbackServer(standalone.server);
+  try {
+    const response = await fetch(`${standaloneHttp.baseUrl}/api/v1/management/roles`, {
+      headers: { 'x-credential-hub-user': 'local-test-user' }
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).success, true);
+  } finally {
+    standaloneHttp.server.close();
+  }
+
+  for (const bindHost of ['0.0.0.0', '::']) {
+    const hosted = createBootstrapServer({ hostedMode: true, bindHost });
+    await hosted.accessManagementService.replaceUsers([
+      { userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' }
+    ], { skipAudit: true });
+    const managementToken = await hosted.apiTokenService.createToken({
+      name: `Hosted test token ${bindHost}`,
+      userId: 'admin-1',
+      scopes: ['users:read'],
+      createdBy: 'admin-1'
+    });
+    const hostedHttp = await listenOAuthCallbackServer(hosted.server);
+    try {
+      const headerResponse = await fetch(`${hostedHttp.baseUrl}/api/v1/management/roles`, {
+        headers: { 'x-credential-hub-user': 'admin-1' }
+      });
+      assert.equal(headerResponse.status, 401, `${bindHost} hosted test header must be rejected`);
+      assert.equal((await headerResponse.json()).error.code, 'API_TOKEN_AUTH_FAILED');
+
+      const bearerResponse = await fetch(`${hostedHttp.baseUrl}/api/v1/management/roles`, {
+        headers: { authorization: `Bearer ${managementToken.token}` }
+      });
+      assert.equal(bearerResponse.status, 200, `${bindHost} hosted Bearer authentication must remain available`);
+      assert.equal((await bearerResponse.json()).success, true);
+    } finally {
+      hostedHttp.server.close();
+    }
+  }
+
+  for (const nodeEnv of ['production', 'development']) {
+    const server = createBootstrapServer({ nodeEnv });
+    const http = await listenOAuthCallbackServer(server.server);
+    try {
+      const response = await fetch(`${http.baseUrl}/api/v1/management/roles`, {
+        headers: { 'x-credential-hub-user': 'admin-1' }
+      });
+      assert.equal(response.status, 401, `${nodeEnv} test header must be rejected`);
+      assert.equal((await response.json()).error.code, 'API_TOKEN_AUTH_FAILED');
+    } finally {
+      http.server.close();
+    }
+  }
+});
+
+test('TEST-AUTH-ATTACK-002: direct app listeners cannot activate compatibility header authentication', async () => {
+  const canonical = createBootstrapServer();
+  const canonicalHttp = await listenOAuthCallbackServer(canonical.server);
+  const directLoopback = await listen(canonical.server.app);
+  const directWildcard = await listen(canonical.server.app, '0.0.0.0');
+
+  try {
+    const canonicalResponse = await fetch(`${canonicalHttp.baseUrl}/api/v1/management/roles`, {
+      headers: { 'x-credential-hub-user': 'local-test-user' }
+    });
+    assert.equal(canonicalResponse.status, 200);
+
+    for (const http of [directLoopback, directWildcard]) {
+      const response = await fetch(`${http.baseUrl}/api/v1/management/roles`, {
+        headers: { 'x-credential-hub-user': 'local-test-user' }
+      });
+      assert.equal(response.status, 401);
+      assert.equal((await response.json()).error.code, 'API_TOKEN_AUTH_FAILED');
+    }
+  } finally {
+    canonicalHttp.server.close();
+    directLoopback.server.close();
+    directWildcard.server.close();
+  }
+});
+
 test('HTTP management users endpoint creates, updates and deletes users', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const createResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -147,7 +262,7 @@ test('HTTP management users endpoint creates, updates and deletes users', async 
 
 test('HTTP management users endpoint requires bootstrap proof and allows only the first administrator without a Bearer token', async () => {
   const setup = createBootstrapServer();
-  const { server, baseUrl } = await listen(setup.server.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(setup.server);
 
   try {
     const missingProofResponse = await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -210,7 +325,7 @@ test('HTTP management users endpoint requires bootstrap proof and allows only th
 
 test('production management users endpoint does not trust loopback proxy headers as bootstrap proof', async () => {
   const setup = createBootstrapServer({ nodeEnv: 'production' });
-  const { server, baseUrl } = await listen(setup.server.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(setup.server);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -230,7 +345,7 @@ test('production management users endpoint does not trust loopback proxy headers
 
 test('HTTP management users endpoint enforces role permissions after bootstrap', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -269,7 +384,7 @@ test('credential-sensitive route matrix denies unauthenticated and under-permiss
     { userId: 'admin-1', displayName: 'Admin', roleKey: 'admin' },
     { userId: 'viewer-1', displayName: 'Viewer', roleKey: 'viewer' }
   ], { skipAudit: true });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   const matrix = [
     ['POST', '/api/v1/management/consumer-grants'],
@@ -340,7 +455,7 @@ test('credential-sensitive route matrix denies unauthenticated and under-permiss
 
 test('HTTP management audit-log endpoint lists audited user changes for admins', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -376,7 +491,7 @@ test('HTTP management audit-log endpoint lists audited user changes for admins',
 
 test('HTTP management audit-log endpoint rejects viewers', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -405,7 +520,7 @@ test('HTTP management audit-log endpoint rejects viewers', async () => {
 
 test('HTTP management export endpoints return JSON and CSV exports for admins', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -445,7 +560,7 @@ test('HTTP management export endpoints return JSON and CSV exports for admins', 
 
 test('HTTP management export endpoints reject viewers', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -475,7 +590,7 @@ test('HTTP management export endpoints reject viewers', async () => {
 
 test('HTTP management backup endpoints create and restore management backups for admins', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -524,7 +639,7 @@ test('HTTP management backup endpoints create and restore management backups for
 
 test('HTTP management backup endpoints reject viewers', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -554,7 +669,7 @@ test('HTTP management backup endpoints reject viewers', async () => {
 
 test('HTTP management metrics endpoint returns extended operating metrics for admins', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {
@@ -581,7 +696,7 @@ test('HTTP management metrics endpoint returns extended operating metrics for ad
 
 test('HTTP management metrics endpoint rejects disabled users', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     await fetch(`${baseUrl}/api/v1/management/users`, {

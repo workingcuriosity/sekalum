@@ -1,5 +1,6 @@
 import { CredentialFieldDefinition } from './credential-field-definition.js';
 import { isProviderOperationCapability } from './provider-capability.js';
+import { validateNamedIdentifier } from '../security/authorization-identifier.js';
 
 /**
  * Reusable, provider-neutral description of a credential procedure.
@@ -7,9 +8,8 @@ import { isProviderOperationCapability } from './provider-capability.js';
  */
 export class CredentialMethod {
   constructor({ key, displayName = null, description = null, authenticationMethod = null, credentialFields = [], operationCapabilities = [], requiredScopes = [] } = {}) {
-    if (typeof key !== 'string' || key.trim() === '') {
-      throw new Error("CredentialMethod: 'key' is required");
-    }
+    if (typeof key !== 'string' || key.trim() === '') throw new Error("CredentialMethod: 'key' is required");
+    validateNamedIdentifier('credentialMethodKey', key);
     if (!Array.isArray(credentialFields)) {
       throw new Error(`CredentialMethod '${key}': credentialFields must be an array`);
     }
@@ -34,7 +34,7 @@ export class CredentialMethod {
       throw new Error(`CredentialMethod '${key}': unsupported operation capabilities: ${invalid.join(', ')}`);
     }
 
-    this.key = key.trim();
+    this.key = key;
     this.displayName = displayName ?? this.key;
     this.description = description;
     this.authenticationMethod = authenticationMethod;

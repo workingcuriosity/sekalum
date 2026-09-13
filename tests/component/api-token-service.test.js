@@ -197,6 +197,34 @@ test('ApiTokenService validates createToken input', async () => {
   );
 });
 
+test('ApiTokenService enforces issuer scope containment and same-principal delegation in the service layer', async () => {
+  const { service } = createService();
+  const issuer = { userId: 'issuer-user', scopes: ['api-tokens:manage'] };
+
+  await assert.rejects(
+    () => service.createToken({
+      name: 'Escalated consumer', userId: 'issuer-user',
+      scopes: ['api-tokens:manage', 'credentials:consume'],
+      createdBy: 'issuer-user', issuer
+    }),
+    { code: 'API_TOKEN_DELEGATION_DENIED', statusCode: 403 }
+  );
+
+  await assert.rejects(
+    () => service.createToken({
+      name: 'Cross-principal token', userId: 'other-user',
+      scopes: ['api-tokens:manage'], createdBy: 'issuer-user', issuer
+    }),
+    { code: 'API_TOKEN_DELEGATION_DENIED', statusCode: 403 }
+  );
+
+  const valid = await service.createToken({
+    name: 'Same-principal subset', userId: 'issuer-user',
+    scopes: ['api-tokens:manage'], createdBy: 'issuer-user', issuer
+  });
+  assert.deepEqual(valid.publicToken.scopes, ['api-tokens:manage']);
+});
+
 test('ApiTokenService records audit events for create, use, and revoke', async () => {
   const auditEntries = [];
   const auditLogService = { record: async (entry) => auditEntries.push(entry) };

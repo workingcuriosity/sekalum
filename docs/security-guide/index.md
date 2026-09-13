@@ -3,7 +3,7 @@ title: Security Guide
 document_id: DOC-SECURITY-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.8.0
+version: 1.22.0
 status: Active
 category: Security
 canonical: true
@@ -18,7 +18,66 @@ dependent_documents:
   - SECURITY.md
   - docs/api-reference/index.md
   - docs/configuration-reference/index.md
+  - docs/adr/ADR-027-Authorization-Identifier-Canonicalization.md
+  - docs/adr/ADR-028-Revoke-First-Decommissioning-and-Orphan-Safety.md
+  - docs/adr/ADR-029-Restore-Anti-Rollback.md
+  - docs/adr/ADR-030-Central-SSRF-and-Egress-Policy.md
+  - docs/adr/ADR-031-OAuth-Context-Binding.md
+  - docs/adr/ADR-032-Rate-Limit-Abuse-and-Harvesting-Baseline.md
+  - docs/security-guide/oauth-context-binding-adversarial-mapping.md
+  - docs/security-guide/rate-abuse-harvesting-adversarial-mapping.md
 change_history:
+  - version: 1.22.0
+    date: 2026-09-13
+    change: Adds the stable public Security Assurance Methodology and standards-alignment, risk-evaluation and audit-evidence boundaries for current and future assessments.
+  - version: 1.21.1
+    date: 2026-09-06
+    change: Clarifies the deployment-unique Bootstrap proof contract: missing, shipped/example or documentation-placeholder values are invalid; runtime enforcement remains separately authorized.
+  - version: 1.21.0
+    date: 2026-09-06
+    change: Adds the public-safe RC3-12 anti-framing response contract and derives phase-separated pre-auth, authenticated operational and containment admission capacity; runtime implementation remains separately unauthorized.
+  - version: 1.20.0
+    date: 2026-09-05
+    change: Completes the RC3-10 Basic Consumer safe-use projection with an explicit Secret-sprawl destination list, logical credentialKey versus version/material guidance, rotation and revocation handling, and the external-runtime no-store boundary.
+  - version: 1.19.0
+    date: 2026-09-04
+    change: Adds public-safe RC3-09 guidance for bounded process-local abuse admission, trusted source identity, weighted work, separate containment access, generic 429 responses and bounded Retry-After without threshold or identity disclosure.
+  - version: 1.18.0
+    date: 2026-09-04
+    change: Adds public-safe RC3-08 OAuth Context Binding guidance for transaction, client, provider evidence, scope, Credential and refresh binding; planned adversarial cases remain unregistered and unexecuted.
+  - version: 1.17.0
+    date: 2026-09-03
+    change: Records the implemented RC3-07 Core Egress runtime boundary, candidate-bound SSRF regressions and the unchanged public-safe/no-override contract.
+  - version: 1.16.2
+    date: 2026-09-03
+    change: Records the RC3-07 Owner Review acceptance of the public-safe central Egress projection; ADR-030 remains the canonical policy owner and implementation remains separately unauthorized.
+  - version: 1.16.1
+    date: 2026-09-03
+    change: Clarifies that the bounded RFC1918/ULA private exception applies to FTP/SFTP connection-test, validation and health purposes only; hard blocks, OAuth/shared HTTP and browser overrides remain excluded.
+  - version: 1.16.0
+    date: 2026-09-03
+    change: Adds public-safe central Egress/SSRF guidance for DNS pinning, address classification, scheme/port/redirect/credential/resource bounds, private exceptions and future-hook fail-closed behavior; no runtime implementation is authorized.
+  - version: 1.15.0
+    date: 2026-09-03
+    change: Records the implemented RC3-06 restore anti-rollback runtime boundary and candidate-bound adversarial verification while preserving the no-override and public-safe result contract.
+  - version: 1.14.0
+    date: 2026-09-03
+    change: Adds public-safe restore anti-rollback guidance: current-state authority, terminal/tombstone and generation barriers, read-only preflight, final revalidation, atomicity and no Restore-anyway override; this guidance does not claim runtime implementation.
+  - version: 1.13.0
+    date: 2026-09-02
+    change: Adds public-safe revoke-first decommissioning, zero-authority orphan handling, no-resurrection guidance and dependency-safe deletion from ADR-028; this guidance does not claim runtime implementation.
+  - version: 1.12.0
+    date: 2026-09-01
+    change: Documents public-safe domain-aware authorization-identifier semantics and the canonical ADR-027 ownership boundary without authorizing implementation.
+  - version: 1.11.0
+    date: 2026-08-31
+    change: Adds public Basic guidance for minimum Consumer scope, Secret-sprawl minimization and the external-runtime responsibility boundary.
+  - version: 1.10.0
+    date: 2026-08-31
+    change: Documents the Core-derived Consumer Access Scope and Credential reverse projections, effective-Grant counting and secret-free preview boundary.
+  - version: 1.9.0
+    date: 2026-08-30
+    change: Documents the public adversarial security-regression layer and its deterministic execution boundary.
   - version: 1.8.0
     date: 2026-08-27
     change: Defines bounded Credential transfer import admission and atomic batch persistence together with the combined 30-day UTC-instant Audit retention boundary, legacy convergence and fail-closed Resolve audit finalization.
@@ -47,6 +106,77 @@ change_history:
 
 # Security Guide
 
+## Security Assurance Methodology and Standards Alignment
+
+Sekalum applies relevant criteria and methods from internationally recognized
+security standards, frameworks and methodologies within the defined assurance
+scope. This methodology applies to current and future security assessments,
+release candidates and releases unless the canonical Security Governance
+standards basis is changed through normal governance.
+
+The standards and method basis is:
+
+| Standard, framework or methodology | Assurance use within scope |
+|---|---|
+| NIST SSDF SP 800-218 | Secure development and vulnerability-response process context |
+| NIST SP 800-55 | Security measurement purpose, quality, provenance, timeliness and uncertainty |
+| ISO/IEC 27005 | Risk evaluation, treatment, ownership and residual-risk review |
+| OWASP Risk Rating Methodology | Application likelihood, impact and contextual risk factors |
+| OWASP SAMM | Application-security process, verification, defect management and remediation |
+| OWASP ASVS | Applicable verification scope and requirement-based assurance |
+| MITRE CWE | Weakness classification |
+| FIRST CVSS v4.0 | Technical vulnerability severity where applicable |
+| FIRST EPSS | Exploitation-probability signal for applicable public CVEs only |
+| CISA KEV | Known-exploitation signal for applicable public CVEs only |
+| OWASP Benchmark / NIST SAMATE | Scanner-effectiveness measurement where applicable |
+| OpenSSF Scorecard | Repository and supply-chain posture as a separate measurement dimension |
+
+These sources have distinct purposes and are interpreted together within the
+defined scope. CVSS is not a complete risk score; scanner severity is not a
+complete risk score; EPSS is not a complete risk score; KEV is not a complete
+risk score; and a security KPI is not an automatic release decision.
+
+### Finding and risk evaluation
+
+Finding evaluation is not based on scanner severity alone. The assessment
+considers technical severity, likelihood, impact, exploitability where
+evidenced, attack preconditions, reachability or exposure where evidenced,
+compensating controls, control effectiveness, inherent risk, residual risk,
+risk treatment and the required risk-owner decision. ISO/IEC 27005 provides
+the risk-management basis, OWASP Risk Rating provides application
+likelihood/impact context, and CVSS v4.0 provides technical severity context
+where applicable. Public guidance does not disclose private finding records
+or private risk-owner evidence.
+
+### Audit and Certification Evidence Readiness
+
+Sekalum security-assurance evidence is collected and maintained using
+traceable, versioned and standards-aligned methods. Where applicable, the
+evidence structure includes:
+
+- assessment identity and scope;
+- evidence provenance;
+- vulnerability classification;
+- technical severity;
+- likelihood and impact;
+- assumptions and uncertainty;
+- risk treatment;
+- residual risk;
+- risk-owner decisions;
+- review and revalidation state; and
+- candidate or release binding.
+
+This structure is intended to allow existing assurance evidence to be reused
+as input to a future formal audit, assurance or certification program. Such a
+program would still require the certification scheme's exact scope, control
+mapping, gap assessment, organization and process evidence, and its
+independent audit or certification procedure.
+
+Sekalum currently claims standards-aligned methods. It does not claim ISO,
+NIST or OWASP certification, formal full compliance, or third-party
+certification. No certification or compliance status is implied by this
+guide.
+
 ## Deployment Security Recommendations
 
 Sekalum's Admin UI should not be exposed to the public Internet
@@ -66,6 +196,27 @@ proxy product.
 
 Do not treat a reverse proxy as an application login. It is an operator-
 controlled network and transport boundary in front of Sekalum.
+
+### Application UI anti-framing boundary
+
+Browser-rendered Sekalum application responses, including `/admin`,
+application UI responses and management application responses, must not be
+embedded by another origin. The application response contract is:
+
+| Contract key | Required value |
+|---|---|
+| `APPLICATION_UI_FRAME_EMBEDDING` | `DENY` |
+| `CONTENT_SECURITY_POLICY_FRAME_ANCESTORS` | `'none'` |
+| `X_FRAME_OPTIONS` | `DENY` |
+
+The separately authorized implementation must emit
+`Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`
+for those responses. A reverse proxy must preserve these protections and must
+not relax them. This normative contract does not claim that the current runtime
+has implemented the headers; implementation requires separate authority. The
+control does not replace authentication, authorization, TLS or operator network
+controls, and it does not alter Management Token storage or the authentication
+model.
 
 ### VPN and network allow-lists
 
@@ -106,7 +257,8 @@ control, screenshots or logs.
 An empty persisted user collection is state, not identity. The one-time
 `POST /api/v1/management/users` Bootstrap operation requires the configured
 `ADMIN_BOOTSTRAP_TOKEN` proof in `X-Admin-Bootstrap-Token`. The value must be a
-high-entropy secret of at least 32 bytes; missing, weak or incorrect proof
+deployment-unique, operator-supplied high-entropy secret of at least 32 bytes.
+Missing, shipped/example, documentation-placeholder, weak or incorrect proof
 fails closed. The Bootstrap proof is not a Management Token, is not an API
 token, is not derived from `TOKEN_ENCRYPTION_KEY`, and is never returned,
 logged, audited or persisted as a token. Only one active `admin` First
@@ -115,6 +267,23 @@ serialized security operation, and Bootstrap is permanently closed after the
 first user is persisted. Normal management access then requires Bearer
 authentication, scope validation and RBAC. Reverse-proxy and forwarding
 headers do not replace this proof.
+
+```text
+ADMIN_BOOTSTRAP_TOKEN_DEPLOYMENT_UNIQUE: REQUIRED
+KNOWN_EXAMPLE_BOOTSTRAP_TOKEN: INVALID
+PLACEHOLDER_BOOTSTRAP_TOKEN: INVALID
+MISSING_BOOTSTRAP_TOKEN: INVALID
+```
+
+Length or character-count compliance alone is insufficient. Bootstrap
+admission requires a configured value that meets the existing strength
+requirement, is not any shipped/example/documentation placeholder, and is
+deployment-unique. Runtime admission rejects low-diversity, repeated-pattern
+and monotonic values, and requires a minimum measured byte entropy in addition
+to the 32-byte floor: at least 8 distinct UTF-8 bytes, at least 3.5 bits of
+Shannon entropy per byte, no repeated pattern of period 16 bytes or less, and
+no monotonic run of 8 bytes or more. Sekalum supplies no automatic default
+Bootstrap token. This is the canonical Bootstrap contract.
 
 ### Deployment responsibility boundary
 
@@ -160,6 +329,195 @@ change authorization, grants, Discovery, Resolve or Runtime-Public behavior.
 The Grant Preview and Permission Summary are likewise read-only explanations:
 they display selected and excluded field names without executing Discovery or
 Resolve, exposing Secret values, or changing the server-side grant.
+
+The Consumer Permissions page obtains current scope, create/edit deltas and
+Credential reverse access from Core projections. Scope is calculated from the
+authenticated Consumer identity, effective Grant bindings, Credential
+lifecycle and provider field contract. The projection may show permitted
+Secret field names and factual counts, but never Secret values, bearer tokens,
+or management data. A preview is not an authorization decision and cannot be
+replayed as proof for a later mutation.
+
+### Basic Consumer scope and Secret-sprawl minimization
+
+For Basic/Open Source use:
+
+- use the smallest practical Consumer identity boundary for one application or workload trust domain;
+- do not use one universal Consumer identity for unrelated workloads merely for convenience;
+- grant only the Credentials and Secret fields required by that workload;
+- revoke unused Consumers and Grants;
+- resolve only the named Secret fields needed for the next operation and pass them directly to the target operation where practical;
+- avoid copying resolved values into ordinary workflow or application state, static or pinned workflow data, Set/Edit Fields data, Code-node constants, logs, debug output, execution output, retry payloads, browser storage or other durable downstream state; and
+- prefer provider-native short-lived credentials where available.
+
+The safe-use sequence is:
+
+```text
+dedicated Consumer identity and token
+  → minimum Grant and named Secret fields
+  → Discovery
+  → stable logical credentialKey
+  → explicit Resolve fields
+  → immediate target operation
+  → runtime-owned disposal
+```
+
+Do not place resolved values in URLs or query strings, source control,
+workflow exports, screenshots or recordings. A `credentialKey` is a stable
+logical selection reference; it is distinct from a server-side Secret Version
+and from Secret material. Rotation may replace material behind the same valid
+logical reference without a workflow rewrite. Revocation, deactivation or
+Grant removal blocks future Resolve and does not authorize a cached plaintext
+fallback.
+
+Sekalum controls authorization and delivery. Once an authorized external
+runtime receives a long-lived Secret, Sekalum cannot guarantee that the runtime
+forgets or does not persist it. `Cache-Control: no-store`, browser cleanup and
+Grant revocation do not guarantee erasure from an external workflow, queue,
+execution history or log. This is an honest responsibility boundary, not
+permission to retain, log or transmit Secret values.
+
+## Revoke-first and orphan safety
+
+The ADR-028
+architecture requires access containment before cleanup. Revocation or delete
+therefore blocks Consumer authorization first; provider, Grant and Secret
+history cleanup may complete later and may be retried idempotently. A pending
+cleanup result is not a failed containment result.
+
+Terminal, missing or stale Credentials and Grants have zero authority. Grant
+bindings are exact to a Credential identity and generation; they are never
+rebound by provider key, restore or re-import. A deletion tombstone preserves a
+minimal identity barrier so a former identity cannot silently become usable.
+Provider and Provider Configuration deletion must respect exact dependencies;
+operators should resolve those dependencies explicitly rather than relying on
+an implicit cascade. Management diagnostics may report safe status, counts and
+stable error codes, but must not expose Secrets, bearer material or raw
+provider errors.
+
+These are public-safe architectural rules. They do not claim that the current
+OSS runtime has implemented the RC3-05 decommissioning workflow; implementation
+requires a separate authorization and its own terminal evidence.
+
+## Restore anti-rollback
+
+Historical restore and import input is not authoritative merely because it is
+valid, complete or older. The current Core security state wins at final
+revalidation. A revoked or deleted Credential, revoked API token, deleted
+principal, tombstoned identity, stale generation or exact Grant-binding
+mismatch remains blocked; a provider key or display name never creates an
+implicit rebind.
+
+Restore review is read-only. Core checks the complete candidate against current
+identity lines, terminal barriers, opaque UUID generations, exact bindings and
+the actor's current authority. A later mutation must repeat that check inside
+the authority-bearing commit boundary. If state changes between review and
+commit, the operation fails closed and requires a new review. A restore path
+that cannot commit atomically must not make a partial authority change.
+
+The public-safe result vocabulary is `CAN_RESTORE`, `CONFLICTS`, `BLOCKED` and
+`NEEDS_RE_CHECK`. Non-terminal role/status/metadata differences may require an
+explicit administrative resolution; terminal security barriers have no
+override. No “Restore anyway” option is valid. See the [RC3-06 adversarial
+mapping](restore-anti-rollback-adversarial-mapping.md) for the exact registered
+regression cases and their candidate-bound status.
+
+The current runtime implements this bounded contract across management backup
+restore, Credential import, Secret-Version rollback and the legacy provider
+token path. API-token and Grant restore remain fail-closed future hooks; no new
+backup contents or routes are introduced. Terminal evidence is valid only for
+the exact candidate reported by the IEP.
+
+## Central Egress and SSRF boundary
+
+All server-initiated provider, OAuth and Credential connection paths must use
+one Core-owned Egress Policy. Core resolves DNS, inspects every answer and
+binds the transport to the admitted address while preserving the original
+hostname for protocol verification. A fixed provider hostname is not proof
+that its resolved address is safe.
+
+Loopback, link-local, cloud metadata, unspecified, multicast, reserved/special,
+CGNAT and unclassifiable addresses are hard blocked. RFC1918 and IPv6 ULA are
+denied by default and may be allowed only by a narrow operator/deployment
+exception for the bounded FTP/SFTP connection-test, validation and health
+purposes. The existing
+`CONNECTION_TEST_ALLOW_PRIVATE_NETWORKS` setting is not a universal network
+permission and is not a browser control. Mixed DNS answers fail closed;
+IPv4-mapped IPv6 and well-known NAT64 apply the embedded IPv4 policy.
+
+Provider HTTP uses HTTPS in its declared protocol class, denies redirects by
+default and does not forward bearer values, client secrets or bodies to a
+changed target. FTP and SFTP are separate connector classes. Ports are part of
+destination identity. Connect/operation time, response bodies, retries and
+cleanup are bounded, and every retry requires a new policy admission.
+
+These rules are implemented by the RC3-07 Core Egress runtime. The
+[RC3-07 adversarial mapping](central-egress-adversarial-mapping.md) records
+the exact registered and candidate-bound regression cases. Release and
+deployment authorization remain separate.
+
+## Rate, Abuse and Harvesting boundary
+
+The current server applies one bounded, process-local admission boundary to
+protected management, Consumer, OAuth and provider-work paths. Trusted source
+identity is derived from the server socket and configured framework proxy
+semantics; raw client forwarding headers, bearer values and arbitrary request
+content are not authority keys. Admission happens before JSON body parsing and
+is followed by the existing authentication, authorization, validation and
+Central Egress boundaries.
+
+The implementation composes source, authenticated actor, Consumer, token and
+provider dimensions where applicable. The separately authorized RC3-12
+implementation must use a distinct pre-auth global budget that cannot debit
+authenticated operational or reserved security-containment capacity. An
+unauthenticated request to a containment path must remain a pre-auth failure;
+only an authenticated, authorized containment operation may use the
+independently reserved containment budget. This normative architecture does
+not claim that the current runtime has implemented the separation. Batch and
+other amplified operations pay bounded weighted cost, concurrency leases expire
+locally, and state uses quotas, cleanup and overflow handling. Restart resets
+process-local state and does not make a cluster-wide consistency claim.
+
+When a protected request is denied, the existing surfaces receive only a
+generic `429 RATE_LIMITED` result with a positive bounded `Retry-After` and
+`Cache-Control: no-store`. The result does not disclose resource existence,
+source identity, token material or limiter thresholds. The Admin and Consumer
+clients show bounded retry guidance but do not automatically replay mutation
+requests. The [RC3-09 adversarial mapping](rate-abuse-harvesting-adversarial-mapping.md)
+records the registered cases; candidate-bound evidence remains separate from
+this public guide.
+
+## Adversarial security regression layer
+
+Sekalum maintains a public, repository-native adversarial regression registry
+for implemented security guarantees. The registry maps an attack chain to the
+security invariant, trust boundary, implementation control and exact normal
+test case that verifies it. It covers representative Consumer/Grant isolation,
+lifecycle terminality, Secret-safe diagnostics and response projections,
+authentication-plane separation, OAuth context handling and connection-target
+egress restrictions.
+
+The runner uses only validated, static test references and Node's normal test
+runtime. It does not evaluate registry entries as code, execute a shell, load
+remote code or accept arbitrary file paths. A release-gate execution emits a
+candidate-bound JSON result with explicit pass/fail status. Deferred families
+remain marked as not implemented and cannot be treated as passing controls.
+The runner rejects a dirty Git worktree before execution so the reported
+candidate SHA cannot silently differ from the tested source content.
+
+## Authorization-identifier safety
+
+Security-relevant identifiers and selectors have one authoritative domain
+contract. Core validates that contract; it does not apply a global trim,
+lowercase or Unicode repair pass. Search/display normalization is separate from
+authorization identity, provider-owned references remain opaque, and transport
+decoding occurs once before domain validation. Alternate representations that
+are invalid, ambiguous or colliding are denied with an explainable result.
+
+These public-safe rules are governed by
+ADR-027.
+The rule does not authorize automatic collision resolution, silent legacy
+rewrites or browser-side authorization decisions.
 
 ## Credential materialization boundary
 
@@ -255,6 +613,23 @@ Secret values. It identifies the existing responsibility boundary after the
 Consumer API has returned an authorized result. Consumer integrations must
 follow their applicable security controls while preserving the existing
 least-privilege and transient-use expectations of the Consumer contract.
+
+## OAuth Context Binding
+
+OAuth security has three separate decisions: one-time state and browser
+transaction admission, provider-token evidence admission, and Credential commit
+authorization. A token that is valid for a provider is not necessarily valid for
+the exact Sekalum actor, profile, method, client, redirect, scope and account
+context that initiated the transaction. The public-safe architecture and path
+decisions are in ADR-031 and the
+[adversarial mapping](oauth-context-binding-adversarial-mapping.md).
+
+Provider capabilities are explicit. Issuer, audience, client, profile and scope
+claims are accepted only when a fixed provider response or transaction-bound
+adapter proves them. Missing evidence remains `NOT_AVAILABLE` and blocks when
+required; generic token decoding and browser overrides are not trust sources.
+Tokens, codes, verifiers, secrets and raw provider responses remain transient
+and must not enter logs, UI, audit records or durable PASS values.
 
 ## Declarative custom-provider onboarding
 

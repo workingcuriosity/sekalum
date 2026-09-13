@@ -3,7 +3,7 @@ title: Installation Guide
 document_id: DOC-INSTALLATION-GUIDE-INDEX
 classification: PUBLIC
 language: en
-version: 1.4.4
+version: 1.4.7
 status: Active
 category: Installation
 canonical: true
@@ -18,6 +18,15 @@ dependent_documents:
   - docs/security-guide/index.md
   - docs/operations-guide/index.md
 change_history:
+  - version: 1.4.7
+    date: 2026-09-13
+    change: Updates the active installation and Compose examples for Release Candidate 3 version 1.0.0-rc.3; installation behavior and security boundaries remain unchanged.
+  - version: 1.4.6
+    date: 2026-09-06
+    change: Clarifies that the template Bootstrap placeholder is invalid and must be replaced with a deployment-unique high-entropy proof before first start; runtime enforcement remains separately authorized.
+  - version: 1.4.5
+    date: 2026-09-06
+    change: Derives RC3-12 Slice B production HTTPS and trusted-proxy deployment guidance from ADR-031 without claiming runtime enforcement.
   - version: 1.4.4
     date: 2026-08-29
     change: Clarifies the separate high-entropy bootstrap token requirement in the configuration and first-start instructions.
@@ -60,7 +69,7 @@ For local development, use a supported Node.js runtime and install the repositor
 npm ci
 ```
 
-For the RC2 Docker path, install Docker Desktop or Docker Engine with the Compose plugin instead.
+For the RC3 Docker path, install Docker Desktop or Docker Engine with the Compose plugin instead.
 
 ## Configuration
 
@@ -70,17 +79,24 @@ Create a local environment file from the public template before starting Compose
 cp .env.example .env
 ```
 
-The template contains safe development placeholders. Replace `TOKEN_ENCRYPTION_KEY` with a unique 32-character secret and set a separate high-entropy `ADMIN_BOOTSTRAP_TOKEN` of at least 32 bytes before storing real credentials; never commit `.env`. Follow the [Configuration Reference](../configuration-reference/index.md) for encryption, OAuth, scheduler, and callback settings.
+The template contains safe development placeholders. Before the first start,
+replace `TOKEN_ENCRYPTION_KEY` with a unique 32-character secret and set a
+separate deployment-unique, high-entropy `ADMIN_BOOTSTRAP_TOKEN` of at least
+32 bytes. A shipped/example or documentation-placeholder Bootstrap value is
+invalid even when it meets the length requirement; never commit `.env`. Follow
+the [Configuration Reference](../configuration-reference/index.md) for
+encryption, OAuth, scheduler, and callback settings.
 
 If declarative custom providers are required, validate `CUSTOM_PROVIDER_DEFINITIONS` as JSON before startup. Invalid custom-provider definitions stop registration and must be corrected before the application can start.
 
 ## First start and Bootstrap
 
-RC2 does not provide a username/password login. When the persisted user
+RC3 does not provide a username/password login. When the persisted user
 collection is empty, the service is in **Bootstrap** mode, but the empty state
 alone does not authorize creation. Configure a high-entropy
 `ADMIN_BOOTSTRAP_TOKEN` with at least 32 bytes (separate from the encryption
-key) and create the **First
+key), supplied uniquely for this deployment rather than copied from any
+example or placeholder, and create the **First
 Administrator** through the local Management API while the service is still
 restricted to the local machine:
 
@@ -93,8 +109,9 @@ curl --request POST http://localhost:3000/api/v1/management/users \
 
 The Bootstrap token is a one-time proof of possession, not a Management Token
 and not an API token. It is never returned, logged, audited or persisted by
-Sekalum. Missing, weak or incorrect proof is rejected. Bootstrap accepts only
-an active `admin`; conflicting `roleKey` or `status` values are rejected.
+Sekalum. Missing, shipped/example, documentation-placeholder, weak or
+incorrect proof is rejected. Bootstrap accepts only an active `admin`;
+conflicting `roleKey` or `status` values are rejected.
 Bootstrap ends immediately after the **First Administrator** is persisted. The
 Admin UI then requires an authorized **Management Token**. Its login gate
 validates the token against the protected management API and uses
@@ -107,7 +124,7 @@ tests and must not be used in a deployed installation.
 
 ## Complete First Installation Workflow
 
-The following sequence is the canonical RC2 first-installation path. Use
+The following sequence is the canonical RC3 first-installation path. Use
 either the local Node.js start or the Docker Compose start above; do not expose
 the service publicly before the First Administrator and Management Token gate
 are in place.
@@ -142,7 +159,7 @@ request as a way to create a second bootstrap administrator.
 ### 3. Enter the Management Token
 
 Obtain an authorized Management Token through the configured operational
-mechanism. RC2 has no integrated password-login or first-token creation
+mechanism. RC3 has no integrated password-login or first-token creation
 dialog; the Admin UI accepts an already provisioned token. Open `/admin/` and
 enter the token in the Administrator access form.
 
@@ -239,7 +256,7 @@ Start a fresh clone with the canonical command:
 docker compose up --build
 ```
 
-The Compose configuration is self-contained: it builds the explicit `credential-hub:1.0.0-rc.2` image tag from the current package version, creates its own network, and uses repository-relative persistent directories. It does not require a pre-existing Docker network or local user paths. Stop the foreground process with `Ctrl+C`; use `docker compose down` to remove the container and network.
+The Compose configuration is self-contained: it builds the explicit `credential-hub:1.0.0-rc.3` image tag from the current package version, creates its own network, and uses repository-relative persistent directories. It does not require a pre-existing Docker network or local user paths. Stop the foreground process with `Ctrl+C`; use `docker compose down` to remove the container and network.
 
 For a new release, update the canonical package version and the Compose image/build argument together, then verify the rendered Compose configuration before deployment:
 
@@ -260,7 +277,23 @@ PUBLIC_BASE_URL=<YOUR_PUBLIC_ORIGIN>
 
 For example, set `BASE_PATH=/credential-hub` and set `PUBLIC_BASE_URL` to the external origin such as `https://sekalum.example.com`.
 
-`PUBLIC_BASE_URL` must be the external HTTP(S) origin without a path, query, or fragment. It prevents an internal proxy host or protocol from becoming part of an OAuth redirect URI. The application then serves the Admin UI at `/credential-hub/admin/`, health at `/credential-hub/health`, and the REST and OAuth routes below `/credential-hub/`. Configure every OAuth provider with the exact redirect URI shown in the Wizard; it includes the same prefix.
+In production, `PUBLIC_BASE_URL` must be the external HTTPS origin without a
+path, query, or fragment. It prevents an internal proxy host or protocol from
+becoming part of an OAuth redirect URI. HTTP is limited to explicitly
+non-production development or test deployments. The application then serves
+the Admin UI at `/credential-hub/admin/`, health at `/credential-hub/health`,
+and the REST and OAuth routes below `/credential-hub/`. Configure every OAuth
+provider with the exact redirect URI shown in the Wizard; it includes the same
+prefix.
+
+For a production TLS-terminating reverse proxy, configure only explicitly
+trusted proxy boundaries with `TRUSTED_PROXY`, for example `loopback` for a
+local proxy or an explicit proxy IP/CIDR value. Do not use a broad `/0` value.
+Forwarded host and protocol headers from other peers cannot establish or
+override the public origin. The OAuth browser-binding cookie remains Secure in
+production even when TLS terminates at the proxy. These rules are owned by
+ADR-031;
+the runtime enforces these production-origin and browser-cookie boundaries.
 
 The reverse proxy must preserve the request path. The following neutral examples forward a local service without stripping `/credential-hub`.
 

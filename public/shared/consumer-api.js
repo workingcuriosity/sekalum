@@ -35,7 +35,12 @@ export class ConsumerApiClient {
     });
     const contentType = response.headers.get('content-type') ?? '';
     const body = contentType.includes('application/json') ? await response.json() : await response.text();
-    if (!response.ok || body?.success === false) throw apiError(body, response.status);
+    if (!response.ok || body?.success === false) {
+      const error = apiError(body, response.status);
+      const retryAfter = Number(response.headers.get('retry-after'));
+      if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterSeconds = Math.ceil(retryAfter);
+      throw error;
+    }
     return { body, response };
   }
 }

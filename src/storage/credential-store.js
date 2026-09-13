@@ -19,8 +19,8 @@ export class CredentialStore {
     return this.storageAdapter.load(credentialId);
   }
 
-  async save(credentialInput) {
-    return this.storageAdapter.save(credentialInput);
+  async save(credentialInput, options = {}) {
+    return this.storageAdapter.save(credentialInput, options);
   }
 
   async create(credentialInput) {
@@ -32,7 +32,7 @@ export class CredentialStore {
     if (typeof this.storageAdapter.saveConditional === 'function') {
       return this.storageAdapter.saveConditional(credentialInput, options);
     }
-    return this.storageAdapter.save(credentialInput);
+    return this.storageAdapter.save(credentialInput, options);
   }
 
   async applyBatch(changes, options = {}) {
@@ -44,6 +44,20 @@ export class CredentialStore {
 
   async delete(credentialId) {
     return this.storageAdapter.delete(credentialId);
+  }
+
+  async isDeletedIdentity(credentialId) {
+    if (typeof this.storageAdapter.isDeletedIdentity === 'function') {
+      return this.storageAdapter.isDeletedIdentity(credentialId);
+    }
+    return false;
+  }
+
+  async getRestoreState() {
+    if (typeof this.storageAdapter.getRestoreState === 'function') {
+      return this.storageAdapter.getRestoreState();
+    }
+    return { credentials: await this.list(), tombstones: [] };
   }
 
   async deleteConditional(credentialId, options = {}) {

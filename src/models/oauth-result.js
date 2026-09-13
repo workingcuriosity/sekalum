@@ -10,8 +10,9 @@ export class OAuthResult {
 
     expiresAt = null,
     scopes = [],
-
-    metadata = {}
+    metadata = {},
+    contextBinding = null,
+    evidence = []
   }) {
     if (!providerId) {
       throw new Error("OAuthResult: 'providerId' is required");
@@ -40,9 +41,15 @@ export class OAuthResult {
     this.expiresAt = expiresAt;
     this.scopes = [...scopes];
     this.metadata = { ...metadata };
+    // These are secret-free admission facts only. Tokens remain transient
+    // fields and are never copied into the binding or evidence projections.
+    this.contextBinding = contextBinding ? structuredClone(contextBinding) : null;
+    this.evidence = Array.isArray(evidence) ? structuredClone(evidence) : [];
 
     Object.freeze(this.scopes);
     Object.freeze(this.metadata);
+    Object.freeze(this.contextBinding);
+    Object.freeze(this.evidence);
     Object.freeze(this);
   }
 }

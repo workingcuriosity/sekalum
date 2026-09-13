@@ -43,6 +43,7 @@ function publicSecretFields(credential) {
 }
 
 function errorMessage(error) {
+  if (error?.status === 429 || error?.code === 'RATE_LIMITED') return `Too many requests. Please retry later${error.retryAfterSeconds ? ` (retry after ${error.retryAfterSeconds}s).` : '.'}`;
   if (ERROR_MESSAGES.has(error?.status)) return ERROR_MESSAGES.get(error.status);
   if (error?.code === 'API_TOKEN_AUTH_FAILED') return ERROR_MESSAGES.get(401);
   if (error?.code === 'CONSUMER_SCOPE_MISSING') return ERROR_MESSAGES.get(403);
@@ -50,6 +51,7 @@ function errorMessage(error) {
 }
 
 function resolveErrorMessage(error) {
+  if (error?.status === 429 || error?.code === 'RATE_LIMITED') return `Too many requests. Please retry later${error.retryAfterSeconds ? ` (retry after ${error.retryAfterSeconds}s).` : '.'}`;
   if (error?.status === 400) return 'Resolve request could not be completed. Check the selected secret fields and try again.';
   if (error?.status === 401) return 'Resolve failed. Check the Consumer API token and try again.';
   if (error?.status === 403) return 'Resolve failed. This token is not authorized for the selected credential fields.';
@@ -138,6 +140,11 @@ function renderSecretSelection(documentRef, credential, selection, selectedNames
   const heading = documentRef.createElement('h3');
   heading.textContent = 'Secret fields available for Resolve';
   selection.append(heading);
+
+  const guidance = documentRef.createElement('p');
+  guidance.className = 'consumer-status';
+  guidance.textContent = 'Request only the named Secret fields needed for the next operation. Use resolved values immediately where practical; do not copy, persist, log, export, pin, or place them in URLs or retry payloads.';
+  selection.append(guidance);
 
   const fields = publicSecretFields(credential);
   if (fields.length === 0) {

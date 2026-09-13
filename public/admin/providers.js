@@ -8,7 +8,16 @@ const state = { step: 1, methods: [{ key: 'api-key', displayName: 'API key', des
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const api = (path, options = {}) => adminApi.request(path, options);
-function showError(error) { const target = $('#provider-error'); target.textContent = typeof error === 'string' ? error : userFacingError(error); target.classList.remove('hidden'); }
+function showError(error) {
+  const target = $('#provider-error');
+  const code = error?.code;
+  target.textContent = code === 'CUSTOM_PROVIDER_DEPENDENCIES'
+    ? t('providers.deleteDependency')
+    : code === 'PROVIDER_CONFIGURATION_IN_USE'
+      ? t('providers.configurationDependency')
+      : typeof error === 'string' ? error : userFacingError(error);
+  target.classList.remove('hidden');
+}
 function clearMessages() { $('#provider-error').classList.add('hidden'); $('#provider-success').classList.add('hidden'); }
 function methodHasFields(methodKey) { return state.fields.some((field) => field.methodKey === methodKey); }
 function renderMethods() { $('#provider-methods').innerHTML = state.methods.map((method, index) => { const keyIsLocked = methodHasFields(method.key); return `<fieldset class="field-group provider-editor"><legend>${t('providers.methodLegend', { index: index + 1 })}</legend><button class="link-button danger-text" type="button" data-remove-method="${index}">${t('providers.remove')}</button><div class="field"><label>${t('providers.methodId')}<input required data-method-key="${index}" pattern="[a-z][a-z0-9-]{1,62}" value="${escapeHtml(method.key)}" placeholder="${escapeHtml(t('providers.methodIdPlaceholder'))}" ${keyIsLocked ? 'readonly aria-describedby="method-key-lock-' + index + '"' : ''}></label>${keyIsLocked ? `<small id="method-key-lock-${index}">${t('providers.methodIdLocked')}</small>` : ''}</div><div class="field"><label>${t('providers.displayName')}<input required data-method-name="${index}" maxlength="120" value="${escapeHtml(method.displayName)}" placeholder="${escapeHtml(t('providers.displayNamePlaceholder'))}"></label></div><div class="field"><label>${t('providers.description')}<textarea data-method-description="${index}" rows="2" maxlength="500">${escapeHtml(method.description)}</textarea></label></div></fieldset>`; }).join('') || `<div class="empty-state"><h3>${t('providers.noMethods')}</h3><p>${t('providers.noMethodsHelp')}</p></div>`; }

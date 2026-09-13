@@ -336,11 +336,21 @@ test('CredentialManager blocks stored SFTP health checks before a provider conne
   assert.equal(providers.healthCredential, undefined);
 });
 
-test('CredentialManager permits private targets only when the explicit configuration flag is enabled', async () => {
+test('CredentialManager permits private FTP targets only with an exact configured exception', async () => {
   const providers = providerManager({ providerKey: 'ftp', fields: ftpFields });
   const config = {
     get(key, fallback) {
-      return key === 'CONNECTION_TEST_ALLOW_PRIVATE_NETWORKS' ? 'true' : fallback;
+      if (key === 'CONNECTION_TEST_ALLOW_PRIVATE_NETWORKS') return 'true';
+      if (key === 'CONNECTION_TEST_PRIVATE_EXCEPTION') {
+        return JSON.stringify({
+          protocol: 'ftp',
+          purpose: 'PROVIDER_VALIDATION',
+          hostname: '192.168.1.20',
+          cidr: '192.168.1.0/24',
+          port: 21
+        });
+      }
+      return fallback;
     }
   };
   const manager = new CredentialManager({ providerManager: providers, config });

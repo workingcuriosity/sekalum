@@ -9,9 +9,9 @@ export class FtpConnectionService {
     this.client = client;
   }
 
-  async validateCredential(credential) {
+  async validateCredential(credential, { purpose = 'PROVIDER_VALIDATION', pathId = 'FTP-STORED' } = {}) {
     const connectionOptions = this.#connectionOptionsFromCredential(credential);
-    const result = await this.client.testConnection(connectionOptions);
+    const result = await this.client.testConnection({ ...connectionOptions, purpose, pathId });
 
     return {
       valid: true,
@@ -22,9 +22,13 @@ export class FtpConnectionService {
     };
   }
 
-  async healthCheck(credential) {
+  async healthCheck(credential, context = {}) {
     try {
-      const validation = await this.validateCredential(credential);
+      const validation = await this.validateCredential(credential, {
+        ...context,
+        purpose: 'PROVIDER_HEALTH_CHECK',
+        pathId: 'FTP-STORED'
+      });
 
       return {
         healthy: true,
@@ -41,7 +45,8 @@ export class FtpConnectionService {
         status: 'down',
         protocol: 'ftp',
         checkedAt: new Date().toISOString(),
-        message: safeErrorMessage(error, 'FTP health check failed')
+        message: safeErrorMessage(error, 'FTP health check failed'),
+        code: error?.code ?? null
       };
     }
   }

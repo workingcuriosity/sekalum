@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { LANGUAGE_STORAGE_KEY, normalizeLanguage, resolveLanguage, t, translationOr, userFacingError } from '../../public/admin/i18n.js';
+import { AdminApiClient } from '../../public/admin/auth.js';
+import { ConsumerApiClient } from '../../public/shared/consumer-api.js';
 import en from '../../public/admin/locales/en.js';
 import de from '../../public/admin/locales/de.js';
 
@@ -56,6 +58,33 @@ test('provides actionable localized guidance for the admin error states', () => 
   assert.match(t('wizard.selectAuthError', {}, 'de'), /verfuegbare Methode.*Provider-Konfiguration/i);
   assert.match(t('errors.unexpected', {}, 'en'), /Try again.*service status/i);
   assert.match(t('errors.unexpected', {}, 'de'), /erneut.*Dienststatus/i);
+});
+
+test('projects bounded 429 guidance without retrying through the existing UI clients', async () => {
+  const response = {
+    ok: false,
+    status: 429,
+    headers: new Headers({ 'content-type': 'application/json', 'retry-after': '7' }),
+    async json() { return { error: { code: 'RATE_LIMITED', message: 'Too many requests. Please retry later.' } }; }
+  };
+  const admin = new AdminApiClient({
+    tokenStore: { getToken: () => 'management-token' },
+    fetchImpl: async () => response
+  });
+  await assert.rejects(() => admin.get('/api/v1/management/status'), (error) => {
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterSeconds, 7);
+    return true;
+  });
+
+  const consumer = new ConsumerApiClient({ fetchImpl: async () => response });
+  await assert.rejects(() => consumer.request('/api/v1/consumer/credentials', 'consumer-token'), (error) => {
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterSeconds, 7);
+    return true;
+  });
+  assert.match(userFacingError({ status: 429, code: 'RATE_LIMITED', retryAfterSeconds: 7 }), /retry after 7s/i);
+  assert.match(t('errors.RATE_LIMITED', { retryAfter: ' (nach 7s)' }, 'de'), /7s/);
 });
 
 test('keeps the Custom Provider admin page fully localized in both catalogs', () => {

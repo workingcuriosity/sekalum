@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 
 function createServer() {
   const providers = new Map([
@@ -37,6 +38,7 @@ function createServer() {
     }]
   ]);
   const customDefinitions = new Map();
+  const createCalls = [];
 
   const providerManager = {
       listProviders() {
@@ -50,7 +52,8 @@ function createServer() {
       }
     };
   const customProviderService = {
-    async create(input) {
+    async create(input, options = {}) {
+      createCalls.push({ options });
       if (input.providerConfigurationFields || input.oauth || input.runtimeOperations || input.secrets || input.credentialMethods?.some((method) => method.operationCapabilities?.length)) {
         const error = new Error('Provider definition contains unsupported property');
         error.code = 'PROVIDER_DEFINITION_INVALID';
@@ -153,7 +156,7 @@ function createServer() {
     }
   };
 
-  return new OAuthCallbackServer({
+  const httpServer = new OAuthCallbackServer({
     providerManager,
     customProviderService,
     importTokenCommand: {},
@@ -168,20 +171,13 @@ function createServer() {
       error() {}
     }
   });
-}
-
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-    });
-  });
+  httpServer.customProviderCreateCalls = createCalls;
+  return httpServer;
 }
 
 test('HTTP providers list endpoint returns registered providers', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/providers`);
@@ -225,7 +221,7 @@ test('HTTP providers list endpoint returns registered providers', async () => {
 
 test('HTTP providers get endpoint returns provider metadata', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/providers/threads`);
@@ -267,7 +263,7 @@ test('HTTP providers get endpoint returns provider metadata', async () => {
 
 test('HTTP providers capabilities endpoint returns provider capabilities', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/providers/threads/capabilities`);
@@ -286,7 +282,7 @@ test('HTTP providers capabilities endpoint returns provider capabilities', async
 
 test('HTTP providers endpoint returns not found for unknown provider', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/api/v1/providers/missing`);
@@ -303,7 +299,7 @@ test('HTTP providers endpoint returns not found for unknown provider', async () 
 
 test('HTTP providers create endpoint makes a declarative provider immediately available with public methods and bindings', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
   const input = {
     key: 'acme-service', displayName: 'Acme Service', category: 'CRM', description: 'Declarative provider',
     credentialMethods: [{ key: 'api-key', displayName: 'API key', credentialFields: [{ key: 'apiKey', label: 'API key', type: 'api-key', secret: true }], operationCapabilities: [] }],
@@ -325,6 +321,7 @@ test('HTTP providers create endpoint makes a declarative provider immediately av
     assert.deepEqual(body.data.providerMethodBindings, [{ methodKey: 'api-key', displayName: 'Acme API key', metadata: {}, operationCapabilities: [] }]);
     assert.equal('provider' in body.data, false);
     assert.equal('secrets' in body.data, false);
+    assert.deepEqual(httpServer.customProviderCreateCalls, [{ options: { actorUserId: 'admin' } }]);
 
     const selected = await fetch(`${baseUrl}/api/v1/providers/acme-service`);
     assert.equal(selected.status, 200);
@@ -336,7 +333,7 @@ test('HTTP providers create endpoint makes a declarative provider immediately av
 
 test('HTTP providers create endpoint rejects provider configuration and duplicate definitions', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     for (const input of [
@@ -362,7 +359,7 @@ test('HTTP providers create endpoint rejects provider configuration and duplicat
 
 test('HTTP provider lifecycle routes require the bounded action and preserve management visibility', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
   const input = {
     key: 'acme-service', displayName: 'Acme Service', category: 'CRM', description: 'Declarative provider',
     credentialMethods: [{ key: 'api-key', displayName: 'API key', credentialFields: [{ key: 'apiKey', label: 'API key', type: 'api-key', secret: true }], operationCapabilities: [] }],
@@ -410,7 +407,7 @@ test('HTTP provider lifecycle routes require the bounded action and preserve man
 
 test('HTTP provider management routes edit metadata and delete an unused custom provider', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
   const input = {
     key: 'acme-service', displayName: 'Acme Service', category: 'CRM', description: 'Declarative provider',
     credentialMethods: [{ key: 'api-key', displayName: 'API key', credentialFields: [{ key: 'apiKey', label: 'API key', type: 'api-key', secret: true }], operationCapabilities: [] }],

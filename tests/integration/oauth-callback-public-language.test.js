@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { OAuthCallbackServer } from '../../src/oauth/oauth-callback-server.js';
+import { listenOAuthCallbackServer } from '../support/oauth-callback-test-server.js';
 
 function createServer() {
   return new OAuthCallbackServer({
@@ -49,18 +50,9 @@ function createServer() {
   });
 }
 
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = app.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-    });
-  });
-}
-
 test('OAuth callback renders a safe result page and reports success to the Wizard', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/oauth/threads/callback?code=oauth-code&state=state-1`, { redirect: 'manual' });
@@ -85,7 +77,7 @@ test('OAuth callback renders a safe result page and reports success to the Wizar
 
 test('OAuth callback renders a localized cancellation result without raw provider errors', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/oauth/threads/callback?error=access_denied&state=cancel-state`, { redirect: 'manual' });
@@ -104,7 +96,7 @@ test('OAuth callback renders a localized cancellation result without raw provide
 
 test('OAuth callback maps redirect_uri_mismatch without exposing raw provider text', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/oauth/threads/callback?error=redirect_uri_mismatch&error_description=secret-provider-detail&state=mismatch-state`);
@@ -147,7 +139,7 @@ test('OAuth callback removes provider configuration when credential import fails
     config: { get() { return 0; } },
     logger: { success() {}, info() {}, error() {} }
   });
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/oauth/threads/callback?code=oauth-code&state=state-1`);
@@ -163,7 +155,7 @@ test('OAuth callback removes provider configuration when credential import fails
 
 test('OAuth callback cancels provider configuration when the authorization code is missing', async () => {
   const httpServer = createServer();
-  const { server, baseUrl } = await listen(httpServer.app);
+  const { server, baseUrl } = await listenOAuthCallbackServer(httpServer);
 
   try {
     const response = await fetch(`${baseUrl}/oauth/threads/callback?state=missing-code-state`);
